@@ -17,25 +17,34 @@ ctx.strokeStyle = 'black'
 ctx.lineWidth = 5
 
 // Draw house base (rectangle)
+ctx.fillStyle = 'saddlebrown'
+ctx.fillRect(100, 450, 200, 150)
 ctx.strokeRect(100, 450, 200, 150)
 
 // Draw roof (triangle)
+ctx.fillStyle = 'darkred'
 ctx.beginPath()
 ctx.moveTo(80, 450)
 ctx.lineTo(200, 380)
 ctx.lineTo(320, 450)
 ctx.closePath()
+ctx.fill()
 ctx.stroke()
 
 // Draw door
+ctx.fillStyle = 'darkgoldenrod'
+ctx.fillRect(170, 520, 60, 80)
 ctx.strokeRect(170, 520, 60, 80)
 
 // Draw door handle
+ctx.fillStyle = 'gold'
 ctx.beginPath()
 ctx.arc(220, 560, 3, 0, 2 * Math.PI)
 ctx.fill()
 
 // Draw left window
+ctx.fillStyle = 'skyblue'
+ctx.fillRect(120, 480, 40, 40)
 ctx.strokeRect(120, 480, 40, 40)
 // Window cross
 ctx.beginPath()
@@ -46,6 +55,8 @@ ctx.lineTo(160, 500)
 ctx.stroke()
 
 // Draw right window
+ctx.fillStyle = 'skyblue'
+ctx.fillRect(240, 480, 40, 40)
 ctx.strokeRect(240, 480, 40, 40)
 // Window cross
 ctx.beginPath()
@@ -56,6 +67,8 @@ ctx.lineTo(280, 500)
 ctx.stroke()
 
 // Draw chimney
+ctx.fillStyle = 'dimgray'
+ctx.fillRect(250, 400, 30, 50)
 ctx.strokeRect(250, 400, 30, 50)
 
 
