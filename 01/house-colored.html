@@ -13,9 +13,17 @@
 const canvas = document.getElementById('canvas')
 const ctx = canvas.getContext('2d')
 
+// Person position variables
+let personX = 450
+let personY = 550
+
 ctx.strokeStyle = 'black'
 ctx.fillStyle = 'black'
 ctx.lineWidth = 5
+
+// Draw sky background
+ctx.fillStyle = 'lightblue'
+ctx.fillRect(0, 0, 800, 600)
 
 // Draw house base (rectangle)
 ctx.fillStyle = 'saddlebrown'
@@ -71,6 +79,312 @@ ctx.stroke()
 ctx.fillStyle = 'dimgray'
 ctx.fillRect(250, 400, 30, 50)
 ctx.strokeRect(250, 400, 30, 50)
+
+// Draw grass below the house
+ctx.fillStyle = 'green'
+ctx.fillRect(0, 600, 800, 200)
+
+// Draw sun
+ctx.fillStyle = 'yellow'
+ctx.beginPath()
+ctx.arc(650, 150, 50, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+
+// Draw sun rays
+ctx.strokeStyle = 'yellow'
+ctx.lineWidth = 3
+for (let i = 0; i < 8; i++) {
+    const angle = (i * Math.PI * 2) / 8
+    const startX = 650 + Math.cos(angle) * 60
+    const startY = 150 + Math.sin(angle) * 60
+    const endX = 650 + Math.cos(angle) * 80
+    const endY = 150 + Math.sin(angle) * 80
+
+    ctx.beginPath()
+    ctx.moveTo(startX, startY)
+    ctx.lineTo(endX, endY)
+    ctx.stroke()
+}
+
+// Draw clouds
+ctx.fillStyle = 'white'
+ctx.strokeStyle = 'lightgray'
+ctx.lineWidth = 2
+
+// Cloud 1
+ctx.beginPath()
+ctx.arc(150, 100, 25, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+ctx.beginPath()
+ctx.arc(170, 100, 30, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+ctx.beginPath()
+ctx.arc(190, 100, 25, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+ctx.beginPath()
+ctx.arc(160, 80, 20, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+
+// Cloud 2
+ctx.beginPath()
+ctx.arc(500, 120, 20, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+ctx.beginPath()
+ctx.arc(515, 120, 25, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+ctx.beginPath()
+ctx.arc(530, 120, 20, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+ctx.beginPath()
+ctx.arc(510, 105, 15, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+
+// Cloud 3
+ctx.beginPath()
+ctx.arc(350, 80, 22, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+ctx.beginPath()
+ctx.arc(370, 80, 28, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+ctx.beginPath()
+ctx.arc(390, 80, 22, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+ctx.beginPath()
+ctx.arc(360, 65, 18, 0, 2 * Math.PI)
+ctx.fill()
+ctx.stroke()
+
+// Function to draw person at current position
+function drawPerson() {
+    ctx.strokeStyle = 'black'
+    ctx.fillStyle = 'black'
+    ctx.lineWidth = 3
+
+    // Head
+    ctx.beginPath()
+    ctx.arc(personX, personY, 15, 0, 2 * Math.PI)
+    ctx.fill()
+
+    // Body (vertical line)
+    ctx.beginPath()
+    ctx.moveTo(personX, personY + 15)
+    ctx.lineTo(personX, personY + 70)
+    ctx.stroke()
+
+    // Arms
+    ctx.beginPath()
+    ctx.moveTo(personX, personY + 30)
+    ctx.lineTo(personX - 30, personY + 50)
+    ctx.moveTo(personX, personY + 30)
+    ctx.lineTo(personX + 30, personY + 50)
+    ctx.stroke()
+
+    // Legs
+    ctx.beginPath()
+    ctx.moveTo(personX, personY + 70)
+    ctx.lineTo(personX - 20, personY + 100)
+    ctx.moveTo(personX, personY + 70)
+    ctx.lineTo(personX + 20, personY + 100)
+    ctx.stroke()
+}
+
+// Function to redraw the entire scene
+function redrawScene() {
+	ctx.strokeStyle = 'black'
+	ctx.fillStyle = 'black'
+	ctx.lineWidth = 5
+
+    // Clear canvas
+    ctx.clearRect(0, 0, 800, 800)
+
+    // Draw sky background
+    ctx.fillStyle = 'lightblue'
+    ctx.fillRect(0, 0, 800, 600)
+
+    // Draw house base (rectangle)
+    ctx.fillStyle = 'saddlebrown'
+    ctx.fillRect(100, 450, 200, 150)
+    ctx.strokeRect(100, 450, 200, 150)
+
+    // Draw roof (triangle)
+    ctx.fillStyle = 'darkred'
+    ctx.beginPath()
+    ctx.moveTo(80, 450)
+    ctx.lineTo(200, 380)
+    ctx.lineTo(320, 450)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+
+    // Draw door
+    ctx.fillStyle = 'darkgoldenrod'
+    ctx.fillRect(170, 520, 60, 80)
+    ctx.strokeRect(170, 520, 60, 80)
+
+    // Draw door handle
+    ctx.fillStyle = 'gold'
+    ctx.beginPath()
+    ctx.arc(220, 560, 3, 0, 2 * Math.PI)
+    ctx.fill()
+
+    // Draw left window
+    ctx.fillStyle = 'skyblue'
+    ctx.fillRect(120, 480, 40, 40)
+    ctx.strokeRect(120, 480, 40, 40)
+    // Window cross
+    ctx.beginPath()
+    ctx.moveTo(140, 480)
+    ctx.lineTo(140, 520)
+    ctx.moveTo(120, 500)
+    ctx.lineTo(160, 500)
+    ctx.stroke()
+
+    // Draw right window
+    ctx.fillStyle = 'skyblue'
+    ctx.fillRect(240, 480, 40, 40)
+    ctx.strokeRect(240, 480, 40, 40)
+    // Window cross
+    ctx.beginPath()
+    ctx.moveTo(260, 480)
+    ctx.lineTo(260, 520)
+    ctx.moveTo(240, 500)
+    ctx.lineTo(280, 500)
+    ctx.stroke()
+
+    // Draw chimney
+    ctx.fillStyle = 'dimgray'
+    ctx.fillRect(250, 400, 30, 50)
+    ctx.strokeRect(250, 400, 30, 50)
+
+    // Draw grass below the house
+    ctx.fillStyle = 'green'
+    ctx.fillRect(0, 600, 800, 200)
+
+    // Draw sun
+    ctx.fillStyle = 'yellow'
+    ctx.beginPath()
+    ctx.arc(650, 150, 50, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+
+    // Draw sun rays
+    ctx.strokeStyle = 'yellow'
+    ctx.lineWidth = 3
+    for (let i = 0; i < 8; i++) {
+        const angle = (i * Math.PI * 2) / 8
+        const startX = 650 + Math.cos(angle) * 60
+        const startY = 150 + Math.sin(angle) * 60
+        const endX = 650 + Math.cos(angle) * 80
+        const endY = 150 + Math.sin(angle) * 80
+
+        ctx.beginPath()
+        ctx.moveTo(startX, startY)
+        ctx.lineTo(endX, endY)
+        ctx.stroke()
+    }
+
+    // Draw clouds
+    ctx.fillStyle = 'white'
+    ctx.strokeStyle = 'lightgray'
+    ctx.lineWidth = 2
+
+    // Cloud 1
+    ctx.beginPath()
+    ctx.arc(150, 100, 25, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(170, 100, 30, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(190, 100, 25, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(160, 80, 20, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+
+    // Cloud 2
+    ctx.beginPath()
+    ctx.arc(500, 120, 20, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(515, 120, 25, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(530, 120, 20, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(510, 105, 15, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+
+    // Cloud 3
+    ctx.beginPath()
+    ctx.arc(350, 80, 22, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(370, 80, 28, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(390, 80, 22, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(360, 65, 18, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+
+    // Draw tree
+    ctx.fillStyle = 'saddlebrown'
+    ctx.strokeStyle = 'black'
+	ctx.lineWidth = 5
+    ctx.fillRect(600, 520, 30, 80)
+    ctx.strokeRect(600, 520, 30, 80)
+
+    ctx.fillStyle = 'green'
+    ctx.beginPath()
+    ctx.arc(615, 480, 40, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+
+    // Draw person at current position
+    drawPerson()
+}
+
+redrawScene()
+
+// Keyboard event listener
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'ArrowLeft') {
+        personX -= 10
+        if (personX < 50) personX = 50 // Keep person on screen
+        redrawScene()
+    } else if (event.key === 'ArrowRight') {
+        personX += 10
+        if (personX > 750) personX = 750 // Keep person on screen
+        redrawScene()
+    }
+})
 
 
 </script>
