@@ -1,0 +1,7 @@
+Udělej jednoduchou hru s použitím HTML a Canvas jako samostatný HTML soubor.
+
+Hra má být plošinovka.
+
+V hře je v levé části králíček, který stojí na trávě. Tráva i pozadí se automaticky pohybuje zprava doleva (králíček jakoby stojí na míště). Z pravé strany přijíždí mrkve, které může králíček výskokem sebrat a tím si zvýšit skóre.
+
+Ovládání: skok = klik myši nebo mezerník

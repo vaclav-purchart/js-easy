@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Králíček a Mrkve - Plošinovka</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #87CEEB;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+
+        #gameContainer {
+            text-align: center;
+        }
+
+        canvas {
+            border: 3px solid #2E8B57;
+            background-color: #87CEEB;
+            display: block;
+            margin: 0 auto;
+        }
+
+        #score {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2E8B57;
+            margin-top: 10px;
+        }
+
+        #instructions {
+            font-size: 16px;
+            color: #2E8B57;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        <div id="score">Skóre: 0</div>
+        <div id="instructions">Klikni myší nebo stiskni mezerník pro skok!</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+
+        // Game variables
+        let score = 0;
+        let gameRunning = true;
+
+        // Rabbit object
+        const rabbit = {
+            x: 100,
+            y: 300,
+            width: 40,
+            height: 40,
+            jumpPower: 0,
+            isJumping: false,
+            groundY: 300
+        };
+
+        // Background and grass
+        const background = {
+            x: 0,
+            speed: 2
+        };
+
+        // Carrots array
+        let carrots = [];
+        let carrotSpawnTimer = 0;
+        const carrotSpawnInterval = 120; // frames
+
+        // Game loop
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw sky gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(1, '#98FB98');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw moving clouds
+            drawClouds();
+
+            // Draw moving grass
+            drawGrass();
+
+            // Update and draw rabbit
+            updateRabbit();
+            drawRabbit();
+
+            // Update and draw carrots
+            updateCarrots();
+            drawCarrots();
+
+            // Check collisions
+            checkCollisions();
+
+            // Spawn new carrots
+            carrotSpawnTimer++;
+            if (carrotSpawnTimer >= carrotSpawnInterval) {
+                spawnCarrot();
+                carrotSpawnTimer = 0;
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function drawClouds() {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+
+            // Cloud 1
+            ctx.beginPath();
+            ctx.arc(150 - background.x * 0.5, 80, 30, 0, Math.PI * 2);
+            ctx.arc(180 - background.x * 0.5, 80, 35, 0, Math.PI * 2);
+            ctx.arc(210 - background.x * 0.5, 80, 30, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Cloud 2
+            ctx.beginPath();
+            ctx.arc(400 - background.x * 0.3, 60, 25, 0, Math.PI * 2);
+            ctx.arc(425 - background.x * 0.3, 60, 30, 0, Math.PI * 2);
+            ctx.arc(450 - background.x * 0.3, 60, 25, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Cloud 3
+            ctx.beginPath();
+            ctx.arc(650 - background.x * 0.7, 100, 20, 0, Math.PI * 2);
+            ctx.arc(670 - background.x * 0.7, 100, 25, 0, Math.PI * 2);
+            ctx.arc(690 - background.x * 0.7, 100, 20, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawGrass() {
+            // Draw grass background
+            ctx.fillStyle = '#228B22';
+            ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+
+            // Draw grass blades
+            ctx.strokeStyle = '#32CD32';
+            ctx.lineWidth = 2;
+
+            for (let i = 0; i < canvas.width + 50; i += 10) {
+                const x = (i - background.x) % (canvas.width + 50);
+                const grassHeight = 15 + Math.sin(i * 0.1) * 5;
+
+                ctx.beginPath();
+                ctx.moveTo(x, canvas.height - 50);
+                ctx.lineTo(x, canvas.height - 50 - grassHeight);
+                ctx.stroke();
+            }
+
+            // Update background position
+            background.x += background.speed;
+            if (background.x > canvas.width) {
+                background.x = 0;
+            }
+        }
+
+        function updateRabbit() {
+            // Apply gravity
+            if (rabbit.isJumping) {
+                rabbit.jumpPower -= 0.8;
+                rabbit.y += rabbit.jumpPower;
+
+                // Check if rabbit hits ground
+                if (rabbit.y >= rabbit.groundY) {
+                    rabbit.y = rabbit.groundY;
+                    rabbit.isJumping = false;
+                    rabbit.jumpPower = 0;
+                }
+            }
+        }
+
+        function drawRabbit() {
+            // Rabbit body
+            ctx.fillStyle = '#FFB6C1';
+            ctx.fillRect(rabbit.x, rabbit.y, rabbit.width, rabbit.height);
+
+            // Rabbit head
+            ctx.fillStyle = '#FFB6C1';
+            ctx.fillRect(rabbit.x - 5, rabbit.y - 15, 25, 20);
+
+            // Rabbit ears
+            ctx.fillStyle = '#FFB6C1';
+            ctx.fillRect(rabbit.x - 3, rabbit.y - 25, 8, 15);
+            ctx.fillRect(rabbit.x + 12, rabbit.y - 25, 8, 15);
+
+            // Inner ears
+            ctx.fillStyle = '#FF69B4';
+            ctx.fillRect(rabbit.x - 1, rabbit.y - 23, 4, 8);
+            ctx.fillRect(rabbit.x + 14, rabbit.y - 23, 4, 8);
+
+            // Eyes
+            ctx.fillStyle = 'black';
+            ctx.fillRect(rabbit.x + 2, rabbit.y - 10, 3, 3);
+            ctx.fillRect(rabbit.x + 12, rabbit.y - 10, 3, 3);
+
+            // Nose
+            ctx.fillStyle = 'black';
+            ctx.fillRect(rabbit.x + 8, rabbit.y - 5, 2, 2);
+
+            // Tail
+            ctx.fillStyle = '#FFB6C1';
+            ctx.beginPath();
+            ctx.arc(rabbit.x + rabbit.width, rabbit.y + 10, 8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function spawnCarrot() {
+            carrots.push({
+                x: canvas.width + 20,
+                y: rabbit.groundY + 10,
+                width: 15,
+                height: 25,
+                speed: 3
+            });
+        }
+
+        function updateCarrots() {
+            for (let i = carrots.length - 1; i >= 0; i--) {
+                carrots[i].x -= carrots[i].speed;
+
+                // Remove carrots that are off screen
+                if (carrots[i].x + carrots[i].width < 0) {
+                    carrots.splice(i, 1);
+                }
+            }
+        }
+
+        function drawCarrots() {
+            carrots.forEach(carrot => {
+                // Carrot body
+                ctx.fillStyle = '#FF8C00';
+                ctx.fillRect(carrot.x, carrot.y, carrot.width, carrot.height);
+
+                // Carrot top (leaves)
+                ctx.fillStyle = '#32CD32';
+                ctx.fillRect(carrot.x - 2, carrot.y - 8, carrot.width + 4, 8);
+
+                // Carrot lines
+                ctx.strokeStyle = '#FF7F00';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(carrot.x + 3, carrot.y);
+                ctx.lineTo(carrot.x + 3, carrot.y + carrot.height);
+                ctx.moveTo(carrot.x + 7, carrot.y);
+                ctx.lineTo(carrot.x + 7, carrot.y + carrot.height);
+                ctx.moveTo(carrot.x + 11, carrot.y);
+                ctx.lineTo(carrot.x + 11, carrot.y + carrot.height);
+                ctx.stroke();
+            });
+        }
+
+        function checkCollisions() {
+            carrots.forEach((carrot, index) => {
+                if (rabbit.x < carrot.x + carrot.width &&
+                    rabbit.x + rabbit.width > carrot.x &&
+                    rabbit.y < carrot.y + carrot.height &&
+                    rabbit.y + rabbit.height > carrot.y) {
+
+                    // Rabbit collected carrot
+                    carrots.splice(index, 1);
+                    score += 10;
+                    scoreElement.textContent = `Skóre: ${score}`;
+                }
+            });
+        }
+
+        function jump() {
+            if (!rabbit.isJumping) {
+                rabbit.isJumping = true;
+                rabbit.jumpPower = 15;
+            }
+        }
+
+        // Event listeners
+        canvas.addEventListener('click', jump);
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                jump();
+            }
+        });
+
+        // Start the game
+        gameLoop();
+    </script>
+</body>
+</html>
