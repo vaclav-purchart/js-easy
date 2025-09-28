@@ -196,13 +196,13 @@
 </head>
 <body>
 	<div class="toolbar">
-		<button id="new-btn">New</button>
-		<button id="load-btn">Load</button>
-		<button id="save-btn">Save</button>
-		<button id="undo-btn">Undo</button>
-		<button id="redo-btn">Redo</button>
+		<button id="new-btn">📋 New</button>
+		<button id="load-btn">📂 Load</button>
+		<button id="save-btn">💾 Save</button>
+		<button id="undo-btn">↩️ Undo</button>
+		<button id="redo-btn">↪️ Redo</button>
+		<button id="clear-storage-btn">🗑️ Clear</button>
 		<select id="github-example-select"></select>
-		<button id="clear-storage-btn">Clear Storage</button>
 		<input type="file" id="file-input" class="file-input" accept=".html,.js,.txt">
 
 		<div class="spacer"></div>
@@ -330,7 +330,7 @@
 					defaultOption.value = ''
 					defaultOption.textContent = 'Load'
 					githubSelect.appendChild(defaultOption)
-					for (let i = 1; i <= 10; i++) {
+					for (let i = 1; i <= 20; i++) {
 						const opt = document.createElement('option')
 						opt.value = i
 						opt.textContent = `${i.toString().padStart(2, '0')}/index.html`
@@ -340,7 +340,6 @@
 					githubSelect.addEventListener('change', async (e) => {
 						const val = e.target.value
 						if (!val) return
-						// const url = `https://raw.githubusercontent.com/vaclav-purchart/js-easy/main/${val.toString().padStart(2, '0')}/index.html`
 						const url = `https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/${val.toString().padStart(2, '0')}/index.html`
 						try {
 							const resp = await fetch(url)
@@ -357,6 +356,10 @@
 								const ta = document.getElementById('editor')
 								if (ta) ta.value = text
 							}
+							setTimeout(() => {
+								this.foldHeadSection()
+							}, 500)
+
 						} catch (err) {
 							alert('Error fetching example: ' + err)
 						}
