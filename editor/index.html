@@ -201,6 +201,7 @@
 		<button id="save-btn">Save</button>
 		<button id="undo-btn">Undo</button>
 		<button id="redo-btn">Redo</button>
+		<select id="github-example-select"></select>
 		<button id="clear-storage-btn">Clear Storage</button>
 		<input type="file" id="file-input" class="file-input" accept=".html,.js,.txt">
 
@@ -320,6 +321,49 @@
 				document.getElementById('undo-btn').addEventListener('click', () => this.undo())
 				document.getElementById('redo-btn').addEventListener('click', () => this.redo())
 				document.getElementById('clear-storage-btn').addEventListener('click', () => this.clearStorage())
+
+				// Setup GitHub example select (assumes <select id="github-example-select"> is in the toolbar in HTML)
+				const githubSelect = document.getElementById('github-example-select')
+				if (githubSelect) {
+					// Add options 1-10 dynamically
+					const defaultOption = document.createElement('option')
+					defaultOption.value = ''
+					defaultOption.textContent = 'Load'
+					githubSelect.appendChild(defaultOption)
+					for (let i = 1; i <= 10; i++) {
+						const opt = document.createElement('option')
+						opt.value = i
+						opt.textContent = `${i.toString().padStart(2, '0')}/index.html`
+						githubSelect.appendChild(opt)
+					}
+
+					githubSelect.addEventListener('change', async (e) => {
+						const val = e.target.value
+						if (!val) return
+						// const url = `https://raw.githubusercontent.com/vaclav-purchart/js-easy/main/${val.toString().padStart(2, '0')}/index.html`
+						const url = `https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/${val.toString().padStart(2, '0')}/index.html`
+						try {
+							const resp = await fetch(url)
+							if (!resp.ok) {
+								alert('Failed to fetch example: ' + resp.status)
+								return
+							}
+							const text = await resp.text()
+							// Set content to editor (assumes Monaco)
+							if (this.editor && typeof this.editor.setValue === 'function') {
+								this.editor.setValue(text)
+							} else {
+								// fallback: try to set to textarea with id 'editor'
+								const ta = document.getElementById('editor')
+								if (ta) ta.value = text
+							}
+						} catch (err) {
+							alert('Error fetching example: ' + err)
+						}
+						// Reset select to default
+						githubSelect.value = ''
+					})
+				}
 
 				// File input
 				document.getElementById('file-input').addEventListener('change', (e) => this.handleFileLoad(e))

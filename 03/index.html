@@ -60,8 +60,8 @@
 
 <script>
 
-const canvas = document.getElementById('myCanvas')
-const ctx = canvas.getContext('2d')
+const canvas = document.getElementById("myCanvas")
+const ctx = canvas.getContext("2d")
 
 let animationId = null
 let angle = 0
@@ -70,9 +70,9 @@ var unusedVariable = "test" // This should trigger a warning
 function drawCircle() {
 	ctx.beginPath()
 	ctx.arc(200, 150, 50, 0, 2 * Math.PI)
-	ctx.fillStyle = 'red'
+	ctx.fillStyle = "red"
 	ctx.fill()
-	ctx.strokeStyle = 'black'
+	ctx.strokeStyle = "black"
 	ctx.lineWidth = 3
 	ctx.stroke()
 }
