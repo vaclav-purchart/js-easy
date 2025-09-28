@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>JS Easy IDE</title>
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+
+		body {
+			font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+			height: 100vh;
+			overflow: hidden;
+			background: #ffffff;
+			color: #333333;
+		}
+
+		.toolbar {
+			height: 50px;
+			background: #f8f9fa;
+			border-bottom: 1px solid #e9ecef;
+			display: flex;
+			align-items: center;
+			padding: 0 20px;
+			gap: 20px;
+		}
+
+		.toolbar button {
+			background: #0e639c;
+			color: white;
+			border: none;
+			padding: 8px 16px;
+			border-radius: 4px;
+			cursor: pointer;
+			font-size: 14px;
+			transition: background 0.2s;
+		}
+
+		.toolbar button:hover {
+			background: #1177bb;
+		}
+
+		.toolbar button:disabled {
+			background: #555;
+			cursor: not-allowed;
+		}
+
+		.toolbar .spacer {
+			flex: 1;
+		}
+
+		.toolbar a {
+			color: #0066cc;
+			text-decoration: none;
+			font-size: 14px;
+			transition: color 0.2s;
+		}
+
+		.toolbar a:hover {
+			color: #004499;
+		}
+
+		.main-container {
+			display: flex;
+			height: calc(100vh - 50px);
+		}
+
+		.editor-container {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			border-right: 1px solid #e9ecef;
+		}
+
+		.editor-header {
+			background: #f8f9fa;
+			padding: 10px 20px;
+			border-bottom: 1px solid #e9ecef;
+			font-size: 14px;
+			color: #495057;
+		}
+
+		#monaco-editor {
+			flex: 1;
+			min-height: 0;
+		}
+
+		.preview-container {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			background: #ffffff;
+		}
+
+		.preview-header {
+			background: #f8f9fa;
+			padding: 10px 20px;
+			border-bottom: 1px solid #e9ecef;
+			font-size: 14px;
+			color: #495057;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+		}
+
+		.preview-title {
+			display: flex;
+			align-items: center;
+		}
+
+		.error-message {
+			color: #dc3545;
+			font-size: 12px;
+			font-weight: bold;
+			margin-left: 10px;
+		}
+
+		.preview-content {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			min-height: 0;
+		}
+
+		#preview-frame {
+			flex: 1;
+			border: none;
+			background: white;
+			min-height: 0;
+		}
+
+
+		.hidden {
+			display: none;
+		}
+
+		.file-input {
+			display: none;
+		}
+
+		.status-indicator {
+			display: inline-block;
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			margin-right: 8px;
+		}
+
+		.status-success {
+			background: #4caf50;
+		}
+
+		.status-error {
+			background: #f44336;
+		}
+
+		.status-loading {
+			background: #ff9800;
+			animation: pulse 1s infinite;
+		}
+
+		@keyframes pulse {
+			0%, 100% { opacity: 1; }
+			50% { opacity: 0.5; }
+		}
+
+		/* Monaco Editor Error Decorations */
+		.monaco-error-underline {
+			border-bottom: 2px solid #f14c4c;
+			border-bottom-style: wavy;
+			background-color: rgba(241, 76, 76, 0.1);
+		}
+
+		.monaco-warning-underline {
+			border-bottom: 2px solid #ffa500;
+			border-bottom-style: wavy;
+			background-color: rgba(255, 165, 0, 0.1);
+		}
+
+		.monaco-info-underline {
+			border-bottom: 2px solid #007acc;
+			border-bottom-style: wavy;
+			background-color: rgba(0, 122, 204, 0.1);
+		}
+
+		.monaco-error-glyph {
+			background: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTggMEMzLjU4IDAgMCAzLjU4IDAgOFMzLjU4IDE2IDggMTZTMTYgMTIuNDIgMTYgOFMxMi40MiAwIDggMFoiIGZpbGw9IiNmMTRjNGMiLz4KPHBhdGggZD0iTTggMTJBNCA0IDAgMSAwIDggNEE0IDQgMCAwIDAgOCAxMloiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik04IDZIMTJWMTBIOFY2WiIgZmlsbD0iI2YxNGM0YyIvPgo8L3N2Zz4K') no-repeat center;
+			width: 16px;
+			height: 16px;
+		}
+	</style>
+</head>
+<body>
+	<div class="toolbar">
+		<button id="new-btn">New</button>
+		<button id="load-btn">Load</button>
+		<button id="save-btn">Save</button>
+		<button id="undo-btn">Undo</button>
+		<button id="redo-btn">Redo</button>
+		<button id="clear-storage-btn">Clear Storage</button>
+		<input type="file" id="file-input" class="file-input" accept=".html,.js,.txt">
+
+		<div class="spacer"></div>
+
+		<a href="https://github.com/vaclav-purchart/js-easy/" target="_blank">GitHub Repository</a>
+		<a href="https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D" target="_blank">Canvas API Docs</a>
+
+		<div class="spacer"></div>
+
+		<span id="status-indicator" class="status-indicator status-success"></span>
+		<span id="status-text">Ready</span>
+	</div>
+
+	<div class="main-container">
+		<div class="editor-container">
+			<div class="editor-header">
+				<span class="status-indicator status-success"></span>
+				Editor
+			</div>
+			<div id="monaco-editor"></div>
+		</div>
+
+		<div class="preview-container">
+			<div class="preview-header">
+				<div class="preview-title">
+					<span id="preview-status-indicator" class="status-indicator status-success"></span>
+					Preview
+					<span id="error-message" class="error-message hidden"></span>
+				</div>
+			</div>
+			<div class="preview-content">
+				<iframe id="preview-frame" src="about:blank"></iframe>
+			</div>
+		</div>
+	</div>
+
+	<!-- Monaco Editor -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+	<!-- <script src="https://cdn.jsdelivr.net/npm/eslint-linter-browserify/linter.min.js"></script> -->
+
+	<script>
+		console.log('JavaScript is running!')
+
+		class JSEasyIDE {
+			constructor() {
+				this.editor = null
+				this.currentCode = ''
+				this.isUpdating = false
+				this.updateTimeout = null
+				this.storageKey = 'js-easy-editor-content'
+				this.eslint = null
+
+				this.init()
+			}
+
+			async init() {
+				await this.initMonaco()
+				this.setupEventListeners()
+				this.loadDefaultCode()
+				this.initESLint()
+			}
+
+			async initMonaco() {
+				return new Promise((resolve) => {
+					require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }})
+					require(['vs/editor/editor.main'], () => {
+						this.editor = monaco.editor.create(document.getElementById('monaco-editor'), {
+							value: '',
+							language: 'html',
+							theme: 'vs',
+							automaticLayout: true,
+							minimap: { enabled: false },
+							scrollBeyondLastLine: false,
+							fontSize: 14,
+							lineNumbers: 'on',
+							wordWrap: 'on',
+							folding: true,
+							lineDecorationsWidth: 10,
+							lineNumbersMinChars: 3,
+							renderLineHighlight: 'line',
+							cursorStyle: 'line',
+							selectOnLineNumbers: true,
+							roundedSelection: false,
+							readOnly: false,
+							contextmenu: true,
+							mouseWheelZoom: true,
+							quickSuggestions: true,
+							suggestOnTriggerCharacters: true,
+							acceptSuggestionOnEnter: 'on',
+							tabCompletion: 'on',
+							wordBasedSuggestions: 'off',
+							glyphMargin: true,
+							lightbulb: { enabled: true }
+						})
+
+						// Listen for content changes
+						this.editor.onDidChangeModelContent(() => {
+							this.debouncedUpdate()
+						})
+
+						resolve()
+					})
+				})
+			}
+
+			initESLint() {
+				// this.eslint = new eslint.Linter()
+			}
+
+
+			setupEventListeners() {
+				// Toolbar buttons
+				document.getElementById('new-btn').addEventListener('click', () => this.newFile())
+				document.getElementById('load-btn').addEventListener('click', () => this.loadFile())
+				document.getElementById('save-btn').addEventListener('click', () => this.saveFile())
+				document.getElementById('undo-btn').addEventListener('click', () => this.undo())
+				document.getElementById('redo-btn').addEventListener('click', () => this.redo())
+				document.getElementById('clear-storage-btn').addEventListener('click', () => this.clearStorage())
+
+				// File input
+				document.getElementById('file-input').addEventListener('change', (e) => this.handleFileLoad(e))
+
+				// Keyboard shortcuts
+				document.addEventListener('keydown', (e) => {
+					if (e.ctrlKey || e.metaKey) {
+						switch(e.key) {
+							case 's':
+								e.preventDefault()
+								this.saveFile()
+								break
+							case 'o':
+								e.preventDefault()
+								this.loadFile()
+								break
+							case 'n':
+								e.preventDefault()
+								this.newFile()
+								break
+						}
+					}
+				})
+			}
+
+			loadDefaultCode() {
+				// Check if there's saved content in localStorage
+				const savedCode = this.loadFromLocalStorage()
+
+				if (savedCode) {
+					console.log('Loading saved content from localStorage')
+					this.editor.setValue(savedCode)
+				} else {
+					console.log('Loading default code')
+					const defaultCode = `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<style>
+		body {
+			margin: 0;
+			padding: 20px;
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			font-family: Arial, sans-serif;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			min-height: 100vh;
+		}
+		.container {
+			text-align: center;
+			background: white;
+			padding: 30px;
+			border-radius: 15px;
+			box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+		}
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+			margin: 20px 0;
+		}
+		h1 {
+			color: #333;
+			margin-bottom: 20px;
+		}
+		button {
+			background: #667eea;
+			color: white;
+			border: none;
+			padding: 10px 20px;
+			border-radius: 5px;
+			cursor: pointer;
+			margin: 5px;
+			font-size: 16px;
+		}
+		button:hover {
+			background: #5a6fd8;
+		}
+	</style>
+</head>
+<body>
+
+<div class="container">
+	<canvas id="myCanvas" width="400" height="300"></canvas>
+	<br>
+	<button onclick="drawCircle()">Circle</button>
+	<button onclick="drawRectangle()">Rectangle</button>
+	<button onclick="clearCanvas()">Clear</button>
+	<button onclick="animateCircle()">Animate</button>
+	<button onclick="drawHouse()">House</button>
+</div>
+
+<script>
+
+const canvas = document.getElementById('myCanvas')
+const ctx = canvas.getContext('2d')
+
+let animationId = null
+let angle = 0
+var unusedVariable = "test" // This should trigger a warning
+
+function drawCircle() {
+	ctx.beginPath()
+	ctx.arc(200, 150, 50, 0, 2 * Math.PI)
+	ctx.fillStyle = 'red'
+	ctx.fill()
+	ctx.strokeStyle = 'black'
+	ctx.lineWidth = 3
+	ctx.stroke()
+}
+
+function drawRectangle() {
+	ctx.fillStyle = "blue"
+	ctx.fillRect(150, 100, 100, 100)
+	ctx.strokeStyle = "black"
+	ctx.lineWidth = 3
+	ctx.strokeRect(150, 100, 100, 100)
+}
+
+function clearCanvas() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
+	if (animationId) {
+		cancelAnimationFrame(animationId)
+		animationId = null
+	}
+}
+
+function drawHouse() {
+	// Set line width
+	ctx.lineWidth = 10;
+
+	// Wall
+	ctx.strokeRect(75, 140, 150, 110);
+
+	// Door
+	ctx.fillRect(130, 190, 40, 60);
+
+	// Roof
+	ctx.beginPath();
+	ctx.moveTo(50, 140);
+	ctx.lineTo(150, 60);
+	ctx.lineTo(250, 140);
+	ctx.closePath();
+	ctx.stroke();
+}
+
+function animateCircle() {
+	if (animationId) {
+		cancelAnimationFrame(animationId)
+	}
+
+	function animateFrame() {
+		ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+		angle += 0.05
+		const x = 200 + Math.cos(angle) * 100
+		const y = 150 + Math.sin(angle) * 50
+
+		ctx.beginPath()
+		ctx.arc(x, y, 20, 0, 2 * Math.PI)
+		ctx.fillStyle = "yellow"
+		ctx.fill()
+
+		ctx.beginPath()
+		ctx.arc(200, 150, 5, 0, 2 * Math.PI)
+		ctx.fillStyle = "black"
+		ctx.fill()
+
+		animationId = requestAnimationFrame(animateFrame)
+	}
+
+	animateFrame()
+}
+
+// Add mouse interaction
+canvas.addEventListener("click", function(e) {
+	const rect = canvas.getBoundingClientRect()
+	const x = e.clientX - rect.left
+	const y = e.clientY - rect.top
+
+	ctx.beginPath()
+	ctx.arc(x, y, 10, 0, 2 * Math.PI)
+	ctx.fillStyle = "purple"
+	ctx.fill()
+})
+
+// Initial drawing
+drawHouse()
+
+<` + `/script>
+
+</body>
+</html>`
+
+					this.editor.setValue(defaultCode)
+				}
+
+				// Fold the <head> section by default
+				setTimeout(() => {
+					this.foldHeadSection()
+				}, 500)
+
+				this.updatePreview()
+			}
+
+			foldHeadSection() {
+				try {
+					const model = this.editor.getModel()
+					if (!model) return
+
+					// Find the <head> tag and its closing </head> tag
+					const text = model.getValue()
+					const headStartMatch = text.match(/<head[^>]*>/i)
+					const headEndMatch = text.match(/<\/head>/i)
+
+					if (headStartMatch && headEndMatch) {
+						const headStartIndex = headStartMatch.index
+						const headEndIndex = headEndMatch.index + headEndMatch[0].length
+
+						// Convert character positions to line numbers
+						const headStartLine = model.getPositionAt(headStartIndex).lineNumber
+						const headEndLine = model.getPositionAt(headEndIndex).lineNumber
+
+						console.log('Folding head section from line', headStartLine, 'to line', headEndLine)
+
+						// Try a different approach - use the editor's built-in folding
+						// First, move cursor to the start of the head section
+						this.editor.setPosition({ lineNumber: headStartLine, column: 1 })
+
+						// Then try to fold the current block
+						setTimeout(() => {
+							this.editor.trigger('keyboard', 'editor.fold', null)
+						}, 50)
+
+						// Move cursor back to top
+						setTimeout(() => {
+							this.editor.setPosition({ lineNumber: 1, column: 1 })
+						}, 100)
+					}
+				} catch (error) {
+					console.error('Error folding head section:', error)
+				}
+			}
+
+			debouncedUpdate() {
+				if (this.updateTimeout) {
+					clearTimeout(this.updateTimeout)
+				}
+
+				this.updateTimeout = setTimeout(() => {
+					this.updatePreview()
+					this.saveToLocalStorage() // Auto-save to localStorage
+					this.checkESLint()
+				}, 300)
+			}
+
+			updatePreview() {
+				if (this.isUpdating) return
+
+				this.isUpdating = true
+				this.updateStatus('loading', 'Updating...')
+
+				try {
+					const code = this.editor.getValue()
+					this.currentCode = code
+
+					// Check for basic syntax errors in JavaScript
+					const syntaxError = this.checkSyntaxErrors(code)
+					if (syntaxError) {
+						this.showError(syntaxError)
+						this.updateStatus('error', 'Syntax error')
+						this.isUpdating = false
+						return
+					}
+
+					// Create a blob URL for the HTML content
+					const blob = new Blob([code], { type: 'text/html' })
+					const url = URL.createObjectURL(blob)
+
+					const iframe = document.getElementById('preview-frame')
+					const errorMessage = document.getElementById('error-message')
+
+					// Hide error message initially
+					errorMessage.classList.add('hidden')
+
+					// Store original error handler
+					const originalOnError = window.onerror
+
+					// Set up error handling for the iframe
+					iframe.onload = () => {
+						try {
+							// Set up error handling within the iframe
+							const iframeWindow = iframe.contentWindow
+							if (iframeWindow) {
+								// Set up error handler for the iframe
+								iframeWindow.onerror = (message, source, lineno, colno, error) => {
+									console.log('Iframe error caught:', { message, source, lineno, colno, error })
+
+									const errorMsg = `Runtime Error: ${message}`
+									console.error('IDE Runtime Error:', errorMsg, {
+										source,
+										lineno,
+										colno,
+										error
+									})
+									this.showError(errorMsg)
+									this.updateStatus('error', 'Runtime error')
+									return true
+								}
+
+								// Set up promise rejection handler
+								iframeWindow.addEventListener('unhandledrejection', (event) => {
+									const errorMsg = `Promise Rejection: ${event.reason}`
+									console.error('IDE Promise Error:', errorMsg, event)
+									this.showError(errorMsg)
+									this.updateStatus('error', 'Promise rejection')
+								})
+
+								// Set up a timeout to check for errors that might not be caught immediately
+								setTimeout(() => {
+									try {
+										// Check if there are any obvious errors in the content
+										const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
+										if (iframeDoc && iframeDoc.body) {
+											// Look for JavaScript errors in the console or DOM
+											if (iframeDoc.body.innerHTML.includes('error') ||
+												iframeDoc.body.innerHTML.includes('Error') ||
+												iframeDoc.body.innerHTML.includes('SyntaxError') ||
+												iframeDoc.body.innerHTML.includes('ReferenceError') ||
+												iframeDoc.body.innerHTML.includes('TypeError')) {
+												console.error('IDE Content Error:', 'Content error detected')
+												this.showError('Content error detected')
+												this.updateStatus('error', 'Content error')
+											} else {
+												this.updateStatus('success', 'Ready')
+												document.getElementById('preview-status-indicator').className = 'status-indicator status-success'
+											}
+										} else {
+											this.updateStatus('success', 'Ready')
+											document.getElementById('preview-status-indicator').className = 'status-indicator status-success'
+										}
+									} catch (e) {
+										// Cross-origin or other errors - assume success
+										console.log('Cross-origin error in iframe check:', e.message)
+										this.updateStatus('success', 'Ready')
+										document.getElementById('preview-status-indicator').className = 'status-indicator status-success'
+									}
+								}, 100)
+
+								// Also set up a longer timeout to catch delayed errors
+								setTimeout(() => {
+									try {
+										const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
+										if (iframeDoc && iframeDoc.body) {
+											// Check for any error messages that might have appeared
+											const bodyText = iframeDoc.body.textContent || iframeDoc.body.innerText || ''
+											if (bodyText.includes('error') || bodyText.includes('Error') ||
+												bodyText.includes('SyntaxError') || bodyText.includes('ReferenceError')) {
+												console.error('IDE Delayed Error:', 'Delayed error detected')
+												this.showError('Delayed error detected')
+												this.updateStatus('error', 'Delayed error')
+											}
+										}
+									} catch (e) {
+										// Cross-origin or other errors - ignore
+									}
+								}, 500)
+							} else {
+								this.updateStatus('success', 'Ready')
+								document.getElementById('preview-status-indicator').className = 'status-indicator status-success'
+							}
+
+							// Clean up the blob URL
+							URL.revokeObjectURL(url)
+						} catch (e) {
+							// Cross-origin or other errors
+							console.error('IDE Iframe Error:', e.message, e)
+							this.updateStatus('success', 'Ready')
+							document.getElementById('preview-status-indicator').className = 'status-indicator status-success'
+							URL.revokeObjectURL(url)
+						}
+
+						this.isUpdating = false
+					}
+
+					iframe.onerror = () => {
+						console.error('IDE Load Error:', 'Failed to load preview')
+						this.showError('Failed to load preview')
+						this.updateStatus('error', 'Load failed')
+						this.isUpdating = false
+						URL.revokeObjectURL(url)
+					}
+
+					// Set the iframe source
+					iframe.src = url
+
+				} catch (error) {
+					console.error('IDE Update Error:', error.message, error)
+					this.showError('Error updating preview: ' + error.message)
+					this.updateStatus('error', 'Update failed')
+					this.isUpdating = false
+				}
+			}
+
+			checkESLint() {
+				if (!this.eslint) { return }
+
+				const code = this.editor.getValue()
+				const results = this.eslint.lintText(code, {
+					rules: {
+						'no-unused-vars': 'error',
+						'no-undef': 'error',
+					},
+				})
+				console.log('lint results', results)
+			}
+
+			checkSyntaxErrors(code) {
+				try {
+					// Extract JavaScript from script tags
+					const scriptRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi
+					let match
+
+					while ((match = scriptRegex.exec(code)) !== null) {
+						const scriptContent = match[1]
+
+						if (scriptContent.trim()) {
+							// Check for syntax errors
+							const syntaxError = this.checkScriptSyntax(scriptContent)
+							if (syntaxError) {
+								return syntaxError
+							}
+						}
+					}
+
+					return null
+				} catch (error) {
+					console.error('IDE Syntax Error:', error.message, error)
+					return `Syntax Error: ${error.message}`
+				}
+			}
+
+			checkScriptSyntax(scriptContent) {
+				try {
+					// First, try to parse the entire script to see if it's syntactically valid
+					new Function(scriptContent)
+					return null // No syntax errors found
+				} catch (error) {
+					console.error('IDE Syntax Error:', error.message, error)
+					return `Syntax Error: ${error.message}`
+				}
+			}
+
+
+			showError(message) {
+				const errorMessage = document.getElementById('error-message')
+
+				errorMessage.textContent = message
+				errorMessage.classList.remove('hidden')
+
+				this.updateStatus('error', 'Error')
+				document.getElementById('preview-status-indicator').className = 'status-indicator status-error'
+			}
+
+			updateStatus(type, message) {
+				const indicator = document.getElementById('status-indicator')
+				const text = document.getElementById('status-text')
+
+				indicator.className = `status-indicator status-${type}`
+				text.textContent = message
+			}
+
+			newFile() {
+				if (confirm('Are you sure you want to create a new file? Unsaved changes will be lost.')) {
+					this.editor.setValue('')
+					this.updatePreview()
+				}
+			}
+
+			loadFile() {
+				document.getElementById('file-input').click()
+			}
+
+			handleFileLoad(event) {
+				const file = event.target.files[0]
+				if (!file) return
+
+				const reader = new FileReader()
+				reader.onload = (e) => {
+					this.editor.setValue(e.target.result)
+
+					// Fold the <head> section if it exists
+					setTimeout(() => {
+						this.foldHeadSection()
+					}, 100)
+
+					this.updatePreview()
+				}
+				reader.readAsText(file)
+
+				// Reset the input
+				event.target.value = ''
+			}
+
+			saveFile() {
+				const code = this.editor.getValue()
+				const blob = new Blob([code], { type: 'text/html' })
+				const url = URL.createObjectURL(blob)
+
+				const a = document.createElement('a')
+				a.href = url
+				a.download = 'canvas-demo.html'
+				document.body.appendChild(a)
+				a.click()
+				document.body.removeChild(a)
+
+				URL.revokeObjectURL(url)
+				this.updateStatus('success', 'File saved')
+
+				setTimeout(() => {
+					this.updateStatus('success', 'Ready')
+				}, 2000)
+			}
+
+			// localStorage methods
+			saveToLocalStorage() {
+				try {
+					const code = this.editor.getValue()
+					localStorage.setItem(this.storageKey, code)
+					console.log('Content saved to localStorage')
+				} catch (error) {
+					console.error('Error saving to localStorage:', error)
+				}
+			}
+
+			loadFromLocalStorage() {
+				try {
+					const savedCode = localStorage.getItem(this.storageKey)
+					if (savedCode) {
+						console.log('Loading content from localStorage')
+						return savedCode
+					}
+				} catch (error) {
+					console.error('Error loading from localStorage:', error)
+				}
+				return null
+			}
+
+			clearLocalStorage() {
+				try {
+					localStorage.removeItem(this.storageKey)
+					console.log('localStorage cleared')
+				} catch (error) {
+					console.error('Error clearing localStorage:', error)
+				}
+			}
+
+			clearStorage() {
+				if (confirm('Are you sure you want to clear all saved content? This will reset the editor to default code.')) {
+					this.clearLocalStorage()
+					this.loadDefaultCode()
+					this.updateStatus('success', 'Storage cleared')
+
+					setTimeout(() => {
+						this.updateStatus('success', 'Ready')
+					}, 2000)
+				}
+			}
+
+			undo() {
+				this.editor.trigger('keyboard', 'undo', null)
+			}
+
+			redo() {
+				this.editor.trigger('keyboard', 'redo', null)
+			}
+		}
+
+		// Initialize the IDE when the page loads
+		document.addEventListener('DOMContentLoaded', () => {
+			new JSEasyIDE()
+		})
+	</script>
+</body>
+</html>

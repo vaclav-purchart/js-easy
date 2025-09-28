@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Křeček a Mrkve - Plošinovka</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to bottom, #87CEEB, #98FB98);
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #gameCanvas {
+            border: 3px solid #8B4513;
+            background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 60%, #90EE90 60%, #90EE90 100%);
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+        }
+
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #8B4513;
+            text-shadow: 2px 2px 4px rgba(255,255,255,0.8);
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 16px;
+            color: #8B4513;
+            text-align: center;
+            background: rgba(255,255,255,0.8);
+            padding: 10px 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div id="score">Skóre: 0</div>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div id="instructions">Klikni myší nebo stiskni mezerník pro skok!</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+
+        // Herní proměnné
+        let score = 0;
+        let gameSpeed = 2;
+        let backgroundOffset = 0;
+        let grassOffset = 0;
+
+        // Křeček
+        const hamster = {
+            x: 100,
+            y: 280,
+            width: 40,
+            height: 40,
+            jumpPower: 0,
+            isJumping: false,
+            groundY: 280
+        };
+
+        // Mrkve
+        const carrots = [];
+        let carrotSpawnTimer = 0;
+
+        // Animace křečka
+        let hamsterFrame = 0;
+        let animationTimer = 0;
+
+        // Funkce pro kreslení křečka
+        function drawHamster() {
+            ctx.save();
+            ctx.translate(hamster.x + hamster.width/2, hamster.y + hamster.height/2);
+
+            // Tělo křečka
+            ctx.fillStyle = '#FFA500';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, hamster.width/2, hamster.height/2, 0, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Uši
+            ctx.fillStyle = '#FF8C00';
+            ctx.beginPath();
+            ctx.ellipse(-15, -15, 8, 12, 0, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(15, -15, 8, 12, 0, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Oči
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(-8, -5, 3, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(8, -5, 3, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Nos
+            ctx.fillStyle = '#FF69B4';
+            ctx.beginPath();
+            ctx.arc(0, 2, 2, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Ústa
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 8, 5, 0, Math.PI);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // Funkce pro kreslení mrkve
+        function drawCarrot(carrot) {
+            ctx.save();
+            ctx.translate(carrot.x, carrot.y);
+
+            // Tělo mrkve
+            ctx.fillStyle = '#FF8C00';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-15, 20);
+            ctx.lineTo(15, 20);
+            ctx.closePath();
+            ctx.fill();
+
+            // Listy mrkve
+            ctx.fillStyle = '#228B22';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-8, -15);
+            ctx.lineTo(-3, -10);
+            ctx.lineTo(3, -10);
+            ctx.lineTo(8, -15);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // Funkce pro kreslení pozadí
+        function drawBackground() {
+            // Obloha
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.6);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(1, '#B0E0E6');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height * 0.6);
+
+            // Mraky
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            for (let i = 0; i < 5; i++) {
+                const cloudX = (backgroundOffset + i * 200) % (canvas.width + 100) - 50;
+                const cloudY = 50 + Math.sin(backgroundOffset * 0.01 + i) * 20;
+                drawCloud(cloudX, cloudY);
+            }
+        }
+
+        // Funkce pro kreslení mraku
+        function drawCloud(x, y) {
+            ctx.beginPath();
+            ctx.arc(x, y, 20, 0, 2 * Math.PI);
+            ctx.arc(x + 25, y, 25, 0, 2 * Math.PI);
+            ctx.arc(x + 50, y, 20, 0, 2 * Math.PI);
+            ctx.arc(x + 25, y - 15, 20, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        // Funkce pro kreslení trávy
+        function drawGrass() {
+            ctx.fillStyle = '#90EE90';
+            ctx.fillRect(0, canvas.height * 0.6, canvas.width, canvas.height * 0.4);
+
+            // Trávníky
+            ctx.fillStyle = '#228B22';
+            for (let i = 0; i < canvas.width + 50; i += 30) {
+                const grassX = (grassOffset + i) % (canvas.width + 50) - 25;
+                const grassY = canvas.height * 0.6;
+
+                ctx.beginPath();
+                ctx.moveTo(grassX, grassY);
+                ctx.lineTo(grassX - 5, grassY - 15);
+                ctx.lineTo(grassX + 5, grassY - 10);
+                ctx.lineTo(grassX + 10, grassY - 20);
+                ctx.lineTo(grassX + 15, grassY - 8);
+                ctx.lineTo(grassX + 20, grassY - 18);
+                ctx.lineTo(grassX + 25, grassY - 5);
+                ctx.lineTo(grassX + 30, grassY - 12);
+                ctx.lineTo(grassX + 35, grassY);
+                ctx.stroke();
+            }
+        }
+
+        // Funkce pro skok
+        function jump() {
+            if (!hamster.isJumping) {
+                hamster.jumpPower = -15;
+                hamster.isJumping = true;
+            }
+        }
+
+        // Funkce pro aktualizaci pozice křečka
+        function updateHamster() {
+            if (hamster.isJumping) {
+                hamster.y += hamster.jumpPower;
+                hamster.jumpPower += 0.8; // Gravitace
+
+                if (hamster.y >= hamster.groundY) {
+                    hamster.y = hamster.groundY;
+                    hamster.isJumping = false;
+                    hamster.jumpPower = 0;
+                }
+            }
+        }
+
+        // Funkce pro aktualizaci mrkví
+        function updateCarrots() {
+            carrotSpawnTimer++;
+            if (carrotSpawnTimer > 120) { // Spawn každé 2 sekundy při 60 FPS
+                carrots.push({
+                    x: canvas.width + 20,
+                    y: 200 + Math.random() * 100,
+                    width: 30,
+                    height: 20
+                });
+                carrotSpawnTimer = 0;
+            }
+
+            // Aktualizace pozice mrkví
+            for (let i = carrots.length - 1; i >= 0; i--) {
+                carrots[i].x -= gameSpeed;
+
+                // Odstranění mrkví mimo obrazovku
+                if (carrots[i].x < -30) {
+                    carrots.splice(i, 1);
+                }
+            }
+        }
+
+        // Funkce pro detekci kolize
+        function checkCollisions() {
+            for (let i = carrots.length - 1; i >= 0; i--) {
+                const carrot = carrots[i];
+                if (hamster.x < carrot.x + carrot.width &&
+                    hamster.x + hamster.width > carrot.x &&
+                    hamster.y < carrot.y + carrot.height &&
+                    hamster.y + hamster.height > carrot.y) {
+
+                    // Kolize detekována - zvýšení skóre
+                    score += 10;
+                    scoreElement.textContent = `Skóre: ${score}`;
+                    carrots.splice(i, 1);
+
+                    // Zvýšení rychlosti hry
+                    gameSpeed += 0.1;
+                }
+            }
+        }
+
+        // Hlavní herní smyčka
+        function gameLoop() {
+            // Vymazání canvasu
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Aktualizace pozadí
+            backgroundOffset -= gameSpeed * 0.5;
+            grassOffset -= gameSpeed;
+
+            // Kreslení pozadí
+            drawBackground();
+            drawGrass();
+
+            // Aktualizace herních objektů
+            updateHamster();
+            updateCarrots();
+            checkCollisions();
+
+            // Kreslení herních objektů
+            drawHamster();
+            carrots.forEach(drawCarrot);
+
+            // Pokračování smyčky
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Event listenery pro ovládání
+        canvas.addEventListener('click', jump);
+        document.addEventListener('keydown', function(event) {
+            if (event.code === 'Space') {
+                event.preventDefault();
+                jump();
+            }
+        });
+
+        // Spuštění hry
+        gameLoop();
+    </script>
+</body>
+</html>
+
+
+
