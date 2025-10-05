@@ -209,6 +209,7 @@
 
 		<a href="https://github.com/vaclav-purchart/js-easy/" target="_blank">GitHub Repository</a>
 		<a href="https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D" target="_blank">Canvas API Docs</a>
+		<a href="https://code.visualstudio.com/" target="_blank">IDE</a>
 		<a href="https://htmlcolorcodes.com/color-names/" target="_blank">HTML colors</a>
 
 		<div class="spacer"></div>
@@ -409,158 +410,81 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Canvas Demo</title>
 	<style>
-		body {
-			margin: 0;
-			padding: 20px;
-			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-			font-family: Arial, sans-serif;
-			display: flex;
-			justify-content: center;
-			align-items: center;
-			min-height: 100vh;
-		}
-		.container {
-			text-align: center;
-			background: white;
-			padding: 30px;
-			border-radius: 15px;
-			box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-		}
 		canvas {
 			border: 2px solid #333;
 			border-radius: 10px;
 			margin: 20px 0;
 		}
-		h1 {
-			color: #333;
-			margin-bottom: 20px;
-		}
-		button {
-			background: #667eea;
-			color: white;
-			border: none;
-			padding: 10px 20px;
-			border-radius: 5px;
-			cursor: pointer;
-			margin: 5px;
-			font-size: 16px;
-		}
-		button:hover {
-			background: #5a6fd8;
-		}
 	</style>
-</head>
+	</head>
 <body>
-
-<div class="container">
-	<canvas id="myCanvas" width="400" height="300"></canvas>
-	<br>
-	<button onclick="drawCircle()">Circle</button>
-	<button onclick="drawRectangle()">Rectangle</button>
-	<button onclick="clearCanvas()">Clear</button>
-	<button onclick="animateCircle()">Animate</button>
-	<button onclick="drawHouse()">House</button>
-</div>
-
+<canvas id="myCanvas" width="500" height="500"></canvas>
 <script>
 
-const canvas = document.getElementById('myCanvas')
-const ctx = canvas.getContext('2d')
+const canvas = document.getElementById("myCanvas")
+const ctx = canvas.getContext("2d")
 
-let animationId = null
-let angle = 0
-var unusedVariable = "test" // This should trigger a warning
+let x, y, sirka, vyska, polomer, x2, y2
 
-function drawCircle() {
-	ctx.beginPath()
-	ctx.arc(200, 150, 50, 0, 2 * Math.PI)
-	ctx.fillStyle = 'red'
-	ctx.fill()
-	ctx.strokeStyle = 'black'
-	ctx.lineWidth = 3
-	ctx.stroke()
-}
+// --------------------------------------------
+// rectangle
+// --------------------------------------------
+x = 150
+y = 100
+sirka = 100
+vyska = 100
 
-function drawRectangle() {
-	ctx.fillStyle = "blue"
-	ctx.fillRect(150, 100, 100, 100)
-	ctx.strokeStyle = "black"
-	ctx.lineWidth = 3
-	ctx.strokeRect(150, 100, 100, 100)
-}
+ctx.fillStyle = "blue"
+ctx.fillRect(x, y, sirka, vyska) // vybarveni
 
-function clearCanvas() {
-	ctx.clearRect(0, 0, canvas.width, canvas.height)
-	if (animationId) {
-		cancelAnimationFrame(animationId)
-		animationId = null
-	}
-}
+ctx.strokeStyle = "black"
+ctx.lineWidth = 3
+ctx.strokeRect(x, y, sirka, vyska) // okraj
 
-function drawHouse() {
-	// Set line width
-	ctx.lineWidth = 10;
+// --------------------------------------------
+// circle
+// --------------------------------------------
+x = 300
+y = 300
+polomer = 50
 
-	// Wall
-	ctx.strokeRect(75, 140, 150, 110);
+ctx.beginPath()
+ctx.arc(x, y, polomer, 0, 2 * Math.PI)
+ctx.fillStyle = "red"
+ctx.fill() // vybarveni
 
-	// Door
-	ctx.fillRect(130, 190, 40, 60);
+ctx.strokeStyle = "purple"
+ctx.lineWidth = 3
+ctx.stroke() // okraj
 
-	// Roof
-	ctx.beginPath();
-	ctx.moveTo(50, 140);
-	ctx.lineTo(150, 60);
-	ctx.lineTo(250, 140);
-	ctx.closePath();
-	ctx.stroke();
-}
+// --------------------------------------------
+// line
+// --------------------------------------------
+x = 100
+y = 300
+x2 = 200
+y2 = 350
 
-function animateCircle() {
-	if (animationId) {
-		cancelAnimationFrame(animationId)
-	}
+ctx.lineWidth = 5
+ctx.strokeStyle = "green"
 
-	function animateFrame() {
-		ctx.clearRect(0, 0, canvas.width, canvas.height)
+ctx.beginPath()
+ctx.moveTo(x, y)
+ctx.lineTo(x2, y2)
+ctx.stroke()
 
-		angle += 0.05
-		const x = 200 + Math.cos(angle) * 100
-		const y = 150 + Math.sin(angle) * 50
+// --------------------------------------------
+// text
+// --------------------------------------------
+x = 50
+y = 450
+ctx.fillStyle = "gray"
+ctx.font = "50px sans-serif"
+ctx.fillText("Programujeme! :-)", x, y)
 
-		ctx.beginPath()
-		ctx.arc(x, y, 20, 0, 2 * Math.PI)
-		ctx.fillStyle = "yellow"
-		ctx.fill()
-
-		ctx.beginPath()
-		ctx.arc(200, 150, 5, 0, 2 * Math.PI)
-		ctx.fillStyle = "black"
-		ctx.fill()
-
-		animationId = requestAnimationFrame(animateFrame)
-	}
-
-	animateFrame()
-}
-
-// Add mouse interaction
-canvas.addEventListener("click", function(e) {
-	const rect = canvas.getBoundingClientRect()
-	const x = e.clientX - rect.left
-	const y = e.clientY - rect.top
-
-	ctx.beginPath()
-	ctx.arc(x, y, 10, 0, 2 * Math.PI)
-	ctx.fillStyle = "purple"
-	ctx.fill()
-})
-
-// Initial drawing
-drawHouse()
+console.log("test")
 
 <` + `/script>
-
 </body>
 </html>`
 
