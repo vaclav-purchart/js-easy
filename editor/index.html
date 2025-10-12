@@ -201,9 +201,12 @@
 		<button id="save-btn">💾 Save</button>
 		<button id="undo-btn">↩️ Undo</button>
 		<button id="redo-btn">↪️ Redo</button>
+		<button id="paste-btn">📥 Paste</button>
 		<button id="clear-storage-btn">🗑️ Clear</button>
+		<button id="image-upload-btn">🖼️ Upload Image</button>
 		<select id="github-example-select"></select>
 		<input type="file" id="file-input" class="file-input" accept=".html,.js,.txt">
+		<input type="file" id="image-input" class="file-input" accept="image/*">
 
 		<div class="spacer"></div>
 
@@ -280,7 +283,7 @@
 							scrollBeyondLastLine: false,
 							fontSize: 14,
 							lineNumbers: 'on',
-							wordWrap: 'on',
+							wordWrap: 'off',
 							folding: true,
 							lineDecorationsWidth: 10,
 							lineNumbersMinChars: 3,
@@ -322,7 +325,9 @@
 				document.getElementById('save-btn').addEventListener('click', () => this.saveFile())
 				document.getElementById('undo-btn').addEventListener('click', () => this.undo())
 				document.getElementById('redo-btn').addEventListener('click', () => this.redo())
+				document.getElementById('paste-btn').addEventListener('click', () => this.paste())
 				document.getElementById('clear-storage-btn').addEventListener('click', () => this.clearStorage())
+				document.getElementById('image-upload-btn').addEventListener('click', () => this.uploadImage())
 
 				// Setup GitHub example select (assumes <select id="github-example-select"> is in the toolbar in HTML)
 				const githubSelect = document.getElementById('github-example-select')
@@ -372,6 +377,9 @@
 
 				// File input
 				document.getElementById('file-input').addEventListener('change', (e) => this.handleFileLoad(e))
+
+				// Image input
+				document.getElementById('image-input').addEventListener('change', (e) => this.handleImageUpload(e))
 
 				// Keyboard shortcuts
 				document.addEventListener('keydown', (e) => {
@@ -869,6 +877,117 @@ console.log("test")
 
 			redo() {
 				this.editor.trigger('keyboard', 'redo', null)
+			}
+
+			async paste() {
+				try {
+					// Check if clipboard API is available
+					if (!navigator.clipboard) {
+						alert('Clipboard API not supported in this browser')
+						return
+					}
+
+					// Read text from clipboard
+					const clipboardText = await navigator.clipboard.readText()
+
+					if (clipboardText) {
+						// Get current cursor position
+						const position = this.editor.getPosition()
+
+						// Insert the clipboard content at cursor position
+						this.editor.executeEdits('paste', [{
+							range: {
+								startLineNumber: position.lineNumber,
+								startColumn: position.column,
+								endLineNumber: position.lineNumber,
+								endColumn: position.column
+							},
+							text: clipboardText,
+							forceMoveMarkers: true
+						}])
+
+						this.updateStatus('success', 'Content pasted')
+
+						setTimeout(() => {
+							this.updateStatus('success', 'Ready')
+						}, 2000)
+					} else {
+						this.updateStatus('error', 'No content in clipboard')
+
+						setTimeout(() => {
+							this.updateStatus('success', 'Ready')
+						}, 2000)
+					}
+				} catch (error) {
+					console.error('Error pasting content:', error)
+					this.updateStatus('error', 'Failed to paste content')
+
+					setTimeout(() => {
+						this.updateStatus('success', 'Ready')
+					}, 2000)
+				}
+			}
+
+			uploadImage() {
+				document.getElementById('image-input').click()
+			}
+
+			handleImageUpload(event) {
+				const file = event.target.files[0]
+				if (!file) return
+
+				// Check if it's an image file
+				if (!file.type.startsWith('image/')) {
+					alert('Please select an image file')
+					return
+				}
+
+				// Check file size (limit to 10MB)
+				if (file.size > 10 * 1024 * 1024) {
+					alert('Image file is too large. Please select an image smaller than 5MB.')
+					return
+				}
+
+				const reader = new FileReader()
+				reader.onload = (e) => {
+					const base64Data = e.target.result
+					alert(`Base64 Data URL:\n\n${base64Data}`)
+					// Try to copy Base64 data to clipboard
+					if (navigator.clipboard && window.isSecureContext) {
+						navigator.clipboard.writeText(`"${base64Data}"`).then(() => {
+							this.updateStatus('success', 'Image base64 copied to clipboard')
+						}).catch((err) => {
+							this.updateStatus('error', 'Failed to copy base64 to clipboard')
+							console.error('Clipboard copy failed:', err)
+						})
+					} else {
+						// fallback for older browsers or non-secure context
+						const textarea = document.createElement('textarea')
+						textarea.value = `"${base64Data}"`
+						textarea.style.position = 'fixed'
+						textarea.style.top = '-1000px'
+						document.body.appendChild(textarea)
+						textarea.focus()
+						textarea.select()
+						try {
+							document.execCommand('copy')
+							this.updateStatus('success', 'Image base64 copied to clipboard')
+						} catch (err) {
+							this.updateStatus('error', 'Failed to copy base64 to clipboard')
+							console.error('Clipboard fallback copy failed:', err)
+						}
+						document.body.removeChild(textarea)
+					}
+					this.updateStatus('success', 'Image uploaded successfully')
+
+					setTimeout(() => {
+						this.updateStatus('success', 'Ready')
+					}, 2000)
+				}
+				reader.readAsDataURL(file)
+
+				// Reset the input
+				event.target.value = ''
 			}
 		}
 

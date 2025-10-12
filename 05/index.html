@@ -1,200 +1,81 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Avoider — Simple Canvas Game</title>
-  <style>
-    :root{--bg:#0f1724;--fg:#e6f0ff;--accent:#06b6d4}
-    html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
-    body{display:grid;place-items:center;background:linear-gradient(180deg,#071028 0%,var(--bg) 100%);color:var(--fg)}
-    .frame{width:100%;max-width:900px;padding:18px;box-sizing:border-box}
-    h1{margin:0 0 8px;font-size:18px}
-    p{margin:0 0 12px;color:rgba(230,240,255,0.8)}
-    canvas{display:block;width:100%;height:560px;border-radius:8px;background:#071031;box-shadow:0 6px 30px rgba(2,6,23,0.6)}
-    .hud{display:flex;gap:12px;align-items:center;margin-top:10px}
-    .btn{background:transparent;border:1px solid rgba(230,240,255,0.08);padding:8px 12px;border-radius:6px;color:var(--fg);cursor:pointer}
-    .small{font-size:13px;color:rgba(230,240,255,0.75)}
-  </style>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<style>
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+			margin: 20px 0;
+		}
+	</style>
 </head>
 <body>
-  <div class="frame">
-    <h1>Avoider — Move the square, dodge the circles</h1>
-    <p class="small">Use arrow keys or WASD to move. Survive as long as possible — score increases with time. Click Start to play.</p>
-
-    <canvas id="game" width="900" height="560"></canvas>
-
-    <div class="hud">
-      <button id="startBtn" class="btn">Start</button>
-      <button id="pauseBtn" class="btn">Pause</button>
-      <div id="score" class="small">Score: 0</div>
-      <div id="lives" class="small">Lives: 3</div>
-    </div>
-  </div>
-
+<canvas id="myCanvas" width="500" height="500"></canvas>
 <script>
-(() => {
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  let W = canvas.width; let H = canvas.height;
 
-  // Player
-  const player = { x: W/2, y: H-80, w:24, h:24, speed: 280, dx:0, dy:0 };
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
 
-  // Enemies (falling circles)
-  let enemies = [];
-  let enemyTimer = 0; // spawn timer
-  let spawnInterval = 0.9; // seconds
+let panakX = 0
+let panakY = 0
+let coKreslit = "panak"
 
-  // Game state
-  let last = performance.now();
-  let running = false; let paused = false;
-  let score = 0; let lives = 3;
 
-  // Controls
-  const keys = {};
-  window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if(e.key===' '){ e.preventDefault(); } });
-  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+function kresli() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-  // UI
-  const scoreEl = document.getElementById('score');
-  const livesEl = document.getElementById('lives');
-  const startBtn = document.getElementById('startBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
+	// načítání obrázku - hroch
+	if (coKreslit == "hroch") {
+		let hroch = new Image()
+		hroch.onload = function() {
+			ctx.drawImage(hroch, 0, 0)
+		}
+		hroch.src = "https://mdn.github.io/shared-assets/images/examples/rhino.jpg";
+	}
 
-  startBtn.addEventListener('click', startGame);
-  pauseBtn.addEventListener('click', togglePause);
+	// načítání obrázku - panak
+	if (coKreslit == "panak") {
+		let panak = new Image()
+		panak.onload = function() {
+			ctx.drawImage(panak, panakX, panakY)
+		}
+		panak.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGkAAACrBAMAAACXjK+2AAAAElBMVEX/////gED//4CAAACAQAAAAP+BAh/EAAACiUlEQVR4nO3XW26kMBAFUCOL/yE7aFaA5MwKYAGRRt7/VqZjG6gql+HanU4009RXFHO4ZfNwY8xVT6khVRXqhhY2DA2sI+pXk8LTGELTeBQaFg4d73WrCAtRbyNhsBpHwpCwbou6FxxGota0ajViLXZCYWFpWmFqtyGp07CobiEveiSsCw2udABbzNTYpm6wIvOqUPsaVilxxV5ZvTWpoU2xMOhRGWQY/IA1vAPiG4a9cIC31JAXoOQbG3wjtqmcISjrsWkzwvfL6v5SWReqhhjjSNUmxZpaouAwyxUY5lxDmESQSv0tyzJXtBgOfF9SoWFrUqw17yTQsqgUdhrIo0hYge2X6V1Vao/k2i6qUsOcGkUmpoW5kpoPGL33lkxNRu/RHSqnP6Y0ijcYJ7YeMSlRcUxXSo/WkSGp5jiUh9n1H/m0NpWHbWcpqW2Qhm0nURrcleVhFlP7RHiDqlr2Q1nYuXIFZRBlhZogRc4fznCkZn7oQ8rVKbKe5kRNUtlmNYHK4GrRlLhyX6ncl6npGWp+HWV/UGVv0aIyj6vDh3lV9DZUdyL1jsqUuj0cquKmoiixu2jbnnwqLdvJtImRxSB3lNw1CxvzOm6UUibGZq7/nMrVzNdLLbkczs18vdQSE3OxEOUkOv/lS1ucq9TKHNhg9r0BqvzbAfpB/6clyviWKONlGPQp5WUYgu7K16NP5auR6e/K1qKgtosGf8EGlcJ+oyiqdGf5WhWX5RvVx3+o+n9CwehSl7rUpR5S3/lme/b+5alCW/Sb6j2c5qXa0noZvJ+RHhn/psXQfj17NpopFrb9QwxmYZlSG5HsSH0UR7J5FU7YF0f4KQ+G+Ag7o8Grb0HZmr9k/QUNXbEN5WXX2gAAAABJRU5ErkJggg=="
+	}
+}
 
-  function reset() {
-    enemies = [];
-    enemyTimer = 0;
-    spawnInterval = 0.9;
-    score = 0;
-    lives = 3;
-    player.x = W/2; player.y = H-80;
-    running = true; paused = false;
-    last = performance.now();
-    requestAnimationFrame(loop);
-  }
+window.addEventListener("keydown", function(event) {
+	// změna obrázku
+	if (event.key === "h") {
+		coKreslit = "hroch"
+	}
+	if (event.key === "p") {
+		coKreslit = "panak"
+	}
 
-  function startGame(){ reset(); }
-  function togglePause(){ if(!running) return; paused = !paused; }
+	// pohyb panáka
+	if (event.key == "ArrowUp") {
+		panakY = panakY - 20
+	}
+	if (event.key == "ArrowDown") {
+		panakY = panakY + 20
+	}
+	if (event.key == "ArrowLeft") {
+		panakX = panakX - 20
+	}
+	if (event.key == "ArrowRight") {
+		panakX = panakX + 20
+	}
 
-  function spawnEnemy(){
-    const r = 12 + Math.random()*18;
-    enemies.push({ x: Math.random()*(W - r*2) + r, y: -r, r, vy: 80 + Math.random()*160 });
-  }
+	// nakonec vše nakreslíme
+	console.log("x: " + panakX + ", y: " + panakY)
+	kresli()
+})
 
-  function update(dt){
-    if(paused || !running) return;
+kresli()
 
-    // controls
-    let moveX = 0, moveY = 0;
-    if(keys['arrowleft'] || keys['a']) moveX = -1;
-    if(keys['arrowright'] || keys['d']) moveX = 1;
-    if(keys['arrowup'] || keys['w']) moveY = -1;
-    if(keys['arrowdown'] || keys['s']) moveY = 1;
-    const mag = Math.hypot(moveX, moveY) || 1;
-    player.x += (moveX/mag)*player.speed*dt;
-    player.y += (moveY/mag)*player.speed*dt;
-    // clamp
-    player.x = Math.max(player.w/2, Math.min(W-player.w/2, player.x));
-    player.y = Math.max(player.h/2, Math.min(H-player.h/2, player.y));
-
-    // spawn
-    enemyTimer += dt;
-    if(enemyTimer > spawnInterval){ enemyTimer -= spawnInterval; spawnEnemy(); spawnInterval = Math.max(0.35, spawnInterval*0.995); }
-
-    // update enemies
-    for(let i=enemies.length-1;i>=0;i--){
-      const e = enemies[i];
-      e.y += e.vy*dt;
-      // remove offscreen
-      if(e.y - e.r > H) enemies.splice(i,1);
-      else {
-        // collision with player (AABB vs circle)
-        const nearestX = Math.max(player.x - player.w/2, Math.min(e.x, player.x + player.w/2));
-        const nearestY = Math.max(player.y - player.h/2, Math.min(e.y, player.y + player.h/2));
-        const dx = e.x - nearestX; const dy = e.y - nearestY;
-        if(dx*dx + dy*dy <= e.r*e.r){
-          // hit
-          enemies.splice(i,1);
-          lives -= 1;
-          if(lives <= 0){ running = false; }
-        }
-      }
-    }
-
-    // score
-    score += dt * 10;
-    scoreEl.textContent = 'Score: ' + Math.floor(score);
-    livesEl.textContent = 'Lives: ' + lives;
-  }
-
-  function draw(){
-    // background
-    ctx.clearRect(0,0,W,H);
-    // subtle grid
-    ctx.save();
-    ctx.globalAlpha = 0.06;
-    for(let x=0;x<W;x+=40){ ctx.fillStyle='#0b2033'; ctx.fillRect(x,0,1,H); }
-    for(let y=0;y<H;y+=40){ ctx.fillStyle='#0b2033'; ctx.fillRect(0,y,W,1); }
-    ctx.restore();
-
-    // player
-    ctx.fillStyle = '#06b6d4';
-    ctx.fillRect(player.x - player.w/2, player.y - player.h/2, player.w, player.h);
-
-    // enemies
-    for(const e of enemies){
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.fillStyle = '#ff7b7b'; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.stroke();
-    }
-
-    // HUD overlay messages
-    if(!running){
-      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(W/2 - 180, H/2 - 60, 360, 120);
-      ctx.fillStyle = '#e6f0ff'; ctx.font = '20px system-ui'; ctx.textAlign='center';
-      ctx.fillText('Game Over', W/2, H/2 - 6);
-      ctx.font = '14px system-ui'; ctx.fillText('Click Start to play again — Score: ' + Math.floor(score), W/2, H/2 + 22);
-    } else if(paused){
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(W/2 - 140, H/2 - 44, 280, 88);
-      ctx.fillStyle = '#e6f0ff'; ctx.font = '18px system-ui'; ctx.fillText('Paused', W/2, H/2 + 6);
-    }
-  }
-
-  function loop(ts){
-    const dt = Math.min(0.05, (ts - last)/1000);
-    last = ts;
-    update(dt);
-    draw();
-    if(running) requestAnimationFrame(loop);
-  }
-
-  // resize canvas to fit container width while keeping internal resolution
-  function fitCanvas(){
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = rect.width / W;
-    const scaleY = rect.height / H;
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-  }
-  // adjust when window resizes
-  new ResizeObserver(fitCanvas).observe(canvas.parentElement);
-  fitCanvas();
-
-  // allow clicking canvas to give focus
-  canvas.addEventListener('click', () => canvas.focus());
-
-  // start paused initially
-  paused = true; running = false;
-
-  // keyboard for pause (P)
-  window.addEventListener('keydown', e => { if(e.key.toLowerCase()==='p'){ togglePause(); } });
-
-  // friendly tip: start when ready
-  scoreEl.textContent = 'Score: 0'; livesEl.textContent = 'Lives: 3';
-})();
 </script>
 </body>
 </html>
