@@ -48,7 +48,8 @@ function kresli() {
 
 // handler na obsluhu klávesnice
 window.addEventListener("keydown", function(event) {
-	console.log(event.key)
+	console.log('key: ' + event.key)
+	console.log('code: ' + event.code)
 
 	// změna obrázku
 	if (event.key === "h") {
