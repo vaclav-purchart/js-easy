@@ -23,7 +23,7 @@ let panakX = 0
 let panakY = 0
 let coKreslit = "panak"
 
-
+// sem přijde všechno kreslení
 function kresli() {
 	ctx.clearRect(0, 0, canvas.width, canvas.height)
 
@@ -46,7 +46,10 @@ function kresli() {
 	}
 }
 
+// handler na obsluhu klávesnice
 window.addEventListener("keydown", function(event) {
+	console.log(event.key)
+
 	// změna obrázku
 	if (event.key === "h") {
 		coKreslit = "hroch"
