@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
+	<style>
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+		}
+	</style>
+</head>
+<body>
+<canvas id="myCanvas" width="500" height="500"></canvas>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+// jen něco dělá
+function kresli() {
+	ctx.fillStyle = "red"
+	ctx.font = "80px Creepster, system-ui"
+	ctx.fillText("HALLOWEEN", 100, 280)
+}
+setTimeout(kresli, 1000)
+// kresli() // zavoláme -> vykonáme
+
+
+// vrací hodnotu
+function secti(a, b) {
+	return a + b
+}
+// volání
+let soucet = secti(3, 5)
+console.log("soucet 3 + 5 =", soucet)
+
+let dyni = 0
+
+// funkce jako parametr
+window.addEventListener('click', function(event) {
+	console.log(event)
+	if (event.x < 250) ctx.fillStyle = "red"
+	else ctx.fillStyle = "blue"
+	ctx.font = "50px Creepster, system-ui"
+	dyni = dyni + 1
+	ctx.fillStyle = "white"
+	ctx.fillRect(0, 0, 200, 50)
+	ctx.fillStyle = "blue"
+	ctx.fillText("dyni: " + dyni, 0,40)
+	ctx.fillText("🎃", event.x, event.y)
+})
+
+
+</script>
+</body>
+</html>
