@@ -23,28 +23,37 @@ let ctx = canvas.getContext("2d")
 
 // jen něco dělá
 function kresli() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
 	ctx.fillStyle = "red"
 	ctx.font = "80px Creepster, system-ui"
 	ctx.fillText("HALLOWEEN", 100, 280)
 }
 setTimeout(kresli, 1000)
-// kresli() // zavoláme -> vykonáme
+kresli() // zavoláme -> vykonáme
 
 let dyni = 0
 
-// funkce jako parametr
-window.addEventListener('click', function(event) {
-	console.log(event)
-	if (event.x < 250) ctx.fillStyle = "red"
-	else ctx.fillStyle = "blue"
-	ctx.font = "50px Creepster, system-ui"
-	dyni = dyni + 1
+// obsluha klikání myší
+function klikani(event) {
+	// když kliknete mimo canvas, tak nic nedělej
+	if (event.x > 500 || event.y > 500) return
+
+	// smažeme text
 	ctx.fillStyle = "white"
 	ctx.fillRect(0, 0, 200, 50)
+
+	// přidáme text
+	dyni = dyni + 1
+	ctx.font = "50px Creepster, system-ui"
 	ctx.fillStyle = "blue"
-	ctx.fillText("dyni: " + dyni, 0,40)
+	ctx.fillText("dyni: " + dyni, 0, 40)
+
+	// přidáme hlavu
 	ctx.fillText("🎃", event.x, event.y)
-})
+}
+
+// funkce jako parametr
+window.addEventListener('click', klikani)
 
 
 </script>
