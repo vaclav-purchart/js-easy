@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<style>
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+			margin: 20px 0;
+		}
+		button {
+			width: 100px;
+			height: 100px;
+		}
+	</style>
+</head>
+<body>
+<button onclick="panakX = panakX - krok; pohyb({})">⬅️</button>
+<button onclick="panakX = panakX + krok; pohyb({})">➡️</button>
+<button onclick="panakY = panakY - krok; pohyb({})">⬆️</button>
+<button onclick="panakY = panakY + krok; pohyb({})">⬇️</button>
+<canvas id="myCanvas" width="500" height="500"></canvas>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+let panakX = 100
+let panakY = 0
+let coKreslit = "panak"
+
+let jablkox = 240
+let jablkoy = 360
+let jablek = 0
+
+let krok = 10
+let vteriny = 0
+
+// sem přijde všechno kreslení
+function kresli() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+	if (vteriny > 60) {
+		ctx.fillStyle = "black"
+		ctx.font = "48px serif"
+		ctx.fillText("score " + jablek, 200, 200)
+	
+		return
+	}
+
+	// načítání obrázku - hroch
+	if (coKreslit == "hroch") {
+	let hroch = new Image()
+		hroch.onload = function() {
+			ctx.drawImage(hroch, 0, 0)
+		}
+		hroch.src = "https://mdn.github.io/shared-assets/images/examples/rhino.jpg";
+	}
+
+	// načítání obrázku - panak
+	if (coKreslit == "panak") {
+		let panak = new Image()
+		panak.onload = function() {
+			ctx.drawImage(panak, panakX, panakY)
+		}
+		panak.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGkAAACrBAMAAACXjK+2AAAAElBMVEX/////gED//4CAAACAQAAAAP+BAh/EAAACiUlEQVR4nO3XW26kMBAFUCOL/yE7aFaA5MwKYAGRRt7/VqZjG6gql+HanU4009RXFHO4ZfNwY8xVT6khVRXqhhY2DA2sI+pXk8LTGELTeBQaFg4d73WrCAtRbyNhsBpHwpCwbou6FxxGota0ajViLXZCYWFpWmFqtyGp07CobiEveiSsCw2udABbzNTYpm6wIvOqUPsaVilxxV5ZvTWpoU2xMOhRGWQY/IA1vAPiG4a9cIC31JAXoOQbG3wjtqmcISjrsWkzwvfL6v5SWReqhhjjSNUmxZpaouAwyxUY5lxDmESQSv0tyzJXtBgOfF9SoWFrUqw17yTQsqgUdhrIo0hYge2X6V1Vao/k2i6qUsOcGkUmpoW5kpoPGL33lkxNRu/RHSqnP6Y0ijcYJ7YeMSlRcUxXSo/WkSGp5jiUh9n1H/m0NpWHbWcpqW2Qhm0nURrcleVhFlP7RHiDqlr2Q1nYuXIFZRBlhZogRc4fznCkZn7oQ8rVKbKe5kRNUtlmNYHK4GrRlLhyX6ncl6npGWp+HWV/UGVv0aIyj6vDh3lV9DZUdyL1jsqUuj0cquKmoiixu2jbnnwqLdvJtImRxSB3lNw1CxvzOm6UUibGZq7/nMrVzNdLLbkczs18vdQSE3OxEOUkOv/lS1ucq9TKHNhg9r0BqvzbAfpB/6clyviWKONlGPQp5WUYgu7K16NP5auR6e/K1qKgtosGf8EGlcJ+oyiqdGf5WhWX5RvVx3+o+n9CwehSl7rUpR5S3/lme/b+5alCW/Sb6j2c5qXa0noZvJ+RHhn/psXQfj17NpopFrb9QwxmYZlSG5HsSH0UR7J5FU7YF0f4KQ+G+Ag7o8Grb0HZmr9k/QUNXbEN5WXX2gAAAABJRU5ErkJggg=="
+	}
+
+	ctx.fillStyle = "black"
+	ctx.font = "48px serif"
+	ctx.fillText("🍎", jablkox, jablkoy)
+
+	ctx.fillText(">" + panakX + " " + panakY, 0, 50)
+	ctx.fillText(">" + jablkox + " " + jablkoy, 0, 100)
+	ctx.fillText(">" + vteriny, 0, 150)
+}
+
+// handler na obsluhu klávesnice
+function pohyb(event) {
+	console.log('key: ' + event.key)
+	console.log('code: ' + event.code)
+
+	// změna obrázku
+	if (event.key === "h") {
+		coKreslit = "hroch"
+	}
+	if (event.key === "p") {
+		coKreslit = "panak"
+	}
+
+	// pohyb panáka
+	if (event.key == "ArrowUp") {
+		panakY = panakY - krok
+	}
+	if (event.key == "ArrowDown") {
+		panakY = panakY + krok
+	}
+	if (event.key == "ArrowLeft") {
+		panakX = panakX - krok
+	}
+	if (event.key == "ArrowRight") {
+		panakX = panakX + krok
+	}
+
+	if (
+		jablkox < panakX ||
+		jablkox > panakX + 100 ||
+		jablkoy < panakY ||
+		jablkoy > panakY + 200
+	) { }
+	else {
+		jablkox = Math.round(Math.random() * 450)
+		jablkoy = Math.round(Math.random() * 450)
+		jablek = jablek + 1
+	}
+
+	// nakonec vše nakreslíme
+	console.log("x: " + panakX + ", y: " + panakY)
+	kresli()
+}
+
+window.addEventListener("keydown", pohyb)
+
+
+setInterval(function cas() {
+	vteriny = vteriny + 1
+	kresli()
+}, 1000)
+
+kresli()
+
+</script>
+</body>
+</html>
