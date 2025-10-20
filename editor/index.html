@@ -201,6 +201,7 @@
 		<button id="save-btn">💾 Save</button>
 		<button id="undo-btn">↩️ Undo</button>
 		<button id="redo-btn">↪️ Redo</button>
+		<button id="copy-btn">📋 Copy</button>
 		<button id="paste-btn">📥 Paste</button>
 		<button id="clear-storage-btn">🗑️ Clear</button>
 		<button id="image-upload-btn">🖼️ Upload Image</button>
@@ -325,6 +326,7 @@
 				document.getElementById('save-btn').addEventListener('click', () => this.saveFile())
 				document.getElementById('undo-btn').addEventListener('click', () => this.undo())
 				document.getElementById('redo-btn').addEventListener('click', () => this.redo())
+				document.getElementById('copy-btn').addEventListener('click', () => this.copy())
 				document.getElementById('paste-btn').addEventListener('click', () => this.paste())
 				document.getElementById('clear-storage-btn').addEventListener('click', () => this.clearStorage())
 				document.getElementById('image-upload-btn').addEventListener('click', () => this.uploadImage())
@@ -339,15 +341,38 @@
 					githubSelect.appendChild(defaultOption)
 					for (let i = 1; i <= 20; i++) {
 						const opt = document.createElement('option')
-						opt.value = i
-						opt.textContent = `${i.toString().padStart(2, '0')}/index.html`
+						const file = `${i.toString().padStart(2, '0')}/index.html`
+						opt.value = file
+						opt.textContent = file
 						githubSelect.appendChild(opt)
 					}
+
+					const customFiles = [
+						'------------------',
+						'01/house-colored.html',
+						'06/index-after.html',
+						'students/vasik-06.html',
+					]
+
+					for (const file of customFiles) {
+						const opt = document.createElement('option')
+						opt.value = file
+						opt.textContent = file
+						githubSelect.appendChild(opt)
+					}
+
 
 					githubSelect.addEventListener('change', async (e) => {
 						const val = e.target.value
 						if (!val) return
-						const url = `https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/${val.toString().padStart(2, '0')}/index.html`
+						const url = `https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/${val}`
+						console.log('fetching', url)
+						const previewFrame = document.getElementById('preview-frame')
+
+						if (previewFrame && typeof previewFrame.focus === "function") {
+							previewFrame.focus()
+						}
+
 						try {
 							const resp = await fetch(url)
 							if (!resp.ok) {
@@ -879,16 +904,15 @@ console.log("test")
 				this.editor.trigger('keyboard', 'redo', null)
 			}
 
-			async paste() {
-				try {
-					// Check if clipboard API is available
-					if (!navigator.clipboard) {
-						alert('Clipboard API not supported in this browser')
-						return
-					}
+			copy() {
+				const code = this.editor.getValue()
+				navigator.clipboard.writeText(code)
+				this.updateStatus('success', 'Content copied to clipboard')
+			}
 
-					// Read text from clipboard
-					const clipboardText = await navigator.clipboard.readText()
+			paste() {
+				try {
+					const clipboardText = navigator.clipboard.readText()
 
 					if (clipboardText) {
 						// Get current cursor position
