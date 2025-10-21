@@ -905,14 +905,18 @@ console.log("test")
 			}
 
 			copy() {
-				const code = this.editor.getValue()
-				navigator.clipboard.writeText(code)
-				this.updateStatus('success', 'Content copied to clipboard')
+				const selection = this.editor.getModel().getValueInRange(this.editor.getSelection())
+				if (selection && selection.length > 0) {
+					navigator.clipboard.writeText(selection)
+					this.updateStatus('success', 'Selected text copied to clipboard')
+				} else {
+					this.updateStatus('error', 'No text selected')
+				}
 			}
 
-			paste() {
+			async paste() {
 				try {
-					const clipboardText = navigator.clipboard.readText()
+					const clipboardText = await navigator.clipboard.readText()
 
 					if (clipboardText) {
 						// Get current cursor position
