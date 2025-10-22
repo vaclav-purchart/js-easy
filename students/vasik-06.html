@@ -106,6 +106,7 @@ function pohyb(event) {
 		panakX = panakX + krok
 	}
 
+	// když je panák na jablku, tak změní pozici jablka
 	if (
 		jablkox < panakX ||
 		jablkox > panakX + 100 ||
@@ -126,6 +127,7 @@ function pohyb(event) {
 window.addEventListener("keydown", pohyb)
 
 
+// jednou za vteřínu zavolá funkci
 setInterval(function cas() {
 	vteriny = vteriny + 1
 	kresli()
