@@ -324,11 +324,66 @@
 			color: #856404;
 			border: 1px solid #ffeeba;
 		}
+
+	/* Fullscreen styles */
+	.fullscreen-preview {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		z-index: 9999;
+		background: white;
+		display: none;
+	}
+
+	.fullscreen-preview.active {
+		display: block;
+	}
+
+	.fullscreen-preview iframe {
+		width: 100%;
+		height: 100%;
+		border: none;
+	}
+
+	.fullscreen-close-btn {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		width: 50px;
+		height: 50px;
+		background: rgba(255, 0, 0, 0.8);
+		color: white;
+		border: 2px solid white;
+		border-radius: 50%;
+		cursor: pointer;
+		font-size: 30px;
+		font-weight: bold;
+		line-height: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 10001;
+		transition: all 0.2s;
+		box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+	}
+
+	.fullscreen-close-btn:hover {
+		background: rgba(255, 0, 0, 1);
+		transform: scale(1.1);
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
+	}
+
+	.fullscreen-close-btn:active {
+		transform: scale(0.95);
+	}
 	</style>
 </head>
 <body>
 	<div class="toolbar">
 		<button id="send-btn">✉️ Send</button>
+		<button id="fullscreen-btn">📱 Fullscreen</button>
 		<button id="new-btn">📋 New</button>
 		<button id="load-btn">📂 Load</button>
 		<button id="save-btn">💾 Save</button>
@@ -398,6 +453,12 @@
 				<button id="send-submit-btn" class="modal-btn modal-btn-primary">Send</button>
 			</div>
 		</div>
+	</div>
+
+	<!-- Fullscreen Preview -->
+	<div id="fullscreen-container" class="fullscreen-preview">
+		<button id="fullscreen-close-btn" class="fullscreen-close-btn" title="Close fullscreen">×</button>
+		<iframe id="fullscreen-frame" src="about:blank"></iframe>
 	</div>
 
 	<!-- Monaco Editor -->
@@ -477,6 +538,7 @@
 			setupEventListeners() {
 				// Toolbar buttons
 				document.getElementById('send-btn').addEventListener('click', () => this.showSendDialog())
+				document.getElementById('fullscreen-btn').addEventListener('click', () => this.showFullscreen())
 				document.getElementById('new-btn').addEventListener('click', () => this.newFile())
 				document.getElementById('load-btn').addEventListener('click', () => this.loadFile())
 				document.getElementById('save-btn').addEventListener('click', () => this.saveFile())
@@ -565,6 +627,9 @@
 				// Send modal buttons
 				document.getElementById('send-cancel-btn').addEventListener('click', () => this.closeSendDialog())
 				document.getElementById('send-submit-btn').addEventListener('click', () => this.sendToServer())
+
+				// Fullscreen close button
+				document.getElementById('fullscreen-close-btn').addEventListener('click', () => this.closeFullscreen())
 
 				// Close modal on overlay click
 				document.getElementById('send-modal').addEventListener('click', (e) => {
@@ -1228,6 +1293,39 @@ console.log("test")
 				} else {
 					userNameInput.focus()
 				}
+			}
+
+			// Fullscreen Methods
+			showFullscreen() {
+				const code = this.editor.getValue()
+				const fullscreenContainer = document.getElementById('fullscreen-container')
+				const fullscreenFrame = document.getElementById('fullscreen-frame')
+
+				// Create a blob URL for the HTML content
+				const blob = new Blob([code], { type: 'text/html' })
+				const url = URL.createObjectURL(blob)
+
+				// Set the iframe source
+				fullscreenFrame.src = url
+
+				// Show fullscreen container
+				fullscreenContainer.classList.add('active')
+
+				// Clean up the blob URL after loading
+				fullscreenFrame.onload = () => {
+					URL.revokeObjectURL(url)
+				}
+			}
+
+			closeFullscreen() {
+				const fullscreenContainer = document.getElementById('fullscreen-container')
+				const fullscreenFrame = document.getElementById('fullscreen-frame')
+
+				// Hide fullscreen container
+				fullscreenContainer.classList.remove('active')
+
+				// Clear the iframe to stop any running scripts
+				fullscreenFrame.src = 'about:blank'
 			}
 
 			closeSendDialog() {
