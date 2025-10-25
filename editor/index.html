@@ -192,10 +192,143 @@
 			width: 16px;
 			height: 16px;
 		}
+
+		/* Modal Dialog Styles */
+		.modal-overlay {
+			display: none;
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			background: rgba(0, 0, 0, 0.5);
+			z-index: 1000;
+			justify-content: center;
+			align-items: center;
+		}
+
+		.modal-overlay.active {
+			display: flex;
+		}
+
+		.modal-dialog {
+			background: white;
+			border-radius: 8px;
+			padding: 24px;
+			width: 90%;
+			max-width: 400px;
+			box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+		}
+
+		.modal-header {
+			font-size: 18px;
+			font-weight: 600;
+			margin-bottom: 20px;
+			color: #333;
+		}
+
+		.modal-body {
+			margin-bottom: 20px;
+		}
+
+		.modal-field {
+			margin-bottom: 16px;
+		}
+
+		.modal-field label {
+			display: block;
+			margin-bottom: 6px;
+			font-size: 14px;
+			color: #555;
+			font-weight: 500;
+		}
+
+		.modal-field input {
+			width: 100%;
+			padding: 8px 12px;
+			border: 1px solid #ddd;
+			border-radius: 4px;
+			font-size: 14px;
+			box-sizing: border-box;
+		}
+
+		.modal-field input:focus {
+			outline: none;
+			border-color: #0e639c;
+			box-shadow: 0 0 0 2px rgba(14, 99, 156, 0.1);
+		}
+
+		.modal-footer {
+			display: flex;
+			justify-content: flex-end;
+			gap: 10px;
+		}
+
+		.modal-btn {
+			padding: 8px 16px;
+			border: none;
+			border-radius: 4px;
+			font-size: 14px;
+			cursor: pointer;
+			transition: background 0.2s;
+		}
+
+		.modal-btn-primary {
+			background: #0e639c;
+			color: white;
+		}
+
+		.modal-btn-primary:hover:not(:disabled) {
+			background: #1177bb;
+		}
+
+		.modal-btn-primary:disabled {
+			background: #ccc;
+			cursor: not-allowed;
+		}
+
+		.modal-btn-secondary {
+			background: #e9ecef;
+			color: #333;
+		}
+
+		.modal-btn-secondary:hover {
+			background: #dee2e6;
+		}
+
+		.modal-status {
+			margin-top: 12px;
+			padding: 8px 12px;
+			border-radius: 4px;
+			font-size: 13px;
+			display: none;
+		}
+
+		.modal-status.success {
+			display: block;
+			background: #d4edda;
+			color: #155724;
+			border: 1px solid #c3e6cb;
+		}
+
+		.modal-status.error {
+			display: block;
+			background: #f8d7da;
+			color: #721c24;
+			border: 1px solid #f5c6cb;
+		}
+
+		.modal-status.sending {
+			display: block;
+			background: #fff3cd;
+			color: #856404;
+			border: 1px solid #ffeeba;
+		}
 	</style>
 </head>
 <body>
 	<div class="toolbar">
+		<button id="send-btn">✉️ Send</button>
 		<button id="new-btn">📋 New</button>
 		<button id="load-btn">📂 Load</button>
 		<button id="save-btn">💾 Save</button>
@@ -241,6 +374,28 @@
 			</div>
 			<div class="preview-content">
 				<iframe id="preview-frame" src="about:blank"></iframe>
+			</div>
+		</div>
+	</div>
+
+	<!-- Send Modal Dialog -->
+	<div id="send-modal" class="modal-overlay">
+		<div class="modal-dialog">
+			<div class="modal-header">Send Project to Server</div>
+			<div class="modal-body">
+				<div class="modal-field">
+					<label for="user-name-input">User Name:</label>
+					<input type="text" id="user-name-input" placeholder="Enter your name">
+				</div>
+				<div class="modal-field">
+					<label for="project-name-input">Project Name:</label>
+					<input type="text" id="project-name-input" placeholder="Enter project name">
+				</div>
+				<div id="send-status" class="modal-status"></div>
+			</div>
+			<div class="modal-footer">
+				<button id="send-cancel-btn" class="modal-btn modal-btn-secondary">Cancel</button>
+				<button id="send-submit-btn" class="modal-btn modal-btn-primary">Send</button>
 			</div>
 		</div>
 	</div>
@@ -321,6 +476,7 @@
 
 			setupEventListeners() {
 				// Toolbar buttons
+				document.getElementById('send-btn').addEventListener('click', () => this.showSendDialog())
 				document.getElementById('new-btn').addEventListener('click', () => this.newFile())
 				document.getElementById('load-btn').addEventListener('click', () => this.loadFile())
 				document.getElementById('save-btn').addEventListener('click', () => this.saveFile())
@@ -405,6 +561,31 @@
 
 				// Image input
 				document.getElementById('image-input').addEventListener('change', (e) => this.handleImageUpload(e))
+
+				// Send modal buttons
+				document.getElementById('send-cancel-btn').addEventListener('click', () => this.closeSendDialog())
+				document.getElementById('send-submit-btn').addEventListener('click', () => this.sendToServer())
+
+				// Close modal on overlay click
+				document.getElementById('send-modal').addEventListener('click', (e) => {
+					if (e.target.id === 'send-modal') {
+						this.closeSendDialog()
+					}
+				})
+
+				// Handle Enter key in modal inputs
+				const userNameInput = document.getElementById('user-name-input')
+				const projectNameInput = document.getElementById('project-name-input')
+				userNameInput.addEventListener('keypress', (e) => {
+					if (e.key === 'Enter') {
+						projectNameInput.focus()
+					}
+				})
+				projectNameInput.addEventListener('keypress', (e) => {
+					if (e.key === 'Enter') {
+						this.sendToServer()
+					}
+				})
 
 				// Keyboard shortcuts
 				document.addEventListener('keydown', (e) => {
@@ -1016,6 +1197,129 @@ console.log("test")
 
 				// Reset the input
 				event.target.value = ''
+			}
+
+			// Send Dialog Methods
+			showSendDialog() {
+				const modal = document.getElementById('send-modal')
+				const userNameInput = document.getElementById('user-name-input')
+				const projectNameInput = document.getElementById('project-name-input')
+				const statusDiv = document.getElementById('send-status')
+
+				// Load saved values from localStorage
+				const savedUserName = localStorage.getItem('js-easy-user-name') || ''
+				const savedProjectName = localStorage.getItem('js-easy-project-name') || ''
+
+				userNameInput.value = savedUserName
+				projectNameInput.value = savedProjectName
+
+				// Clear status
+				statusDiv.className = 'modal-status'
+				statusDiv.textContent = ''
+
+				// Show modal
+				modal.classList.add('active')
+
+				// Focus on first empty field or user name
+				if (!savedUserName) {
+					userNameInput.focus()
+				} else if (!savedProjectName) {
+					projectNameInput.focus()
+				} else {
+					userNameInput.focus()
+				}
+			}
+
+			closeSendDialog() {
+				const modal = document.getElementById('send-modal')
+				modal.classList.remove('active')
+			}
+
+			async sendToServer() {
+				const userNameInput = document.getElementById('user-name-input')
+				const projectNameInput = document.getElementById('project-name-input')
+				const submitBtn = document.getElementById('send-submit-btn')
+				const statusDiv = document.getElementById('send-status')
+
+				const userName = userNameInput.value.trim()
+				const projectName = projectNameInput.value.trim()
+
+				// Validate inputs
+				if (!userName) {
+					statusDiv.className = 'modal-status error'
+					statusDiv.textContent = 'Please enter your user name'
+					userNameInput.focus()
+					return
+				}
+
+				if (!projectName) {
+					statusDiv.className = 'modal-status error'
+					statusDiv.textContent = 'Please enter a project name'
+					projectNameInput.focus()
+					return
+				}
+
+				// Save to localStorage
+				localStorage.setItem('js-easy-user-name', userName)
+				localStorage.setItem('js-easy-project-name', projectName)
+
+				// Get editor content
+				const code = this.editor.getValue()
+
+				// Show sending state
+				statusDiv.className = 'modal-status sending'
+				statusDiv.textContent = 'Sending...'
+				submitBtn.disabled = true
+
+				try {
+					// Send to server
+					const response = await fetch('/api/send', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json'
+						},
+						body: JSON.stringify({
+							userName: userName,
+							projectName: projectName,
+							code: code
+						})
+					})
+
+					if (response.ok) {
+						const data = await response.json()
+
+						if (data.result === 'ok') {
+							// Success
+							statusDiv.className = 'modal-status success'
+							statusDiv.textContent = 'Successfully sent to server!'
+
+							// Update main status
+							this.updateStatus('success', 'Project sent successfully')
+
+							// Close dialog after 2 seconds
+							setTimeout(() => {
+								this.closeSendDialog()
+								this.updateStatus('success', 'Ready')
+							}, 2000)
+						} else {
+							// Unexpected response
+							statusDiv.className = 'modal-status error'
+							statusDiv.textContent = 'Unexpected server response'
+							submitBtn.disabled = false
+						}
+					} else {
+						// HTTP error
+						statusDiv.className = 'modal-status error'
+						statusDiv.textContent = `Server error: ${response.status} ${response.statusText}`
+						submitBtn.disabled = false
+					}
+				} catch (error) {
+					// Network or other error
+					console.error('Error sending to server:', error)
+					statusDiv.className = 'modal-status error'
+					statusDiv.textContent = `Error: ${error.message}`
+					submitBtn.disabled = false
+				}
 			}
 		}
 
