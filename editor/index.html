@@ -557,7 +557,7 @@
 					defaultOption.value = ''
 					defaultOption.textContent = 'Load'
 					githubSelect.appendChild(defaultOption)
-					for (let i = 1; i <= 20; i++) {
+					for (let i = 3; i <= 20; i++) {
 						const opt = document.createElement('option')
 						const file = `${i.toString().padStart(2, '0')}/index.html`
 						opt.value = file
@@ -1398,6 +1398,7 @@ console.log("test")
 							setTimeout(() => {
 								this.closeSendDialog()
 								this.updateStatus('success', 'Ready')
+								submitBtn.disabled = false
 							}, 2000)
 						} else {
 							// Unexpected response
