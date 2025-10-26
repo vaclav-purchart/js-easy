@@ -379,6 +379,9 @@
 		transform: scale(0.95);
 	}
 	</style>
+	<!-- ESLint for browser -->
+	<script src="https://cdn.jsdelivr.net/npm/eslint-linter-browserify@9.11.1/linter.js"></script>
+
 </head>
 <body>
 	<div class="toolbar">
@@ -463,7 +466,6 @@
 
 	<!-- Monaco Editor -->
 	<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs/loader.js"></script>
-	<!-- <script src="https://cdn.jsdelivr.net/npm/eslint-linter-browserify/linter.min.js"></script> -->
 
 	<script>
 		console.log('JavaScript is running!')
@@ -531,9 +533,18 @@
 			}
 
 			initESLint() {
-				// this.eslint = new eslint.Linter()
+				try {
+					// Initialize ESLint linter
+					if (typeof eslint !== 'undefined' && eslint.Linter) {
+						this.eslint = new eslint.Linter()
+						console.log('ESLint initialized successfully')
+					} else {
+						console.warn('ESLint not available - check browser console for loading issues')
+					}
+				} catch (error) {
+					console.error('Failed to initialize ESLint:', error)
+				}
 			}
-
 
 			setupEventListeners() {
 				// Toolbar buttons
@@ -825,7 +836,8 @@ console.log("test")
 				this.updateTimeout = setTimeout(() => {
 					this.updatePreview()
 					this.saveToLocalStorage() // Auto-save to localStorage
-					this.checkESLint()
+					this.checkJavaScriptErrors() // Simple syntax checking
+					this.checkESLint() // ESLint checking (if available)
 				}, 300)
 			}
 
@@ -977,17 +989,336 @@ console.log("test")
 				}
 			}
 
-			checkESLint() {
-				if (!this.eslint) { return }
+			checkJavaScriptErrors() {
+				try {
+					const code = this.editor.getValue()
+					const model = this.editor.getModel()
+					const markers = []
 
-				const code = this.editor.getValue()
-				const results = this.eslint.lintText(code, {
-					rules: {
-						'no-unused-vars': 'error',
-						'no-undef': 'error',
-					},
+					// Extract JavaScript from script tags
+					const scriptRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi
+					let match
+
+					while ((match = scriptRegex.exec(code)) !== null) {
+						const scriptContent = match[1]
+						const scriptStartIndex = match.index + match[0].indexOf('>') + 1
+
+						if (!scriptContent.trim()) continue
+
+						// Try to parse the script to find syntax errors
+						try {
+							// Use Function constructor to check for syntax errors
+							new Function(scriptContent)
+						} catch (error) {
+							// The error is caught, now we need to find where it is
+							// We'll parse the error message and try to locate it in the script
+							const errorMessage = error.message
+
+							// Try to find the problematic token in the error message
+							let problematicToken = null
+							const tokenMatch = errorMessage.match(/Unexpected (token |identifier |string |number |end of input)?'?([^']+)'?/i)
+							if (tokenMatch) {
+								problematicToken = tokenMatch[2]
+							}
+
+							console.log('Syntax error:', errorMessage, 'Token:', problematicToken)
+
+							// Search for the token in the script to find its position
+							let errorLineIndex = 0
+							let errorColumnIndex = 0
+							let found = false
+
+							if (problematicToken) {
+								const scriptLines = scriptContent.split('\n')
+								for (let i = 0; i < scriptLines.length; i++) {
+									const index = scriptLines[i].indexOf(problematicToken)
+									if (index !== -1) {
+										errorLineIndex = i
+										errorColumnIndex = index
+										found = true
+										console.log('Found error at line', i + 1, 'column', index + 1)
+										break
+									}
+								}
+							}
+
+							// If we couldn't find the exact position, try to use eval with better error reporting
+							if (!found) {
+								try {
+									// This will give us better error information
+									eval(scriptContent)
+								} catch (evalError) {
+									// Still might not get line numbers, but worth a try
+									console.log('Eval error:', evalError)
+								}
+								// Default to first line
+								errorLineIndex = 0
+								errorColumnIndex = 0
+							}
+
+							// Calculate the absolute position in the document
+							const scriptLines = scriptContent.split('\n')
+							let charOffset = 0
+							for (let i = 0; i < errorLineIndex && i < scriptLines.length; i++) {
+								charOffset += scriptLines[i].length + 1
+							}
+							charOffset += errorColumnIndex
+
+							const errorPos = model.getPositionAt(scriptStartIndex + charOffset)
+
+							// Calculate end position (highlight the token)
+							let endOffset = charOffset
+							if (problematicToken) {
+								endOffset = charOffset + problematicToken.length
+							} else {
+								endOffset = charOffset + 1
+							}
+							const endPos = model.getPositionAt(scriptStartIndex + endOffset)
+
+							markers.push({
+								severity: monaco.MarkerSeverity.Error,
+								startLineNumber: errorPos.lineNumber,
+								startColumn: errorPos.column,
+								endLineNumber: endPos.lineNumber,
+								endColumn: endPos.column,
+								message: `Syntax Error: ${errorMessage}`,
+								source: 'JavaScript'
+							})
+
+							console.log('Marker created at line', errorPos.lineNumber, 'column', errorPos.column)
+						}
+
+						// Check for common runtime errors using simple pattern matching
+						this.checkCommonErrors(scriptContent, scriptStartIndex, model, markers)
+					}
+
+					// Set markers on the model
+					monaco.editor.setModelMarkers(model, 'javascript-errors', markers)
+
+					// Verify markers were set
+					const allMarkers = monaco.editor.getModelMarkers({ resource: model.uri })
+					console.log(`Found ${markers.length} JavaScript issue(s)`)
+					console.log('All markers on model:', allMarkers)
+					console.log('Markers we just set:', markers)
+
+				} catch (error) {
+					console.error('Error checking JavaScript:', error)
+				}
+			}
+
+			checkCommonErrors(scriptContent, scriptStartIndex, model, markers) {
+				const lines = scriptContent.split('\n')
+
+				lines.forEach((line, index) => {
+					// Check for undefined variables (simple heuristic)
+					// This is a basic check - not as comprehensive as ESLint
+					const trimmedLine = line.trim()
+
+					// Check for missing semicolons (only warn for certain statements)
+					// if (trimmedLine.match(/^(let|const|var)\s+\w+\s*=\s*.+[^;{}\s]$/) && !trimmedLine.includes('//')) {
+					// 	const lineStartOffset = lines.slice(0, index).reduce((sum, l) => sum + l.length + 1, 0)
+					// 	const pos = model.getPositionAt(scriptStartIndex + lineStartOffset)
+					// 	const endPos = model.getPositionAt(scriptStartIndex + lineStartOffset + line.length)
+
+					// 	markers.push({
+					// 		severity: monaco.MarkerSeverity.Warning,
+					// 		startLineNumber: pos.lineNumber,
+					// 		startColumn: pos.column,
+					// 		endLineNumber: endPos.lineNumber,
+					// 		endColumn: endPos.column,
+					// 		message: 'Missing semicolon',
+					// 		source: 'JavaScript'
+					// 	})
+					// }
+
+					// Check for console.log statements (just for demonstration)
+					// You can remove this if you don't want warnings for console.log
+					/*
+					if (trimmedLine.includes('console.log') && !trimmedLine.includes('//')) {
+						const lineStartOffset = lines.slice(0, index).reduce((sum, l) => sum + l.length + 1, 0)
+						const consolePos = line.indexOf('console.log')
+						const pos = model.getPositionAt(scriptStartIndex + lineStartOffset + consolePos)
+						const endPos = model.getPositionAt(scriptStartIndex + lineStartOffset + consolePos + 11)
+
+						markers.push({
+							severity: monaco.MarkerSeverity.Information,
+							startLineNumber: pos.lineNumber,
+							startColumn: pos.column,
+							endLineNumber: endPos.lineNumber,
+							endColumn: endPos.column,
+							message: 'Unexpected console statement',
+							source: 'JavaScript'
+						})
+					}
+					*/
 				})
-				console.log('lint results', results)
+			}
+
+			checkESLint() {
+				if (!this.eslint) {
+					console.log('ESLint not available for checking')
+					return
+				}
+
+				try {
+					console.log('Running ESLint check...')
+					const code = this.editor.getValue()
+					const model = this.editor.getModel()
+
+					// Extract JavaScript from script tags
+					const scriptRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi
+					let match
+					const markers = []
+
+					while ((match = scriptRegex.exec(code)) !== null) {
+						const scriptContent = match[1]
+						const scriptStartIndex = match.index + match[0].indexOf('>') + 1
+
+						if (!scriptContent.trim()) continue
+
+						console.log('Found script block, linting...')
+
+						try {
+							// Run ESLint on the JavaScript code (using flat config format for ESLint 9.x)
+							const messages = this.eslint.verify(scriptContent, {
+								languageOptions: {
+									ecmaVersion: 2022,
+									sourceType: 'script',
+									globals: {
+										// Browser globals
+										window: 'readonly',
+										document: 'readonly',
+										console: 'readonly',
+										alert: 'readonly',
+										setTimeout: 'readonly',
+										setInterval: 'readonly',
+										clearTimeout: 'readonly',
+										clearInterval: 'readonly',
+										fetch: 'readonly',
+										localStorage: 'readonly',
+										sessionStorage: 'readonly',
+										navigator: 'readonly',
+										location: 'readonly',
+										history: 'readonly',
+										// Common browser APIs
+										Image: 'readonly',
+										Audio: 'readonly',
+										URL: 'readonly',
+										Blob: 'readonly',
+										FormData: 'readonly',
+										XMLHttpRequest: 'readonly',
+										// Canvas API
+										CanvasRenderingContext2D: 'readonly',
+										HTMLCanvasElement: 'readonly',
+										// Math and other built-ins
+										Math: 'readonly',
+										Date: 'readonly',
+										JSON: 'readonly',
+										Promise: 'readonly',
+										Array: 'readonly',
+										Object: 'readonly',
+										String: 'readonly',
+										Number: 'readonly',
+										Boolean: 'readonly',
+										Function: 'readonly',
+										Error: 'readonly',
+										RegExp: 'readonly',
+										Map: 'readonly',
+										Set: 'readonly',
+										WeakMap: 'readonly',
+										WeakSet: 'readonly',
+										Symbol: 'readonly',
+										Proxy: 'readonly',
+										Reflect: 'readonly',
+										Intl: 'readonly'
+									}
+								},
+								rules: {
+									'no-unused-vars': 'warn',
+									'no-undef': 'error',
+									'no-redeclare': 'error',
+									'no-const-assign': 'error',
+									'no-dupe-keys': 'error',
+									'no-duplicate-case': 'error',
+									'no-empty': 'warn',
+									'no-extra-semi': 'warn',
+									'no-func-assign': 'error',
+									'no-unreachable': 'warn',
+									'valid-typeof': 'error',
+									'semi': 'off',
+									'no-console': 'off'
+								}
+							})
+
+							console.log('ESLint messages:', messages)
+
+							// Convert ESLint messages to Monaco markers
+							messages.forEach(msg => {
+								// Calculate absolute position in the entire document
+								const scriptStartPos = model.getPositionAt(scriptStartIndex)
+
+								// Get the lines of script content up to the error line
+								const scriptLines = scriptContent.split('\n')
+								let charOffset = 0
+								for (let i = 0; i < msg.line - 1; i++) {
+									charOffset += scriptLines[i].length + 1 // +1 for newline
+								}
+								charOffset += msg.column - 1
+
+								const errorPos = model.getPositionAt(scriptStartIndex + charOffset)
+
+								// Calculate end position (try to highlight the whole word/token)
+								let endColumn = msg.endColumn || msg.column
+								const errorLineContent = scriptLines[msg.line - 1] || ''
+								if (endColumn <= msg.column) {
+									// If no end column, try to find the end of the current token
+									const restOfLine = errorLineContent.substring(msg.column - 1)
+									const tokenMatch = restOfLine.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/)
+									if (tokenMatch) {
+										endColumn = msg.column + tokenMatch[0].length
+									} else {
+										endColumn = msg.column + 1
+									}
+								}
+
+								const endCharOffset = charOffset + (endColumn - msg.column)
+								const endPos = model.getPositionAt(scriptStartIndex + endCharOffset)
+
+								markers.push({
+									severity: msg.severity === 2
+										? monaco.MarkerSeverity.Error
+										: monaco.MarkerSeverity.Warning,
+									startLineNumber: errorPos.lineNumber,
+									startColumn: errorPos.column,
+									endLineNumber: endPos.lineNumber,
+									endColumn: endPos.column,
+									message: `${msg.message} (${msg.ruleId})`,
+									source: 'ESLint'
+								})
+
+								console.log('ESLint marker:', {
+									line: errorPos.lineNumber,
+									column: errorPos.column,
+									message: msg.message
+								})
+							})
+
+						} catch (scriptError) {
+							console.error('Error linting script block:', scriptError)
+						}
+					}
+
+					// Set markers on the model
+					monaco.editor.setModelMarkers(model, 'eslint', markers)
+
+					console.log(`ESLint check complete. Found ${markers.length} issue(s)`)
+					if (markers.length > 0) {
+						console.log('ESLint markers:', markers)
+					}
+
+				} catch (error) {
+					console.error('Error running ESLint:', error)
+				}
 			}
 
 			checkSyntaxErrors(code) {

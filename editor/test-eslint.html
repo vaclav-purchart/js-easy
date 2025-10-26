@@ -1,0 +1,14 @@
+<head>
+	<script src="https://cdn.jsdelivr.net/npm/eslint-linter-browserify@9.11.1/linter.js"></script>
+</head>
+<body>
+	<script>
+		const linter = new eslint.Linter()
+		const messages = linter.verify('console.log("test")', {
+			parserOptions: {
+				ecmaVersion: 2022,
+				sourceType: 'script'
+			}
+		})
+	</script>
+</body>
