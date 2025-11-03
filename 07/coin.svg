@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="50" height="50" viewBox="0 0 50 50"
+     xmlns="http://www.w3.org/2000/svg">
+  <!-- Radial gradient gives the shiny, metallic feel -->
+  <defs>
+    <radialGradient id="gold" cx="25%" cy="25%" r="75%" fx="25%" fy="25%">
+      <stop offset="0%"   stop-color="#ffea00" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#b8a600" stop-opacity="1"/>
+    </radialGradient>
+  </defs>
+
+  <!-- The coin itself -->
+  <circle cx="25" cy="25" r="22"
+          fill="url(#gold)"
+          stroke="#806500"
+          stroke-width="3"/>
+
+  <!-- Optional subtle inner shadow (for extra depth) -->
+  <circle cx="25" cy="25" r="15"
+          fill="none"
+          stroke="rgba(0,0,0,0.15)"
+          stroke-width="2"
+          stroke-linecap="round"/>
+
+  <!-- 3️⃣ The dollar sign (black, bold) -->
+  <text x="50%" y="65%" text-anchor="middle" font-family="Arial, sans-serif"
+        font-weight="bold" font-size="22" fill="#000000" stroke="none">
+    $
+  </text>
+</svg>
