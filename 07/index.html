@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<style>
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+		}
+	</style>
+</head>
+<body>
+<canvas id="myCanvas" width="500" height="500"></canvas>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+// velikost obrázků
+let size = 100
+// pozice hráče
+let playerX = 0 * size
+let playerY = 0 * size
+// pozice mince
+let coinX = 4 * size
+let coinY = 4 * size
+
+// načítání obrázků
+
+// hráč
+let playerURL = "https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/07/player.svg"
+let playerImage = new Image()
+playerImage.src = playerURL
+playerImage.onload = function() {
+	draw()
+}
+
+// mince
+let coinURL = "https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/07/coin.svg"
+let coinImage = new Image()
+coinImage.src = coinURL
+coinImage.onload = function() {
+	draw()
+}
+
+// funkce na kreslení všeho
+function draw() {
+	// smažeme obrazovku
+	ctx.fillStyle = "white"
+	ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+	// text s pozicí hráče a mince
+	ctx.fillStyle = "black"
+	ctx.font = "24px serif"
+	ctx.fillText("[" + playerX + ", " + playerY + "]", 350, 50)
+	ctx.fillText("[" + coinX + ", " + coinY + "]", 350, 100)
+
+	// nakresli minci
+	ctx.drawImage(coinImage, coinX, coinY, size, size)
+
+	// nakresli hráče
+	ctx.drawImage(playerImage, playerX, playerY, size, size)
+}
+draw()
+
+// handler na obsluhu klávesnice
+window.addEventListener("keydown", function(event) {
+	// pohyb hráče
+	if (event.key === "ArrowUp") {
+
+	}
+	if (event.key === "ArrowDown") {
+
+	}
+	if (event.key === "ArrowLeft") {
+
+	}
+	if (event.key === "ArrowRight") {
+
+	}
+
+	// nakresli hráče
+	draw()
+})
+
+
+</script>
+</body>
+</html>
