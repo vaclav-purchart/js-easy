@@ -26,6 +26,8 @@ let playerY = 0 * size
 // pozice mince
 let coinX = 4 * size
 let coinY = 4 * size
+// skóre
+let score = 0
 
 // načítání obrázků
 
@@ -56,6 +58,7 @@ function draw() {
 	ctx.font = "24px serif"
 	ctx.fillText("[" + playerX + ", " + playerY + "]", 350, 50)
 	ctx.fillText("[" + coinX + ", " + coinY + "]", 350, 100)
+	ctx.fillText("Score: " + score, 350, 150)
 
 	// nakresli minci
 	ctx.drawImage(coinImage, coinX, coinY, size, size)
@@ -69,22 +72,27 @@ draw()
 window.addEventListener("keydown", function(event) {
 	// pohyb hráče
 	if (event.key === "ArrowUp") {
-
+		playerY -= size
 	}
 	if (event.key === "ArrowDown") {
-
+		playerY += size
 	}
 	if (event.key === "ArrowLeft") {
-
+		playerX -= size
 	}
 	if (event.key === "ArrowRight") {
+		playerX += size
+	}
 
+	if (playerX === coinX && playerY === coinY) {
+		coinX = Math.round(Math.random() * 4) * size
+		coinY = Math.round(Math.random() * 4) * size
+		score += 1
 	}
 
 	// nakresli hráče
 	draw()
 })
-
 
 </script>
 </body>
