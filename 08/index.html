@@ -6,7 +6,7 @@
 	<title>Canvas Demo</title>
 	<style>
 		canvas {
-			border: 2px solid #333;
+			/* border: 2px solid #333; */
 			border-radius: 10px;
 		}
 	</style>
@@ -36,7 +36,7 @@ function draw() {
 	ctx.fillStyle = "white"
 	ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-	// nakresli 10 mincí vedle sebe na stejné pozici
+	// // nakresli 10 mincí vedle sebe na stejné pozici
 	for (let i = 0; i < 10; i++) {
 		let x = i * 50
 		let y = 0
@@ -46,10 +46,11 @@ function draw() {
 		ctx.drawImage(coinImage, x, y, size, size)
 	}
 
-	// // nakresli 10 mincí vedle sebe
-	// for (let x = 0; x < canvas.width; x += 100) {
-	// 	for (let y = 0; y < canvas.height; y += 100) {
-	// 		ctx.drawImage(coinImage, x, y, 100, 100)
+	// nakresli 10 mincí vedle sebe
+	// let size = 50
+	// for (let x = 0; x < canvas.width; x += size) {
+	// 	for (let y = 0; y < canvas.height; y += size) {
+	// 		ctx.drawImage(coinImage, x, y, size, size)
 	// 	}
 	// }
 
