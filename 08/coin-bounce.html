@@ -12,6 +12,7 @@
 	</style>
 </head>
 <body>
+Speed: <input type="number" id="coinInterval" value="800">ms<br />
 <canvas id="myCanvas" width="500" height="500"></canvas>
 <script>
 
@@ -28,6 +29,9 @@ coinImage.src = coinURL
 
 // pole pro všechny mince
 let coins = []
+
+// proměnná pro interval
+let shootIntervalId = null
 
 // fyzikální konstanty
 let GRAVITY = 0.5  // gravitační zrychlení
@@ -119,6 +123,18 @@ function draw() {
 	}
 }
 
+// funkce pro nastavení intervalu
+function setupShootInterval() {
+	// smažeme starý interval, pokud existuje
+	if (shootIntervalId !== null) {
+		clearInterval(shootIntervalId)
+	}
+
+	// nastavíme nový interval s aktuální hodnotou
+	let intervalValue = parseInt(document.getElementById("coinInterval").value)
+	shootIntervalId = setInterval(shootCoin, intervalValue)
+}
+
 // hlavní animační smyčka
 function animate() {
 	updateCoins()
@@ -128,8 +144,12 @@ function animate() {
 
 // spuštění animace
 function startAnimation() {
-	// vystřelujeme minci každých 800ms
-	setInterval(shootCoin, 800)
+	// nastavíme posluchač na změnu hodnoty intervalu
+	document.getElementById("coinInterval").addEventListener("change", setupShootInterval)
+	document.getElementById("coinInterval").addEventListener("input", setupShootInterval)
+
+	// nastavíme první interval
+	setupShootInterval()
 
 	// spustíme animační smyčku
 	animate()
