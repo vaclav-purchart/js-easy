@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<style>
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+		}
+	</style>
+</head>
+<body>
+<canvas id="myCanvas" width="500" height="500"></canvas>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+// mince
+let coinURL = "https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/07/coin.svg"
+let coinImage = new Image()
+coinImage.onload = function() {
+	startAnimation()
+}
+coinImage.src = coinURL
+
+// pole pro všechny mince
+let coins = []
+
+// fyzikální konstanty
+let GRAVITY = 0.5  // gravitační zrychlení
+let BOUNCE_DAMPING = 0.7  // zpomalení při odrazu (70% původní rychlosti)
+let FRICTION = 0.98  // tření vzduchu
+let MIN_VELOCITY = 0.5  // minimální rychlost, pod kterou mince zmizí
+let COIN_SIZE = 40
+
+// funkce pro vytvoření nové mince
+function shootCoin() {
+	let coin = {
+		x: canvas.width / 2,  // střed dole
+		y: canvas.height - COIN_SIZE / 2,  // dole
+		vx: (Math.random() - 0.5) * 20,  // náhodná horizontální rychlost (-10 až 10)
+		vy: -(Math.random() * 10 + 20),  // náhodná vertikální rychlost nahoru (-10 až -20)
+		rotation: Math.random() * Math.PI * 2,  // náhodná rotace
+		rotationSpeed: (Math.random() - 0.5) * 0.3  // rychlost rotace
+	}
+	coins.push(coin)
+}
+
+// funkce pro update fyziky mincí
+function updateCoins() {
+	// procházíme mince pozpátku, abychom je mohli bezpečně mazat
+	for (let i = coins.length - 1; i >= 0; i--) {
+		let coin = coins[i]
+
+		// aplikujeme gravitaci
+		coin.vy += GRAVITY
+
+		// aplikujeme tření vzduchu
+		coin.vx *= FRICTION
+		coin.vy *= FRICTION
+
+		// aktualizujeme pozici
+		coin.x += coin.vx
+		coin.y += coin.vy
+
+		// aktualizujeme rotaci
+		coin.rotation += coin.rotationSpeed
+
+		// odraz od stěn (levá a pravá)
+		if (coin.x - COIN_SIZE / 2 < 0) {
+			coin.x = COIN_SIZE / 2
+			coin.vx = -coin.vx * BOUNCE_DAMPING
+		}
+		if (coin.x + COIN_SIZE / 2 > canvas.width) {
+			coin.x = canvas.width - COIN_SIZE / 2
+			coin.vx = -coin.vx * BOUNCE_DAMPING
+		}
+
+		// odraz od spodní hrany
+		if (coin.y + COIN_SIZE / 2 > canvas.height) {
+			coin.y = canvas.height - COIN_SIZE / 2
+			coin.vy = -coin.vy * BOUNCE_DAMPING
+			coin.vx *= BOUNCE_DAMPING  // tření o zem
+			coin.rotationSpeed *= BOUNCE_DAMPING
+		}
+
+		// odraz od horní hrany
+		if (coin.y - COIN_SIZE / 2 < 0) {
+			coin.y = COIN_SIZE / 2
+			coin.vy = -coin.vy * BOUNCE_DAMPING
+		}
+
+		// kontrola, jestli mince je na zemi a téměř bez pohybu
+		if (coin.y + COIN_SIZE / 2 >= canvas.height - 1 &&
+		    Math.abs(coin.vy) < MIN_VELOCITY &&
+		    Math.abs(coin.vx) < MIN_VELOCITY) {
+			// odstraníme minci z pole
+			coins.splice(i, 1)
+		}
+	}
+}
+
+// funkce na kreslení všeho
+function draw() {
+	// smažeme obrazovku
+	ctx.fillStyle = "white"
+	ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+	// vykreslíme všechny mince
+	for (let coin of coins) {
+		ctx.save()
+		ctx.translate(coin.x, coin.y)
+		ctx.rotate(coin.rotation)
+		ctx.drawImage(coinImage, -COIN_SIZE / 2, -COIN_SIZE / 2, COIN_SIZE, COIN_SIZE)
+		ctx.restore()
+	}
+}
+
+// hlavní animační smyčka
+function animate() {
+	updateCoins()
+	draw()
+	requestAnimationFrame(animate)
+}
+
+// spuštění animace
+function startAnimation() {
+	// vystřelujeme minci každých 800ms
+	setInterval(shootCoin, 800)
+
+	// spustíme animační smyčku
+	animate()
+}
+
+</script>
+</body>
+</html>

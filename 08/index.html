@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<style>
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+		}
+	</style>
+</head>
+<body>
+<canvas id="myCanvas" width="500" height="500"></canvas>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+// mince
+let coinURL = "https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/07/coin.svg"
+let coinImage = new Image()
+coinImage.onload = function() {
+	draw()
+}
+coinImage.src = coinURL
+
+
+// funkce na kreslení všeho
+function draw() {
+
+	console.log("================= draw =========================")
+
+	// smažeme obrazovku
+	ctx.fillStyle = "white"
+	ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+	// nakresli 10 mincí vedle sebe na stejné pozici
+	for (let i = 0; i < 10; i++) {
+		let x = i * 50
+		let y = 0
+		let size = 50
+		console.log(x)
+		debugger
+		ctx.drawImage(coinImage, x, y, size, size)
+	}
+
+	// // nakresli 10 mincí vedle sebe
+	// for (let x = 0; x < canvas.width; x += 100) {
+	// 	for (let y = 0; y < canvas.height; y += 100) {
+	// 		ctx.drawImage(coinImage, x, y, 100, 100)
+	// 	}
+	// }
+
+	// // nakresli 10 mincí na nahodných pozicích
+	// for (let i = 0; i < 10; i++) {
+	// 	let coinX = Math.random() * canvas.width
+	// 	let coinY = Math.random() * canvas.height
+	// 	let size = Math.random() * 100 + 10
+
+	// 	// nakresli minci
+	// 	ctx.drawImage(coinImage, coinX, coinY, size, size)
+	// }
+}
+// draw()
+
+</script>
+</body>
+</html>
