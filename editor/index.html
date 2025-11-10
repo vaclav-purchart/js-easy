@@ -389,6 +389,7 @@
 		<button id="fullscreen-btn">📱 Fullscreen</button>
 		<button id="list-btn">🔍 List</button>
 		<button id="chat-btn">💬 Chat</button>
+		<button id="ai-btn">🤖 AI</button>
 		<button id="new-btn">📋 New</button>
 		<button id="load-btn">📂 Load</button>
 		<button id="save-btn">💾 Save</button>
@@ -456,6 +457,35 @@
 			<div class="modal-footer">
 				<button id="send-cancel-btn" class="modal-btn modal-btn-secondary">Cancel</button>
 				<button id="send-submit-btn" class="modal-btn modal-btn-primary">Send</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- AI Modal Dialog -->
+	<div id="ai-modal" class="modal-overlay">
+		<div class="modal-dialog">
+			<div class="modal-header">AI Assistant</div>
+			<div class="modal-body">
+				<div class="modal-field">
+					<label for="ai-password-input">Password:</label>
+					<input type="text" id="ai-password-input" placeholder="Enter password">
+				</div>
+				<div class="modal-field">
+					<label for="ai-language-select">Language:</label>
+					<select id="ai-language-select">
+						<option value="English">English</option>
+						<option value="Česky">Česky</option>
+					</select>
+				</div>
+				<div class="modal-field">
+					<label for="ai-prompt-input">Instructions:</label>
+					<textarea id="ai-prompt-input" placeholder="What would you like the AI to do?" style="width: 100%; min-height: 100px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; resize: vertical;"></textarea>
+				</div>
+				<div id="ai-status" class="modal-status"></div>
+			</div>
+			<div class="modal-footer">
+				<button id="ai-cancel-btn" class="modal-btn modal-btn-secondary">Cancel</button>
+				<button id="ai-submit-btn" class="modal-btn modal-btn-primary">Generate</button>
 			</div>
 		</div>
 	</div>
@@ -626,6 +656,7 @@
 				document.getElementById('fullscreen-btn').addEventListener('click', () => this.showFullscreen())
 				document.getElementById('list-btn').addEventListener('click', () => this.showList())
 				document.getElementById('chat-btn').addEventListener('click', () => this.showChat())
+				document.getElementById('ai-btn').addEventListener('click', () => this.showAIDialog())
 				document.getElementById('new-btn').addEventListener('click', () => this.newFile())
 				document.getElementById('load-btn').addEventListener('click', () => this.loadFile())
 				document.getElementById('save-btn').addEventListener('click', () => this.saveFile())
@@ -715,6 +746,10 @@
 				document.getElementById('send-cancel-btn').addEventListener('click', () => this.closeSendDialog())
 				document.getElementById('send-submit-btn').addEventListener('click', () => this.sendToServer())
 
+				// AI modal buttons
+				document.getElementById('ai-cancel-btn').addEventListener('click', () => this.closeAIDialog())
+				document.getElementById('ai-submit-btn').addEventListener('click', () => this.sendToAI())
+
 				// Fullscreen close button
 				document.getElementById('fullscreen-close-btn').addEventListener('click', () => this.closeFullscreen())
 
@@ -722,6 +757,11 @@
 				document.getElementById('send-modal').addEventListener('click', (e) => {
 					if (e.target.id === 'send-modal') {
 						this.closeSendDialog()
+					}
+				})
+				document.getElementById('ai-modal').addEventListener('click', (e) => {
+					if (e.target.id === 'ai-modal') {
+						this.closeAIDialog()
 					}
 				})
 
@@ -736,6 +776,15 @@
 				projectNameInput.addEventListener('keypress', (e) => {
 					if (e.key === 'Enter') {
 						this.sendToServer()
+					}
+				})
+
+				// Handle Ctrl+Enter in AI prompt textarea
+				const aiPromptInput = document.getElementById('ai-prompt-input')
+				aiPromptInput.addEventListener('keydown', (e) => {
+					if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+						e.preventDefault()
+						this.sendToAI()
 					}
 				})
 
@@ -1832,6 +1881,177 @@ console.log("test")
 				} catch (error) {
 					// Network or other error
 					console.error('Error sending to server:', error)
+					statusDiv.className = 'modal-status error'
+					statusDiv.textContent = `Error: ${error.message}`
+					submitBtn.disabled = false
+				}
+			}
+
+			// AI Dialog Methods
+			showAIDialog() {
+				const modal = document.getElementById('ai-modal')
+				const passwordInput = document.getElementById('ai-password-input')
+				const languageSelect = document.getElementById('ai-language-select')
+				const promptInput = document.getElementById('ai-prompt-input')
+				const statusDiv = document.getElementById('ai-status')
+
+				// Load saved values from localStorage
+				const savedPassword = localStorage.getItem('ai-password') || ''
+				const savedLanguage = localStorage.getItem('ai-language') || 'English'
+
+				passwordInput.value = savedPassword
+				languageSelect.value = savedLanguage
+				promptInput.value = ''
+
+				// Clear status
+				statusDiv.className = 'modal-status'
+				statusDiv.textContent = ''
+
+				// Show modal
+				modal.classList.add('active')
+
+				// Focus on prompt input
+				promptInput.focus()
+			}
+
+			closeAIDialog() {
+				const modal = document.getElementById('ai-modal')
+				modal.classList.remove('active')
+			}
+
+			async sendToAI() {
+				const passwordInput = document.getElementById('ai-password-input')
+				const languageSelect = document.getElementById('ai-language-select')
+				const promptInput = document.getElementById('ai-prompt-input')
+				const submitBtn = document.getElementById('ai-submit-btn')
+				const statusDiv = document.getElementById('ai-status')
+
+				const password = passwordInput.value.trim()
+				const language = languageSelect.value
+				const prompt = promptInput.value.trim()
+
+				// Validate inputs
+				if (!password) {
+					statusDiv.className = 'modal-status error'
+					statusDiv.textContent = 'Please enter password'
+					passwordInput.focus()
+					return
+				}
+
+				if (!prompt) {
+					statusDiv.className = 'modal-status error'
+					statusDiv.textContent = 'Please enter instructions'
+					promptInput.focus()
+					return
+				}
+
+				// Save to localStorage
+				localStorage.setItem('ai-password', password)
+				localStorage.setItem('ai-language', language)
+
+				// Get editor content
+				const editorContent = this.editor.getValue()
+
+				// Create message with context
+				const message = `Here is the current code:\n\n${editorContent}\n\n${prompt}`
+
+				// Show processing state
+				statusDiv.className = 'modal-status sending'
+				statusDiv.textContent = 'Processing...'
+				submitBtn.disabled = true
+
+				try {
+					// Send to AI API
+					const response = await fetch('/api/chat', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							model: 'gpt-oss:20b',
+							password,
+							language,
+							messages: [{ role: 'user', content: message }],
+							stream: true,
+						}),
+					})
+
+					if (!response.ok) {
+						if (response.status === 403) {
+							throw new Error('Invalid password. Please check your password and try again.')
+						}
+						if (response.status === 429) {
+							const errorData = await response.json()
+							const waitTime = errorData.retryAfter || 1
+							throw new Error(`Rate limit exceeded. Please wait ${waitTime} second${waitTime > 1 ? 's' : ''} before trying again.`)
+						}
+						throw new Error(`HTTP error! status: ${response.status}`)
+					}
+
+					const reader = response.body.getReader()
+					const decoder = new TextDecoder()
+					let fullResponse = ''
+
+					statusDiv.className = 'modal-status sending'
+					statusDiv.textContent = 'Receiving response...'
+
+					while (true) {
+						const { done, value } = await reader.read()
+
+						if (done) break
+
+						const chunk = decoder.decode(value)
+						const lines = chunk.split('\n').filter(line => line.trim())
+
+						for (const line of lines) {
+							try {
+								const json = JSON.parse(line)
+								if (json.message && json.message.content) {
+									fullResponse += json.message.content
+								}
+							} catch (e) {
+								// Skip invalid JSON lines
+							}
+						}
+					}
+
+					// Update editor with the response
+					if (fullResponse) {
+						// Extract code from markdown code blocks if present
+						const codeBlockRegex = /```(?:html|javascript|js)?\s*\n([\s\S]*?)```/g
+						const match = codeBlockRegex.exec(fullResponse)
+
+						if (match && match[1]) {
+							// Use the code from the first code block
+							this.editor.setValue(match[1].trim())
+						} else {
+							// If no code block, use the entire response
+							this.editor.setValue(fullResponse.trim())
+						}
+
+						this.updatePreview()
+
+						// Success
+						statusDiv.className = 'modal-status success'
+						statusDiv.textContent = 'Code updated successfully!'
+
+						// Update main status
+						this.updateStatus('success', 'AI code generated')
+
+						// Close dialog after 2 seconds
+						setTimeout(() => {
+							this.closeAIDialog()
+							this.updateStatus('success', 'Ready')
+							submitBtn.disabled = false
+						}, 2000)
+					} else {
+						statusDiv.className = 'modal-status error'
+						statusDiv.textContent = 'No response received from AI'
+						submitBtn.disabled = false
+					}
+
+				} catch (error) {
+					console.error('Error sending to AI:', error)
 					statusDiv.className = 'modal-status error'
 					statusDiv.textContent = `Error: ${error.message}`
 					submitBtn.disabled = false

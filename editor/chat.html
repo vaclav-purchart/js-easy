@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vasek's AI client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .settings {
+            background: #f8f9fa;
+            padding: 15px 30px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .settings label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .settings input,
+        .settings select {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message-content {
+            display: inline-block;
+            max-width: 80%;
+            padding: 15px 20px;
+            border-radius: 15px;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            color: #212529;
+            border-bottom-left-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            text-align: left;
+        }
+
+        .svg-container {
+            margin-top: 15px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: inline-block;
+            max-width: 100%;
+        }
+
+        .svg-container svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .input-container {
+            padding: 20px 30px;
+            background: white;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-container textarea {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            font-size: 15px;
+            font-family: inherit;
+            resize: none;
+            min-height: 60px;
+            max-height: 150px;
+            transition: border-color 0.3s;
+        }
+
+        .input-container textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .input-container button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            white-space: nowrap;
+        }
+
+        .input-container button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .input-container button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .input-container button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
+        code {
+            background: #f1f3f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .code-block-container {
+            margin: 15px 0;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #1e1e1e;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+
+        .code-block-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: #2d2d2d;
+            border-bottom: 1px solid #3e3e3e;
+        }
+
+        .code-block-language {
+            font-size: 12px;
+            color: #a0a0a0;
+            font-family: 'Monaco', 'Courier New', monospace;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .copy-button {
+            padding: 6px 14px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .copy-button:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(102, 126, 234, 0.4);
+        }
+
+        .copy-button:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        .copy-button.copied {
+            background: #10b981;
+        }
+
+        .code-block-content {
+            padding: 15px;
+            overflow-x: auto;
+        }
+
+        .code-block-content pre {
+            margin: 0;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #d4d4d4;
+        }
+
+        .code-block-content code {
+            background: none;
+            padding: 0;
+            color: inherit;
+            font-size: inherit;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Vasek's AI client</h1>
+        </div>
+
+        <div class="settings">
+            <label>
+                Password:
+                <input type="text" id="password" value="" />
+            </label>
+            <label>
+                Language:
+                <select id="language">
+                    <option value="English">English</option>
+                    <option value="Česky">Česky</option>
+                </select>
+            </label>
+        </div>
+
+        <div class="chat-container" id="chatContainer"></div>
+
+        <div class="input-container">
+            <textarea
+                id="promptInput"
+                placeholder="Type your message here..."
+                rows="1"
+            ></textarea>
+            <button id="sendButton" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let conversationHistory = [];
+        let isStreaming = false;
+
+        // Auto-resize textarea
+        const textarea = document.getElementById('promptInput');
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+        });
+
+        // Send on Enter (Shift+Enter for new line)
+        textarea.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        async function sendMessage() {
+            if (isStreaming) return;
+
+            const promptInput = document.getElementById('promptInput');
+            const prompt = promptInput.value.trim();
+
+            if (!prompt) return;
+
+            const password = document.getElementById('password').value;
+            const language = document.getElementById('language').value;
+
+            // Add user message to UI
+            addMessage('user', prompt);
+            conversationHistory.push({ role: 'user', content: prompt });
+
+            // Clear input
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+
+            // Disable input during streaming
+            isStreaming = true;
+            updateSendButton(true);
+
+            // Create assistant message container
+            const messageDiv = createMessageElement('assistant');
+            const contentDiv = messageDiv.querySelector('.message-content');
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-oss:20b',
+                        password,
+                        language,
+                        messages: conversationHistory,
+                        stream: true,
+                    }),
+                });
+
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        throw new Error('Invalid password. Please check your password and try again.');
+                    }
+                    if (response.status === 429) {
+                        const errorData = await response.json();
+                        const waitTime = errorData.retryAfter || 1;
+                        throw new Error(`Rate limit exceeded. Please wait ${waitTime} second${waitTime > 1 ? 's' : ''} before sending another message.`);
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullResponse = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n').filter(line => line.trim());
+
+                    for (const line of lines) {
+                        try {
+                            const json = JSON.parse(line);
+                            if (json.message && json.message.content) {
+                                fullResponse += json.message.content;
+                                contentDiv.textContent = fullResponse;
+
+                                // Auto-scroll to bottom
+                                const chatContainer = document.getElementById('chatContainer');
+                                chatContainer.scrollTop = chatContainer.scrollHeight;
+                            }
+                        } catch (e) {
+                            // Skip invalid JSON lines
+                        }
+                    }
+                }
+
+                // Parse and render markdown code blocks and SVGs
+                renderFormattedContent(messageDiv, fullResponse);
+
+                // Add to conversation history
+                conversationHistory.push({ role: 'assistant', content: fullResponse });
+
+            } catch (error) {
+                console.error('Error:', error);
+                showError(`Error: ${error.message}`);
+                messageDiv.remove();
+            } finally {
+                isStreaming = false;
+                updateSendButton(false);
+            }
+        }
+
+        function createMessageElement(role) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            messageDiv.appendChild(contentDiv);
+            chatContainer.appendChild(messageDiv);
+
+            return messageDiv;
+        }
+
+        function addMessage(role, content) {
+            const messageDiv = createMessageElement(role);
+            const contentDiv = messageDiv.querySelector('.message-content');
+            contentDiv.textContent = content;
+
+            // Auto-scroll to bottom
+            const chatContainer = document.getElementById('chatContainer');
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function renderFormattedContent(messageDiv, content) {
+            const contentDiv = messageDiv.querySelector('.message-content');
+
+            // Parse markdown code blocks: ```language\ncode\n```
+            const codeBlockRegex = /```(\w+)?\s*\n([\s\S]*?)```/g;
+            let lastIndex = 0;
+            let match;
+            let hasCodeBlocks = false;
+
+            // Clear the content div to rebuild it with formatted content
+            contentDiv.textContent = '';
+
+            while ((match = codeBlockRegex.exec(content)) !== null) {
+                hasCodeBlocks = true;
+
+                // Add text before the code block
+                if (match.index > lastIndex) {
+                    const textBefore = content.substring(lastIndex, match.index);
+                    const textNode = document.createTextNode(textBefore);
+                    contentDiv.appendChild(textNode);
+                }
+
+                // Extract language and code
+                const language = match[1] || 'code';
+                const code = match[2].trim();
+
+                // Always create code block with copy button
+                const codeBlockContainer = createCodeBlock(language, code);
+                contentDiv.appendChild(codeBlockContainer);
+
+                // If it's an SVG, also render the preview below the code
+                if ((language.toLowerCase() === 'svg' || language.toLowerCase() === 'xml') && code.includes('<svg')) {
+                    const svgContainer = document.createElement('div');
+                    svgContainer.className = 'svg-container';
+                    svgContainer.innerHTML = code;
+                    contentDiv.appendChild(svgContainer);
+                }
+
+                lastIndex = match.index + match[0].length;
+            }
+
+            // Add remaining text after last code block
+            if (lastIndex < content.length) {
+                const textAfter = content.substring(lastIndex);
+                const textNode = document.createTextNode(textAfter);
+                contentDiv.appendChild(textNode);
+            }
+
+            // If no code blocks were found, just display the original content
+            if (!hasCodeBlocks) {
+                contentDiv.textContent = content;
+            }
+        }
+
+        function createCodeBlock(language, code) {
+            // Create container
+            const container = document.createElement('div');
+            container.className = 'code-block-container';
+
+            // Create header with language and copy button
+            const header = document.createElement('div');
+            header.className = 'code-block-header';
+
+            const languageLabel = document.createElement('span');
+            languageLabel.className = 'code-block-language';
+            languageLabel.textContent = language;
+
+            const copyButton = document.createElement('button');
+            copyButton.className = 'copy-button';
+            copyButton.textContent = 'Copy';
+            copyButton.onclick = () => copyCodeToClipboard(copyButton, code);
+
+            header.appendChild(languageLabel);
+            header.appendChild(copyButton);
+
+            // Create code content
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'code-block-content';
+
+            const pre = document.createElement('pre');
+            const codeElement = document.createElement('code');
+            codeElement.textContent = code;
+            pre.appendChild(codeElement);
+            contentDiv.appendChild(pre);
+
+            // Assemble
+            container.appendChild(header);
+            container.appendChild(contentDiv);
+
+            return container;
+        }
+
+        async function copyCodeToClipboard(button, code) {
+            try {
+                await navigator.clipboard.writeText(code);
+
+                // Visual feedback
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                button.classList.add('copied');
+
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                button.textContent = 'Failed';
+                setTimeout(() => {
+                    button.textContent = 'Copy';
+                }, 2000);
+            }
+        }
+
+        function updateSendButton(loading) {
+            const button = document.getElementById('sendButton');
+            const promptInput = document.getElementById('promptInput');
+
+            if (loading) {
+                button.innerHTML = '<span class="loading"></span>';
+                button.disabled = true;
+                promptInput.disabled = true;
+            } else {
+                button.innerHTML = 'Send';
+                button.disabled = false;
+                promptInput.disabled = false;
+                promptInput.focus();
+            }
+        }
+
+        function showError(message) {
+            const chatContainer = document.getElementById('chatContainer');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            chatContainer.appendChild(errorDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Password localStorage handling
+        const passwordInput = document.getElementById('password');
+
+        // Load saved password from localStorage
+        const savedPassword = localStorage.getItem('chatPassword');
+        if (savedPassword) {
+            passwordInput.value = savedPassword;
+        }
+
+        // Save password to localStorage on change
+        passwordInput.addEventListener('input', function() {
+            localStorage.setItem('chatPassword', this.value);
+        });
+
+        // Language localStorage handling
+        const languageSelect = document.getElementById('language');
+
+        // Load saved language from localStorage
+        const savedLanguage = localStorage.getItem('chatLanguage');
+        if (savedLanguage) {
+            languageSelect.value = savedLanguage;
+        }
+
+        // Save language to localStorage on change
+        languageSelect.addEventListener('change', function() {
+            localStorage.setItem('chatLanguage', this.value);
+        });
+
+        // Focus on input on load
+        window.addEventListener('load', () => {
+            document.getElementById('promptInput').focus();
+        });
+    </script>
+</body>
+</html>
+
