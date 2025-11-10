@@ -486,7 +486,15 @@
 			async init() {
 				await this.initMonaco()
 				this.setupEventListeners()
-				this.loadDefaultCode()
+
+				// Check for URL parameters to load a file
+				const loadedFromURL = await this.checkURLParameters()
+
+				// Only load default code if we didn't load from URL
+				if (!loadedFromURL) {
+					this.loadDefaultCode()
+				}
+
 				this.initESLint()
 			}
 
@@ -544,6 +552,70 @@
 					}
 				} catch (error) {
 					console.error('Failed to initialize ESLint:', error)
+				}
+			}
+
+			async checkURLParameters() {
+				try {
+					// Get URL parameters
+					const urlParams = new URLSearchParams(window.location.search)
+					const fileName = urlParams.get('load')
+
+					if (!fileName) {
+						return false // No load parameter found
+					}
+
+					console.log('Loading file from URL parameter:', fileName)
+					this.updateStatus('loading', `Loading ${fileName}...`)
+
+					// Fetch the file from the server
+					const response = await fetch(`/list?file=${encodeURIComponent(fileName)}`)
+
+					if (!response.ok) {
+						throw new Error(`Failed to load file: ${response.status} ${response.statusText}`)
+					}
+
+					const content = await response.text()
+
+					// Load the content into the editor
+					this.editor.setValue(content)
+
+					// Fold the <head> section if it exists
+					setTimeout(() => {
+						this.foldHeadSection()
+					}, 500)
+
+					// Update preview
+					this.updatePreview()
+
+					// Remove the parameter from the URL without reloading the page
+					const newURL = window.location.pathname + window.location.hash
+					window.history.replaceState({}, document.title, newURL)
+
+					this.updateStatus('success', `Loaded ${fileName}`)
+					console.log('File loaded successfully from URL parameter')
+
+					// Reset status to Ready after 2 seconds
+					setTimeout(() => {
+						this.updateStatus('success', 'Ready')
+					}, 2000)
+
+					return true // Successfully loaded from URL
+
+				} catch (error) {
+					console.error('Error loading file from URL parameter:', error)
+					this.updateStatus('error', `Failed to load file: ${error.message}`)
+
+					// Reset status to Ready after 3 seconds
+					setTimeout(() => {
+						this.updateStatus('success', 'Ready')
+					}, 3000)
+
+					// Remove the parameter from the URL even if loading failed
+					const newURL = window.location.pathname + window.location.hash
+					window.history.replaceState({}, document.title, newURL)
+
+					return false // Failed to load from URL
 				}
 			}
 
