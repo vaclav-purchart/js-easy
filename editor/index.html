@@ -388,6 +388,7 @@
 		<button id="send-btn">✉️ Send</button>
 		<button id="fullscreen-btn">📱 Fullscreen</button>
 		<button id="list-btn">🔍 List</button>
+		<button id="chat-btn">💬 Chat</button>
 		<button id="new-btn">📋 New</button>
 		<button id="load-btn">📂 Load</button>
 		<button id="save-btn">💾 Save</button>
@@ -624,6 +625,7 @@
 				document.getElementById('send-btn').addEventListener('click', () => this.showSendDialog())
 				document.getElementById('fullscreen-btn').addEventListener('click', () => this.showFullscreen())
 				document.getElementById('list-btn').addEventListener('click', () => this.showList())
+				document.getElementById('chat-btn').addEventListener('click', () => this.showChat())
 				document.getElementById('new-btn').addEventListener('click', () => this.newFile())
 				document.getElementById('load-btn').addEventListener('click', () => this.loadFile())
 				document.getElementById('save-btn').addEventListener('click', () => this.saveFile())
@@ -1704,6 +1706,10 @@ console.log("test")
 
 			showList() {
 				window.open('https://purchart.cloud/list', '_blank')
+			}
+
+			showChat() {
+				window.open('https://purchart.cloud/chat', '_blank')
 			}
 
 			// Fullscreen Methods

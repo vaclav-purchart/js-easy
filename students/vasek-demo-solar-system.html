@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Solar System</title>
+	<style>
+		body {
+			margin: 0;
+			padding: 20px;
+			background: #000;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			font-family: Arial, sans-serif;
+		}
+		canvas {
+			border: 2px solid #444;
+			border-radius: 10px;
+			box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+		}
+		.info {
+			color: #fff;
+			margin-top: 15px;
+			text-align: center;
+		}
+		.speed {
+			font-size: 18px;
+			color: #ffa500;
+		}
+	</style>
+</head>
+<body>
+<canvas id="myCanvas" width="1200" height="800"></canvas>
+<div class="info">
+	<p>Click, touch, or press any key to speed up time!</p>
+	<p class="speed">Speed: <span id="speedDisplay">1x</span></p>
+</div>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+let time = 0
+let timeSpeed = 1
+let speedDisplay = document.getElementById("speedDisplay")
+
+// Center of the solar system
+let centerX = canvas.width / 2
+let centerY = canvas.height / 2
+
+// Planet and moon data
+let planets = [
+	{
+		name: "Mercury",
+		radius: 4,
+		color: "#8c7853",
+		orbitRadius: 60,
+		speed: 4.74,
+		angle: 0,
+		moons: []
+	},
+	{
+		name: "Venus",
+		radius: 9,
+		color: "#ffc649",
+		orbitRadius: 90,
+		speed: 3.50,
+		angle: 0,
+		moons: []
+	},
+	{
+		name: "Earth",
+		radius: 10,
+		color: "#4a90e2",
+		orbitRadius: 120,
+		speed: 2.98,
+		angle: 0,
+		moons: [
+			{ name: "Moon", radius: 3, color: "#ccc", orbitRadius: 18, speed: 13 }
+		]
+	},
+	{
+		name: "Mars",
+		radius: 6,
+		color: "#e27b58",
+		orbitRadius: 150,
+		speed: 2.41,
+		angle: 0,
+		moons: [
+			{ name: "Phobos", radius: 1.5, color: "#999", orbitRadius: 12, speed: 20 },
+			{ name: "Deimos", radius: 1.2, color: "#aaa", orbitRadius: 16, speed: 15 }
+		]
+	},
+	{
+		name: "Jupiter",
+		radius: 30,
+		color: "#c88b3a",
+		orbitRadius: 220,
+		speed: 1.31,
+		angle: 0,
+		stripes: true,
+		moons: [
+			{ name: "Io", radius: 3, color: "#ffd700", orbitRadius: 42, speed: 8 },
+			{ name: "Europa", radius: 2.8, color: "#dab894", orbitRadius: 48, speed: 6.5 },
+			{ name: "Ganymede", radius: 4, color: "#9b8b7e", orbitRadius: 55, speed: 5 },
+			{ name: "Callisto", radius: 3.5, color: "#7a6f5d", orbitRadius: 62, speed: 4 }
+		]
+	},
+	{
+		name: "Saturn",
+		radius: 26,
+		color: "#fad5a5",
+		orbitRadius: 300,
+		speed: 0.97,
+		angle: 0,
+		rings: { inner: 30, outer: 50, color: "#e6c9a8" },
+		moons: [
+			{ name: "Titan", radius: 4, color: "#f4a460", orbitRadius: 42, speed: 5.5 },
+			{ name: "Rhea", radius: 2, color: "#d3d3d3", orbitRadius: 35, speed: 7 }
+		]
+	},
+	{
+		name: "Uranus",
+		radius: 18,
+		color: "#4fd0e7",
+		orbitRadius: 360,
+		speed: 0.68,
+		angle: 0,
+		rings: { inner: 22, outer: 28, color: "#67d4e8", faint: true },
+		moons: [
+			{ name: "Titania", radius: 2.5, color: "#c0c0c0", orbitRadius: 28, speed: 6 }
+		]
+	},
+	{
+		name: "Neptune",
+		radius: 17,
+		color: "#4166f5",
+		orbitRadius: 410,
+		speed: 0.54,
+		angle: 0,
+		moons: [
+			{ name: "Triton", radius: 3, color: "#d4d4ff", orbitRadius: 26, speed: 7 }
+		]
+	}
+]
+
+// Draw the sun with glow effect
+function drawSun() {
+	// Outer glow
+	let gradient1 = ctx.createRadialGradient(centerX, centerY, 15, centerX, centerY, 35)
+	gradient1.addColorStop(0, "rgba(255, 200, 50, 0.3)")
+	gradient1.addColorStop(1, "rgba(255, 150, 0, 0)")
+	ctx.fillStyle = gradient1
+	ctx.beginPath()
+	ctx.arc(centerX, centerY, 35, 0, Math.PI * 2)
+	ctx.fill()
+
+	// Middle glow
+	let gradient2 = ctx.createRadialGradient(centerX, centerY, 10, centerX, centerY, 20)
+	gradient2.addColorStop(0, "rgba(255, 220, 100, 0.8)")
+	gradient2.addColorStop(1, "rgba(255, 180, 0, 0.3)")
+	ctx.fillStyle = gradient2
+	ctx.beginPath()
+	ctx.arc(centerX, centerY, 20, 0, Math.PI * 2)
+	ctx.fill()
+
+	// Sun core
+	let gradient3 = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 15)
+	gradient3.addColorStop(0, "#fff8dc")
+	gradient3.addColorStop(0.5, "#ffeb3b")
+	gradient3.addColorStop(1, "#ff9800")
+	ctx.fillStyle = gradient3
+	ctx.beginPath()
+	ctx.arc(centerX, centerY, 15, 0, Math.PI * 2)
+	ctx.fill()
+}
+
+// Draw rings (for Saturn, Uranus, Neptune)
+function drawRings(x, y, inner, outer, color, faint = false) {
+	ctx.save()
+	ctx.translate(x, y)
+	// Tilt the rings
+	ctx.scale(1, 0.3)
+
+	ctx.strokeStyle = color
+	ctx.lineWidth = faint ? 1 : 2
+	ctx.globalAlpha = faint ? 0.5 : 0.7
+
+	for (let r = inner; r < outer; r += 2) {
+		ctx.beginPath()
+		ctx.arc(0, 0, r, 0, Math.PI * 2)
+		ctx.stroke()
+	}
+
+	ctx.restore()
+}
+
+// Draw a planet with optional stripes (Jupiter)
+function drawPlanet(x, y, radius, color, stripes = false) {
+	if (stripes) {
+		// Jupiter's stripes
+		let gradient = ctx.createLinearGradient(x - radius, y - radius, x - radius, y + radius)
+		gradient.addColorStop(0, "#d4a574")
+		gradient.addColorStop(0.2, "#c88b3a")
+		gradient.addColorStop(0.4, "#e0b060")
+		gradient.addColorStop(0.6, "#c88b3a")
+		gradient.addColorStop(0.8, "#d4a574")
+		gradient.addColorStop(1, "#b87333")
+		ctx.fillStyle = gradient
+	} else {
+		ctx.fillStyle = color
+	}
+
+	ctx.beginPath()
+	ctx.arc(x, y, radius, 0, Math.PI * 2)
+	ctx.fill()
+
+	// Add subtle shadow for 3D effect
+	let shadowGradient = ctx.createRadialGradient(x - radius/3, y - radius/3, radius/4, x, y, radius)
+	shadowGradient.addColorStop(0, "rgba(255, 255, 255, 0.3)")
+	shadowGradient.addColorStop(1, "rgba(0, 0, 0, 0.3)")
+	ctx.fillStyle = shadowGradient
+	ctx.beginPath()
+	ctx.arc(x, y, radius, 0, Math.PI * 2)
+	ctx.fill()
+}
+
+// Draw orbit path
+function drawOrbit(radius) {
+	ctx.strokeStyle = "rgba(100, 100, 100, 0.3)"
+	ctx.lineWidth = 1
+	ctx.beginPath()
+	ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+	ctx.stroke()
+}
+
+// Main draw function
+function draw() {
+	// Black space background
+	ctx.fillStyle = "#000"
+	ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+	// Draw stars
+	ctx.fillStyle = "#fff"
+	for (let i = 0; i < 200; i++) {
+		let x = (i * 37) % canvas.width
+		let y = (i * 73) % canvas.height
+		let size = (i % 3) * 0.5 + 0.5
+		ctx.fillRect(x, y, size, size)
+	}
+
+	// Draw the sun
+	drawSun()
+
+	// Update and draw planets
+	planets.forEach(planet => {
+		// Draw orbit
+		drawOrbit(planet.orbitRadius)
+
+		// Update angle
+		planet.angle += planet.speed * 0.001 * timeSpeed
+
+		// Calculate position
+		let planetX = centerX + Math.cos(planet.angle) * planet.orbitRadius
+		let planetY = centerY + Math.sin(planet.angle) * planet.orbitRadius
+
+		// Draw rings before planet if Saturn/Uranus/Neptune
+		if (planet.rings && Math.sin(planet.angle) < 0) {
+			drawRings(planetX, planetY, planet.rings.inner, planet.rings.outer,
+				planet.rings.color, planet.rings.faint)
+		}
+
+		// Draw planet
+		drawPlanet(planetX, planetY, planet.radius, planet.color, planet.stripes)
+
+		// Draw rings after planet (front part)
+		if (planet.rings && Math.sin(planet.angle) >= 0) {
+			drawRings(planetX, planetY, planet.rings.inner, planet.rings.outer,
+				planet.rings.color, planet.rings.faint)
+		}
+
+		// Draw moons
+		planet.moons.forEach(moon => {
+			if (!moon.angle) moon.angle = 0
+			moon.angle += moon.speed * 0.01 * timeSpeed
+
+			let moonX = planetX + Math.cos(moon.angle) * moon.orbitRadius
+			let moonY = planetY + Math.sin(moon.angle) * moon.orbitRadius
+
+			// Moon orbit
+			ctx.strokeStyle = "rgba(150, 150, 150, 0.2)"
+			ctx.lineWidth = 1
+			ctx.beginPath()
+			ctx.arc(planetX, planetY, moon.orbitRadius, 0, Math.PI * 2)
+			ctx.stroke()
+
+			// Moon
+			ctx.fillStyle = moon.color
+			ctx.beginPath()
+			ctx.arc(moonX, moonY, moon.radius, 0, Math.PI * 2)
+			ctx.fill()
+		})
+	})
+
+	time++
+	requestAnimationFrame(draw)
+}
+
+// Speed up time on interaction
+function speedUp() {
+	timeSpeed = Math.min(timeSpeed * 2, 32)
+	speedDisplay.textContent = timeSpeed + "x"
+
+	// Reset to normal speed after 2 seconds
+	setTimeout(() => {
+		timeSpeed = 1
+		speedDisplay.textContent = "1x"
+	}, 5000)
+}
+
+// Event listeners
+canvas.addEventListener("click", speedUp)
+canvas.addEventListener("touchstart", (e) => {
+	e.preventDefault()
+	speedUp()
+})
+document.addEventListener("keydown", speedUp)
+
+// Start animation
+draw()
+
+</script>
+</body>
+</html>

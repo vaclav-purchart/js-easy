@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Tile-Based City - Nested FOR Loops Demo</title>
+	<style>
+		body {
+			margin: 0;
+			padding: 20px;
+			background: #2c3e50;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			font-family: 'Courier New', monospace;
+		}
+		canvas {
+			border: 3px solid #34495e;
+			border-radius: 8px;
+			box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+			background: #ecf0f1;
+		}
+		.info {
+			color: #ecf0f1;
+			margin-top: 20px;
+			text-align: center;
+			max-width: 800px;
+		}
+		h1 {
+			color: #3498db;
+			margin-bottom: 10px;
+		}
+		.code-example {
+			background: #34495e;
+			padding: 15px;
+			border-radius: 5px;
+			margin-top: 15px;
+			text-align: left;
+			color: #2ecc71;
+			font-family: 'Courier New', monospace;
+		}
+		.legend {
+			display: flex;
+			gap: 20px;
+			justify-content: center;
+			flex-wrap: wrap;
+			margin-top: 15px;
+		}
+		.legend-item {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+		.legend-box {
+			width: 30px;
+			height: 30px;
+			border: 2px solid #34495e;
+			border-radius: 3px;
+		}
+	</style>
+</head>
+<body>
+<h1>🏙️ Tile-Based City Grid</h1>
+<canvas id="myCanvas" width="1000" height="700"></canvas>
+<div class="info">
+	<p><strong>Nested FOR Loops Demonstration</strong></p>
+	<div class="code-example">
+		for (let row = 0; row < ROWS; row++) {<br>
+		&nbsp;&nbsp;for (let col = 0; col < COLS; col++) {<br>
+		&nbsp;&nbsp;&nbsp;&nbsp;// Draw tile at position [row][col]<br>
+		&nbsp;&nbsp;}<br>
+		}
+	</div>
+	<div class="legend">
+		<div class="legend-item">
+			<div class="legend-box" style="background: #7cb342;"></div>
+			<span>Grass</span>
+		</div>
+		<div class="legend-item">
+			<div class="legend-box" style="background: #546e7a;"></div>
+			<span>Road</span>
+		</div>
+		<div class="legend-item">
+			<div class="legend-box" style="background: #42a5f5;"></div>
+			<span>Water</span>
+		</div>
+		<div class="legend-item">
+			<div class="legend-box" style="background: #8d6e63;"></div>
+			<span>Buildings</span>
+		</div>
+		<div class="legend-item">
+			<div class="legend-box" style="background: #fdd835;"></div>
+			<span>Sand</span>
+		</div>
+	</div>
+</div>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+// Grid configuration
+let TILE_SIZE = 50
+let COLS = 20
+let ROWS = 14
+
+// City map - defining what each tile contains
+// 0 = grass, 1 = road, 2 = water, 3 = sand
+let cityMap = [
+	[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+	[0,0,0,1,1,1,1,1,0,0,0,0,0,1,1,1,0,0,0,0],
+	[0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,1,0,0,0,0],
+	[0,0,0,1,0,0,0,1,1,1,1,1,1,1,0,1,1,1,0,0],
+	[0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0],
+	[0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0],
+	[2,2,2,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,0,0],
+	[2,2,2,2,3,3,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+	[2,2,2,2,3,3,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+	[2,2,2,2,3,3,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+	[0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+	[0,0,0,0,0,0,0,0,0,1,0,0,0,1,1,1,1,1,0,0],
+	[0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0],
+	[0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,1,0,0],
+]
+
+// Buildings positions [row, col, width, height, color]
+let buildings = [
+	[2, 4, 2, 2, '#8d6e63'],  // Brown building
+	[2, 6, 1, 2, '#78909c'],  // Gray building
+	[4, 4, 3, 2, '#d32f2f'],  // Red building
+	[2, 14, 1, 1, '#5d4037'], // Small building
+	[4, 14, 1, 2, '#6d4c41'], // Medium building
+	[8, 10, 2, 2, '#ffa726'], // Orange building
+	[8, 12, 3, 2, '#1976d2'], // Blue building
+	[4, 16, 1, 1, '#7b1fa2'], // Purple building
+	[11, 14, 3, 2, '#c62828'], // Large red building
+]
+
+// Trees positions [row, col]
+let trees = [
+	[0, 2], [0, 7], [0, 18], [1, 0], [1, 8], [1, 17],
+	[2, 1], [2, 18], [4, 1], [4, 2], [5, 0], [5, 18],
+	[8, 6], [8, 18], [9, 5], [9, 7], [10, 8], [10, 18],
+	[11, 2], [11, 8], [12, 0], [12, 2], [13, 1], [13, 18]
+]
+
+// Function to draw a single tile
+function drawTile(row, col, type) {
+	let x = col * TILE_SIZE
+	let y = row * TILE_SIZE
+
+	// Choose color based on terrain type
+	let color
+	switch(type) {
+		case 0: color = '#7cb342'; break  // Grass
+		case 1: color = '#546e7a'; break  // Road
+		case 2: color = '#42a5f5'; break  // Water
+		case 3: color = '#fdd835'; break  // Sand
+		default: color = '#7cb342'
+	}
+
+	// Fill the tile
+	ctx.fillStyle = color
+	ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE)
+
+	// Add texture based on type
+	if (type === 0) {
+		// Grass texture - small dots
+		ctx.fillStyle = '#689f38'
+		for (let i = 0; i < 3; i++) {
+			ctx.fillRect(x + 10 + i * 15, y + 10, 2, 2)
+			ctx.fillRect(x + 15 + i * 12, y + 25, 2, 2)
+			ctx.fillRect(x + 8 + i * 18, y + 38, 2, 2)
+		}
+	} else if (type === 1) {
+		// Road markings
+		if (col % 2 === 0) {
+			ctx.fillStyle = '#fdd835'
+			ctx.fillRect(x + 22, y + 20, 6, 10)
+		}
+	} else if (type === 2) {
+		// Water waves
+		ctx.strokeStyle = '#1e88e5'
+		ctx.lineWidth = 1
+		ctx.beginPath()
+		ctx.moveTo(x + 10, y + 15)
+		ctx.quadraticCurveTo(x + 20, y + 12, x + 30, y + 15)
+		ctx.stroke()
+		ctx.beginPath()
+		ctx.moveTo(x + 15, y + 30)
+		ctx.quadraticCurveTo(x + 25, y + 27, x + 35, y + 30)
+		ctx.stroke()
+	}
+
+	// Draw tile border with dots
+	ctx.fillStyle = '#34495e'
+	// Top border dots
+	for (let i = 0; i < 10; i++) {
+		ctx.fillRect(x + i * 5, y, 2, 2)
+	}
+	// Right border dots
+	for (let i = 0; i < 10; i++) {
+		ctx.fillRect(x + TILE_SIZE - 2, y + i * 5, 2, 2)
+	}
+	// Bottom border dots
+	for (let i = 0; i < 10; i++) {
+		ctx.fillRect(x + i * 5, y + TILE_SIZE - 2, 2, 2)
+	}
+	// Left border dots
+	for (let i = 0; i < 10; i++) {
+		ctx.fillRect(x + i * 5, y, 2, 2)
+	}
+}
+
+// Function to draw a building
+function drawBuilding(row, col, width, height, color) {
+	let x = col * TILE_SIZE + 5
+	let y = row * TILE_SIZE + 5
+	let w = width * TILE_SIZE - 10
+	let h = height * TILE_SIZE - 10
+
+	// Building body
+	ctx.fillStyle = color
+	ctx.fillRect(x, y, w, h)
+
+	// Building outline
+	ctx.strokeStyle = '#2c3e50'
+	ctx.lineWidth = 2
+	ctx.strokeRect(x, y, w, h)
+
+	// Windows
+	ctx.fillStyle = '#fff9c4'
+	let windowSize = 6
+	let windowSpacing = 12
+	for (let wy = 0; wy < height; wy++) {
+		for (let wx = 0; wx < width; wx++) {
+			// 2 windows per tile
+			ctx.fillRect(x + wx * TILE_SIZE + 8, y + wy * TILE_SIZE + 10, windowSize, windowSize)
+			ctx.fillRect(x + wx * TILE_SIZE + 8 + windowSpacing, y + wy * TILE_SIZE + 10, windowSize, windowSize)
+
+			ctx.fillRect(x + wx * TILE_SIZE + 8, y + wy * TILE_SIZE + 25, windowSize, windowSize)
+			ctx.fillRect(x + wx * TILE_SIZE + 8 + windowSpacing, y + wy * TILE_SIZE + 25, windowSize, windowSize)
+		}
+	}
+}
+
+// Function to draw a tree
+function drawTree(row, col) {
+	let x = col * TILE_SIZE + 25
+	let y = row * TILE_SIZE + 25
+
+	// Tree trunk
+	ctx.fillStyle = '#5d4037'
+	ctx.fillRect(x - 3, y - 5, 6, 10)
+
+	// Tree foliage
+	ctx.fillStyle = '#2e7d32'
+	ctx.beginPath()
+	ctx.arc(x, y - 10, 12, 0, Math.PI * 2)
+	ctx.fill()
+
+	// Lighter foliage highlight
+	ctx.fillStyle = '#43a047'
+	ctx.beginPath()
+	ctx.arc(x - 4, y - 12, 6, 0, Math.PI * 2)
+	ctx.fill()
+}
+
+// MAIN DRAWING FUNCTION USING NESTED FOR LOOPS
+function draw() {
+	// Clear canvas
+	ctx.fillStyle = "#ecf0f1"
+	ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+	// NESTED FOR LOOPS - This is the key demonstration!
+	// Outer loop: iterate through each ROW
+	for (let row = 0; row < ROWS; row++) {
+		// Inner loop: iterate through each COLUMN in this row
+		for (let col = 0; col < COLS; col++) {
+			// Get the terrain type for this tile
+			let terrainType = cityMap[row][col]
+
+			// Draw the tile
+			drawTile(row, col, terrainType)
+		}
+	}
+
+	// Draw trees (also using a loop!)
+	for (let i = 0; i < trees.length; i++) {
+		let treeRow = trees[i][0]
+		let treeCol = trees[i][1]
+		drawTree(treeRow, treeCol)
+	}
+
+	// Draw buildings (using another loop!)
+	for (let i = 0; i < buildings.length; i++) {
+		let b = buildings[i]
+		drawBuilding(b[0], b[1], b[2], b[3], b[4])
+	}
+
+	// Add coordinate labels to show grid positions
+	ctx.fillStyle = '#34495e'
+	ctx.font = '10px Arial'
+	// Column numbers
+	for (let col = 0; col < COLS; col++) {
+		ctx.fillText(col, col * TILE_SIZE + 20, 12)
+	}
+	// Row numbers
+	for (let row = 0; row < ROWS; row++) {
+		ctx.fillText(row, 5, row * TILE_SIZE + 30)
+	}
+}
+
+// Draw the city!
+draw()
+
+</script>
+</body>
+</html>
