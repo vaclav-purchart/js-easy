@@ -1936,6 +1936,86 @@ console.log("test")
 				modal.classList.remove('active')
 			}
 
+			// Parse unified diff format and apply it to the original text
+			applyUnifiedDiff(original, diff) {
+				try {
+					const diffLines = diff.split('\n')
+					const originalLines = original.split('\n')
+					const result = []
+
+					let originalIndex = 0
+					let i = 0
+
+					// Process the diff line by line
+					while (i < diffLines.length) {
+						const line = diffLines[i]
+
+						// Parse hunk header: @@ -start,count +start,count @@
+						const hunkMatch = line.match(/^@@\s+-(\d+),?(\d+)?\s+\+(\d+),?(\d+)?\s+@@/)
+						if (hunkMatch) {
+							const oldStart = parseInt(hunkMatch[1]) - 1 // Convert to 0-based
+							const oldCount = parseInt(hunkMatch[2] || '1')
+							const newStart = parseInt(hunkMatch[3]) - 1
+							const newCount = parseInt(hunkMatch[4] || '1')
+
+							// Copy lines before this hunk
+							while (originalIndex < oldStart) {
+								result.push(originalLines[originalIndex])
+								originalIndex++
+							}
+
+							// Process the hunk
+							i++
+							let deletedLines = 0
+							let addedLines = 0
+
+							while (i < diffLines.length && !diffLines[i].startsWith('@@')) {
+								const hunkLine = diffLines[i]
+
+								if (hunkLine.startsWith('-')) {
+									// Skip deleted line from original
+									originalIndex++
+									deletedLines++
+								} else if (hunkLine.startsWith('+')) {
+									// Add new line to result
+									result.push(hunkLine.slice(1))
+									addedLines++
+								} else if (hunkLine.startsWith(' ')) {
+									// Context line - copy from original
+									if (originalIndex < originalLines.length) {
+										result.push(originalLines[originalIndex])
+										originalIndex++
+									} else {
+										// Use the context from diff if original is exhausted
+										result.push(hunkLine.slice(1))
+									}
+								} else if (hunkLine.trim() === '') {
+									// Empty line in diff - treat as context
+									if (originalIndex < originalLines.length && originalLines[originalIndex].trim() === '') {
+										result.push(originalLines[originalIndex])
+										originalIndex++
+									}
+								}
+								i++
+							}
+							continue
+						}
+						i++
+					}
+
+					// Copy remaining lines from original
+					while (originalIndex < originalLines.length) {
+						result.push(originalLines[originalIndex])
+						originalIndex++
+					}
+
+					return result.join('\n')
+				} catch (error) {
+					console.error('Error applying diff:', error)
+					throw new Error('Failed to apply diff: ' + error.message)
+				}
+			}
+
 			async sendToAI() {
 				const passwordInput = document.getElementById('ai-password-input')
 				const languageSelect = document.getElementById('ai-language-select')
@@ -1970,12 +2050,22 @@ console.log("test")
 				const editorContent = this.editor.getValue()
 				this.preAICode = editorContent // Save current code before AI modification
 
-				// Create message with context and instruction to return complete code
+				// Create message requesting a unified diff format
 				const message = `Here is the current code:
 
 ${editorContent}
 
-IMPORTANT: Please return the COMPLETE, FULL code in your response. Do not provide partial code or snippets. Always return the entire working code that can be used directly.
+IMPORTANT: Please provide your changes in unified diff format (like git diff output).
+Start your response with a code block containing the diff:
+\`\`\`diff
+@@ -line,count +line,count @@
+ context line
+-removed line
++added line
+\`\`\`
+
+Do NOT return the complete file. Only return the minimal diff showing the specific changes needed.
+After the diff, you can add a brief explanation of the changes.
 
 User instructions: ${prompt}`
 
@@ -1991,7 +2081,7 @@ User instructions: ${prompt}`
 
 				try {
 					// Send to AI API
-					const response = await fetch('/api/chat', {
+					const response = await fetch('https://purchart.cloud/api/chat', {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
@@ -2050,33 +2140,62 @@ User instructions: ${prompt}`
 
 					// Update editor with the response
 					if (fullResponse) {
-						// Extract code from markdown code blocks if present
-						const codeBlockRegex = /```(?:html|javascript|js)?\s*\n([\s\S]*?)```/g
-						const match = codeBlockRegex.exec(fullResponse)
+						// Extract diff from markdown code block
+						const diffBlockRegex = /```diff\s*\n([\s\S]*?)```/
+						const diffMatch = diffBlockRegex.exec(fullResponse)
 
-						if (match && match[1]) {
-							// Use the code from the first code block
-							this.editor.setValue(match[1].trim())
+						if (diffMatch && diffMatch[1]) {
+							try {
+								// Apply the diff to the original content
+								const updatedCode = this.applyUnifiedDiff(editorContent, diffMatch[1].trim())
+								this.editor.setValue(updatedCode)
+								this.updatePreview()
+
+								// Success
+								statusDiv.className = 'modal-status success'
+								statusDiv.textContent = 'Code updated successfully using diff!'
+
+								// Update main status
+								this.updateStatus('success', 'AI diff applied')
+
+								// Close dialog after 2 seconds
+								setTimeout(() => {
+									this.closeAIDialog()
+									this.updateStatus('success', 'Ready')
+									submitBtn.disabled = false
+								}, 2000)
+							} catch (diffError) {
+								console.error('Error applying diff:', diffError)
+								statusDiv.className = 'modal-status error'
+								statusDiv.textContent = `Error applying diff: ${diffError.message}. AI response shown below.`
+								submitBtn.disabled = false
+							}
 						} else {
-							// If no code block, use the entire response
-							this.editor.setValue(fullResponse.trim())
+							// Fallback: try to extract code block or use entire response
+							const codeBlockRegex = /```(?:html|javascript|js)?\s*\n([\s\S]*?)```/g
+							const match = codeBlockRegex.exec(fullResponse)
+
+							if (match && match[1]) {
+								// Use the code from the first code block
+								this.editor.setValue(match[1].trim())
+								this.updatePreview()
+
+								statusDiv.className = 'modal-status success'
+								statusDiv.textContent = 'Code updated (full file received instead of diff)'
+								this.updateStatus('success', 'AI code generated')
+
+								setTimeout(() => {
+									this.closeAIDialog()
+									this.updateStatus('success', 'Ready')
+									submitBtn.disabled = false
+								}, 2000)
+							} else {
+								// No diff or code found
+								statusDiv.className = 'modal-status error'
+								statusDiv.textContent = 'No valid diff or code found in AI response. Check response below.'
+								submitBtn.disabled = false
+							}
 						}
-
-						this.updatePreview()
-
-						// Success
-						statusDiv.className = 'modal-status success'
-						statusDiv.textContent = 'Code updated successfully!'
-
-						// Update main status
-						this.updateStatus('success', 'AI code generated')
-
-						// Close dialog after 2 seconds
-						setTimeout(() => {
-							this.closeAIDialog()
-							this.updateStatus('success', 'Ready')
-							submitBtn.disabled = false
-						}, 2000)
 					} else {
 						statusDiv.className = 'modal-status error'
 						statusDiv.textContent = 'No response received from AI'
