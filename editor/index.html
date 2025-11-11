@@ -2140,6 +2140,10 @@ User instructions: ${prompt}`
 
 					// Update editor with the response
 					if (fullResponse) {
+						// Keep the full response visible for user to read
+						responseContainer.style.display = 'block'
+						responseContainer.textContent = fullResponse
+
 						// Extract diff from markdown code block
 						const diffBlockRegex = /```diff\s*\n([\s\S]*?)```/
 						const diffMatch = diffBlockRegex.exec(fullResponse)
@@ -2153,17 +2157,13 @@ User instructions: ${prompt}`
 
 								// Success
 								statusDiv.className = 'modal-status success'
-								statusDiv.textContent = 'Code updated successfully using diff!'
+								statusDiv.textContent = 'Code updated successfully using diff! Review the full response below.'
 
 								// Update main status
 								this.updateStatus('success', 'AI diff applied')
 
-								// Close dialog after 2 seconds
-								setTimeout(() => {
-									this.closeAIDialog()
-									this.updateStatus('success', 'Ready')
-									submitBtn.disabled = false
-								}, 2000)
+								// Re-enable submit button so user can close or make another request
+								submitBtn.disabled = false
 							} catch (diffError) {
 								console.error('Error applying diff:', diffError)
 								statusDiv.className = 'modal-status error'
@@ -2181,14 +2181,11 @@ User instructions: ${prompt}`
 								this.updatePreview()
 
 								statusDiv.className = 'modal-status success'
-								statusDiv.textContent = 'Code updated (full file received instead of diff)'
+								statusDiv.textContent = 'Code updated (full file received instead of diff). Review response below.'
 								this.updateStatus('success', 'AI code generated')
 
-								setTimeout(() => {
-									this.closeAIDialog()
-									this.updateStatus('success', 'Ready')
-									submitBtn.disabled = false
-								}, 2000)
+								// Re-enable submit button
+								submitBtn.disabled = false
 							} else {
 								// No diff or code found
 								statusDiv.className = 'modal-status error'
