@@ -390,6 +390,7 @@
 		<button id="list-btn">🔍 List</button>
 		<button id="chat-btn">💬 Chat</button>
 		<button id="ai-btn">🤖 AI</button>
+		<button id="image-btn">🖼️ Image</button>
 		<button id="new-btn">📋 New</button>
 		<button id="load-btn">📂 Load</button>
 		<button id="save-btn">💾 Save</button>
@@ -659,6 +660,7 @@
 				document.getElementById('list-btn').addEventListener('click', () => this.showList())
 				document.getElementById('chat-btn').addEventListener('click', () => this.showChat())
 				document.getElementById('ai-btn').addEventListener('click', () => this.showAIDialog())
+				document.getElementById('image-btn').addEventListener('click', () => this.showImageEditor())
 				document.getElementById('new-btn').addEventListener('click', () => this.newFile())
 				document.getElementById('load-btn').addEventListener('click', () => this.loadFile())
 				document.getElementById('save-btn').addEventListener('click', () => this.saveFile())
@@ -1775,6 +1777,10 @@ console.log("test")
 				window.open('https://purchart.cloud/chat', '_blank')
 			}
 
+			showImageEditor() {
+				window.open('https://purchart.cloud/image-editor', '_blank')
+			}
+
 			// Fullscreen Methods
 			showFullscreen() {
 				const code = this.editor.getValue()
@@ -2144,6 +2150,7 @@ console.log("test")
 1. =======================================================
 IMPORTANT:
 - You are programming code IDE assistant. Avoid long explanations. Keep your responses short and concise.
+- Every diff can be in the response just once. Keep it for the end of the response.
 - Please provide your changes in unified diff format (like git diff output).
 - Mind the @@ LINE NUMBER, CHANGED LINES COUNT at the beginning of the diff. They are mandatory.
 - Start your response with a code block containing the diff:

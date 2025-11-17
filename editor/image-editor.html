@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>Standalone Pixel Art Editor — Updated</title>
+	<style>
+		:root {
+			--cell-border: 1px solid #222;
+			--bg: #f3f3f3;
+			--panel-bg: #fff;
+		}
+
+		body {
+			font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial;
+			background: var(--bg);
+			margin: 16px;
+			color: #111
+		}
+
+		.app {
+			display: flex;
+			gap: 16px;
+			align-items: flex-start
+		}
+
+		.panel {
+			background: var(--panel-bg);
+			padding: 12px;
+			border-radius: 8px;
+			box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+		}
+
+		.controls {
+			width: 360px
+		}
+
+		.row {
+			display: flex;
+			gap: 8px;
+			align-items: center;
+			margin-bottom: 8px
+		}
+
+		label {
+			font-size: 13px;
+			min-width: 72px
+		}
+
+		input[type=number] {
+			width: 40px;
+			padding: 6px;
+			border-radius: 6px;
+			border: 1px solid #ccc
+		}
+
+		input[type=text] {
+			width: 100%;
+			padding: 6px;
+			border-radius: 6px;
+			border: 1px solid #ccc
+		}
+
+		button {
+			padding: 6px 10px;
+			border-radius: 6px;
+			border: 1px solid #bbb;
+			background: white;
+			cursor: pointer
+		}
+
+		.palette {
+			display: flex;
+			gap: 6px;
+			flex-wrap: wrap
+		}
+
+		.palette button {
+			width: 36px;
+			height: 28px;
+			padding: 0;
+			border: 2px solid #ddd
+		}
+
+		.grid-wrap {
+			background: linear-gradient(#fff, #eee);
+			padding: 12px;
+			border-radius: 8px
+		}
+
+		.grid {
+			display: grid;
+			background: transparent;
+		}
+
+		.cell {
+			box-sizing: border-box;
+			border: var(--cell-border);
+			cursor: pointer
+		}
+
+		.preview {
+			margin-top: 12px;
+			border: 1px solid #ccc;
+			display: inline-block
+		}
+
+		.small {
+			font-size: 12px;
+			color: #555
+		}
+
+		.controls .foot {
+			margin-top: 12px;
+			font-size: 12px;
+			color: #666
+		}
+	</style>
+</head>
+
+<body>
+	<h1>Pixel Art Editor — updated with PNG import & local storage</h1>
+	<div class="app">
+		<div class="panel controls">
+			<h2>Image & Controls</h2>
+
+			<div class="row">
+				<label for="width">Width</label>
+				<input id="width" type="number" min="1" max="256" value="16">
+				<label for="height">Height</label>
+				<input id="height" type="number" min="1" max="256" value="16">
+				<button id="applySize">Apply size</button>
+			</div>
+
+			<div class="row">
+				<label>Zoom</label>
+				<button id="zoomOut">−</button>
+				<span id="zoomVal">16</span> px
+				<button id="zoomIn">+</button>
+			</div>
+
+			<h2>Color</h2>
+			<div class="row">
+				<label for="colorPicker">Picker</label>
+				<input id="colorPicker" type="color" value="#ff0000">
+				<div class="small">Current: <span id="currentColor">#ff0000</span></div>
+			</div>
+			<div class="row palette" id="palette"></div>
+
+			<div style="margin-top:8px">
+				<div class="small">Set RGB:</div>
+				<div class="row">
+					<input id="r" type="number" min="0" max="255" placeholder="R" style="width:60px">
+					<input id="g" type="number" min="0" max="255" placeholder="G" style="width:60px">
+					<input id="b" type="number" min="0" max="255" placeholder="B" style="width:60px">
+					<button id="setRgb">Set</button>
+				</div>
+			</div>
+
+			<h2>Import / Export</h2>
+			<div class="row">
+				<input type="file" id="fileInput" accept="image/png" />
+			</div>
+
+			<div style="margin-top:12px">
+				<div class="small">Image data URL (updates on every change)</div>
+				<input id="dataUrlInput" type="text">
+				<div class="row" style="margin-top:8px">
+					<button id="pasteBase64Btn">Load from base64</button>
+				</div>
+				<div class="row" style="margin-top:8px">
+					<button id="clearBtn">Clear image</button>
+				</div>
+				<div class="row" style="margin-top:8px">
+					<button id="copyBtn">Copy</button>
+					<button id="downloadBtn">Download PNG</button>
+				</div>
+			</div>
+
+			<div class="foot">Tip: click cells to paint. Borders are visible for every pixel.</div>
+		</div>
+
+		<div class="panel">
+			<h2>Editor</h2>
+			<div class="grid-wrap">
+				<div id="grid" class="grid" style="--cols:16"></div>
+			</div>
+			<div style="margin-top:12px">
+				<div>Preview (native resolution):</div>
+				<canvas id="preview" class="preview"></canvas>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		let isPainting = false
+		let width = 16, height = 16
+		let pixelSize = 16
+		let currentColor = '#ff0000'
+		let pixels = []
+
+		const gridEl = document.getElementById('grid')
+		const preview = document.getElementById('preview')
+		const dataUrlInput = document.getElementById('dataUrlInput')
+		const fileInput = document.getElementById('fileInput')
+
+		const basicColors = ['transparent', '#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#8b4513', '#808080']
+
+		function init() {
+			loadFromLocalStorage()
+			if (pixels.length === 0) initPixels()
+			buildPalette()
+			renderGrid()
+			renderPreview()
+			updateDataUrl()
+			attachEvents()
+		}
+
+		function buildPalette() {
+			const pal = document.getElementById('palette')
+			pal.innerHTML = ''
+			basicColors.forEach(c => {
+				const b = document.createElement('button')
+				if (c === 'transparent') {
+					b.style.background = "repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 6px 6px"
+				} else b.style.background = c
+				b.addEventListener('click', () => setCurrentColor(c))
+				pal.appendChild(b)
+			})
+		}
+
+		function initPixels() { pixels = new Array(width * height).fill('transparent') }
+
+		function setCurrentColor(hex) {
+			currentColor = hex
+			document.getElementById('currentColor').textContent = hex
+			if (hex === 'transparent') return
+			document.getElementById('colorPicker').value = hex
+			document.getElementById('r').value = parseInt(hex.substring(1, 3), 16)
+			document.getElementById('g').value = parseInt(hex.substring(3, 5), 16)
+			document.getElementById('b').value = parseInt(hex.substring(5, 7), 16)
+		}
+
+		function renderGrid() {
+			gridEl.innerHTML = ''
+			gridEl.style.gridTemplateColumns = `repeat(${width}, ${pixelSize}px)`
+			gridEl.style.gridTemplateRows = `repeat(${height}, ${pixelSize}px)`
+
+			for (let y = 0; y < height; y++) {
+				for (let x = 0; x < width; x++) {
+					const idx = y * width + x
+					const cell = document.createElement('div')
+					cell.className = 'cell'
+					cell.dataset.idx = idx
+					cell.style.width = pixelSize + 'px'
+					cell.style.height = pixelSize + 'px'
+					cell.style.background = pixels[idx] === 'transparent' ? "repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 6px 6px" : pixels[idx]
+					gridEl.appendChild(cell)
+				}
+			}
+		}
+
+		function paintCell(cell) {
+			const idx = parseInt(cell.dataset.idx, 10)
+			pixels[idx] = currentColor
+			cell.style.background = currentColor === 'transparent' ? "repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 6px 6px" : currentColor
+			renderPreview()
+			updateDataUrl()
+		}
+
+		function renderPreview() {
+			preview.width = width
+			preview.height = height
+			const ctx = preview.getContext('2d')
+			ctx.clearRect(0, 0, width, height)
+			for (let y = 0; y < height; y++) {
+				for (let x = 0; x < width; x++) {
+					const idx = y * width + x
+					if (pixels[idx] !== 'transparent') {
+						ctx.fillStyle = pixels[idx]
+						ctx.fillRect(x, y, 1, 1)
+					}
+				}
+			}
+		}
+
+		function updateDataUrl() {
+			const c = document.createElement('canvas')
+			c.width = width
+			c.height = height
+			const ctx = c.getContext('2d')
+			for (let y = 0; y < height; y++) {
+				for (let x = 0; x < width; x++) {
+					const idx = y * width + x
+					if (pixels[idx] !== 'transparent') {
+						ctx.fillStyle = pixels[idx]
+						ctx.fillRect(x, y, 1, 1)
+					}
+				}
+			}
+			const url = c.toDataURL('image/png')
+			dataUrlInput.value = url
+			saveToLocalStorage()
+		}
+
+		function saveToLocalStorage() {
+			localStorage.setItem('pixelart_dataurl', dataUrlInput.value)
+		}
+
+		function loadFromLocalStorage() {
+			const saved = localStorage.getItem('pixelart_dataurl')
+			if (!saved) return
+			loadBase64(saved)
+		}
+
+		function loadBase64(base64) {
+			const img = new Image()
+			img.onload = () => {
+				width = img.width
+				height = img.height
+				document.getElementById('width').value = width
+				document.getElementById('height').value = height
+				const temp = document.createElement('canvas')
+				temp.width = width
+				temp.height = height
+				const ctx = temp.getContext('2d')
+				ctx.drawImage(img, 0, 0)
+				const data = ctx.getImageData(0, 0, width, height).data
+				pixels = new Array(width * height)
+				for (let i = 0; i < pixels.length; i++) {
+					const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2], a = data[i * 4 + 3]
+					pixels[i] = a === 0 ? 'transparent' : `rgba(${r},${g},${b},${a / 255})`
+				}
+				renderGrid()
+				renderPreview()
+				updateDataUrl()
+			}
+			img.src = base64
+		}
+
+		function attachEvents() {
+			gridEl.addEventListener('pointerdown', e => {
+				const cell = e.target.closest('.cell')
+				if (!cell) return
+				isPainting = true
+				paintCell(cell)
+			})
+			gridEl.addEventListener('pointermove', e => {
+				if (!isPainting) return
+				const cell = e.target.closest('.cell')
+				if (cell) paintCell(cell)
+			})
+			window.addEventListener('pointerup', () => { isPainting = false })
+
+			document.getElementById('applySize').addEventListener('click', () => {
+				const newW = parseInt(document.getElementById('width').value, 10)
+				const newH = parseInt(document.getElementById('height').value, 10)
+				const newPixels = new Array(newW * newH).fill('transparent')
+				for (let y = 0; y < Math.min(newH, height); y++) {
+					for (let x = 0; x < Math.min(newW, width); x++) {
+						newPixels[y * newW + x] = pixels[y * width + x]
+					}
+				}
+				width = newW
+				height = newH
+				pixels = newPixels
+				renderGrid()
+				renderPreview()
+				updateDataUrl()
+			})
+
+			document.getElementById('zoomIn').addEventListener('click', () => {
+				pixelSize = Math.min(64, pixelSize + 4)
+				document.getElementById('zoomVal').textContent = pixelSize
+				renderGrid()
+			})
+			document.getElementById('zoomOut').addEventListener('click', () => {
+				pixelSize = Math.max(4, pixelSize - 4)
+				document.getElementById('zoomVal').textContent = pixelSize
+				renderGrid()
+			})
+
+			document.getElementById('colorPicker').addEventListener('input', e => setCurrentColor(e.target.value))
+
+			document.getElementById('setRgb').addEventListener('click', () => {
+				const r = document.getElementById('r').value | 0
+				const g = document.getElementById('g').value | 0
+				const b = document.getElementById('b').value | 0
+				setCurrentColor(`#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`)
+			})
+
+			document.getElementById('clearBtn').addEventListener('click', () => {
+				pixels.fill('transparent')
+				renderGrid()
+				renderPreview()
+				updateDataUrl()
+			})
+
+			document.getElementById('copyBtn').addEventListener('click', async () => {
+				try { await navigator.clipboard.writeText(dataUrlInput.value); alert('Copied!') }
+				catch (e) { alert('Copy failed.') }
+			})
+
+			document.getElementById('downloadBtn').addEventListener('click', () => {
+				const a = document.createElement('a')
+				a.href = dataUrlInput.value
+				a.download = 'pixelart.png'
+				a.click()
+			})
+
+			fileInput.addEventListener('change', () => {
+				const file = fileInput.files[0]
+				if (!file) return
+				const reader = new FileReader()
+				reader.onload = e => loadBase64(e.target.result)
+				reader.readAsDataURL(file)
+			})
+
+			document.getElementById('pasteBase64Btn').addEventListener('click', () => {
+				const base64 = dataUrlInput.value.trim()
+				if (base64.startsWith('data:image')) loadBase64(base64)
+				else alert('Invalid base64 PNG data URL.')
+			})
+		}
+
+		init()
+	</script>
+</body>
+
+</html>
