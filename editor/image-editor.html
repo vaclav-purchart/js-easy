@@ -4,12 +4,13 @@
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width,initial-scale=1" />
-	<title>Standalone Pixel Art Editor — Updated</title>
+	<title>Standalone Pixel Art Editor — Tools: Pencil / Fill / Line</title>
 	<style>
 		:root {
 			--cell-border: 1px solid #222;
 			--bg: #f3f3f3;
 			--panel-bg: #fff;
+			--accent: #0b84ff;
 		}
 
 		body {
@@ -67,7 +68,10 @@
 			border-radius: 6px;
 			border: 1px solid #bbb;
 			background: white;
-			cursor: pointer
+			cursor: pointer;
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
 		}
 
 		.palette {
@@ -92,12 +96,14 @@
 		.grid {
 			display: grid;
 			background: transparent;
+			touch-action: none;
+			user-select: none;
 		}
 
 		.cell {
 			box-sizing: border-box;
 			border: var(--cell-border);
-			cursor: pointer
+			cursor: pointer;
 		}
 
 		.preview {
@@ -116,11 +122,45 @@
 			font-size: 12px;
 			color: #666
 		}
+
+		/* toolbar */
+		.toolbar {
+			display: flex;
+			gap: 8px;
+			margin-top: 8px;
+			margin-bottom: 8px;
+			align-items: center;
+		}
+
+		.tool-btn {
+			border: 1px solid #ccc;
+			padding: 6px 10px;
+			border-radius: 6px;
+			background: white;
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
+			cursor: pointer;
+		}
+
+		.tool-btn.active {
+			border-color: var(--accent);
+			box-shadow: 0 4px 12px rgba(11,132,255,0.12);
+			background: linear-gradient(#fff, #f0fbff);
+		}
+
+		.tool-icon {
+			font-size: 16px;
+			line-height: 1;
+		}
+
+		/* small label next to preview */
+		.preview-wrap { display:flex; gap:12px; align-items:center; margin-top:12px; }
 	</style>
 </head>
 
 <body>
-	<h1>Pixel Art Editor — updated with PNG import & local storage</h1>
+	<h1>Pixel Art Editor — Pencil / Fill / Line</h1>
 	<div class="app">
 		<div class="panel controls">
 			<h2>Image & Controls</h2>
@@ -158,6 +198,14 @@
 				</div>
 			</div>
 
+			<!-- TOOLBAR -->
+			<h3 style="margin-top:12px; margin-bottom:6px">Tool</h3>
+			<div class="toolbar" role="toolbar" aria-label="Tools">
+				<button id="toolPencil" class="tool-btn" title="Pencil (default)"><span class="tool-icon">🖉</span><span>Pencil</span></button>
+				<button id="toolFill" class="tool-btn" title="Fill"><span class="tool-icon">🪣</span><span>Fill</span></button>
+				<button id="toolLine" class="tool-btn" title="Line"><span class="tool-icon">📏</span><span>Line</span></button>
+			</div>
+
 			<h2>Import / Export</h2>
 			<div class="row">
 				<input type="file" id="fileInput" accept="image/png" />
@@ -178,7 +226,7 @@
 				</div>
 			</div>
 
-			<div class="foot">Tip: click cells to paint. Borders are visible for every pixel.</div>
+			<div class="foot">Tip: click / drag cells to paint with Pencil. Use Fill to flood-fill a contiguous area. Use Line to draw straight lines between pointer-down and pointer-up.</div>
 		</div>
 
 		<div class="panel">
@@ -186,27 +234,37 @@
 			<div class="grid-wrap">
 				<div id="grid" class="grid" style="--cols:16"></div>
 			</div>
-			<div style="margin-top:12px">
-				<div>Preview (native resolution):</div>
-				<canvas id="preview" class="preview"></canvas>
+			<div class="preview-wrap">
+				<div>
+					<div>Preview (native resolution):</div>
+					<canvas id="preview" class="preview"></canvas>
+				</div>
+				<div class="small" style="opacity:0.8">Tool: <span id="toolLabel">Pencil</span></div>
 			</div>
 		</div>
 	</div>
 
 	<script>
+		// state
 		let isPainting = false
 		let width = 16, height = 16
 		let pixelSize = 16
 		let currentColor = '#ff0000'
 		let pixels = []
 
+		let currentTool = 'pencil' // 'pencil' | 'fill' | 'line'
+		let lineStartIdx = null
+
 		const gridEl = document.getElementById('grid')
 		const preview = document.getElementById('preview')
 		const dataUrlInput = document.getElementById('dataUrlInput')
 		const fileInput = document.getElementById('fileInput')
 
+		const toolLabel = document.getElementById('toolLabel')
+
 		const basicColors = ['transparent', '#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#8b4513', '#808080']
 
+		// init
 		function init() {
 			loadFromLocalStorage()
 			if (pixels.length === 0) initPixels()
@@ -215,6 +273,7 @@
 			renderPreview()
 			updateDataUrl()
 			attachEvents()
+			updateToolUI()
 		}
 
 		function buildPalette() {
@@ -261,12 +320,23 @@
 			}
 		}
 
-		function paintCell(cell) {
+		function paintCell(cell, color = currentColor, quiet = false) {
 			const idx = parseInt(cell.dataset.idx, 10)
-			pixels[idx] = currentColor
-			cell.style.background = currentColor === 'transparent' ? "repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 6px 6px" : currentColor
-			renderPreview()
-			updateDataUrl()
+			pixels[idx] = color
+			cell.style.background = color === 'transparent' ? "repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 6px 6px" : color
+			if (!quiet) {
+				renderPreview()
+				updateDataUrl()
+			}
+		}
+
+		function setPixelIdx(idx, color) {
+			pixels[idx] = color
+			// update cell DOM if visible
+			const cell = gridEl.querySelector(`.cell[data-idx='${idx}']`)
+			if (cell) {
+				cell.style.background = color === 'transparent' ? "repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 6px 6px" : color
+			}
 		}
 
 		function renderPreview() {
@@ -280,6 +350,9 @@
 					if (pixels[idx] !== 'transparent') {
 						ctx.fillStyle = pixels[idx]
 						ctx.fillRect(x, y, 1, 1)
+					} else {
+						// clear pixel — leave transparent
+						ctx.clearRect(x, y, 1, 1)
 					}
 				}
 			}
@@ -290,6 +363,7 @@
 			c.width = width
 			c.height = height
 			const ctx = c.getContext('2d')
+			ctx.clearRect(0, 0, width, height)
 			for (let y = 0; y < height; y++) {
 				for (let x = 0; x < width; x++) {
 					const idx = y * width + x
@@ -339,20 +413,163 @@
 			img.src = base64
 		}
 
-		function attachEvents() {
-			gridEl.addEventListener('pointerdown', e => {
-				const cell = e.target.closest('.cell')
-				if (!cell) return
-				isPainting = true
-				paintCell(cell)
-			})
-			gridEl.addEventListener('pointermove', e => {
-				if (!isPainting) return
-				const cell = e.target.closest('.cell')
-				if (cell) paintCell(cell)
-			})
-			window.addEventListener('pointerup', () => { isPainting = false })
+		// TOOLING: flood fill and line (Bresenham)
+		function floodFill(startIdx) {
+			const target = pixels[startIdx]
+			const replacement = currentColor
+			if (target === replacement) return
+			const q = [startIdx]
+			const visited = new Uint8Array(width * height) // 0/1 visited
+			while (q.length) {
+				const idx = q.shift()
+				if (visited[idx]) continue
+				visited[idx] = 1
+				if (pixels[idx] !== target) continue
+				setPixelIdx(idx, replacement)
+				const x = idx % width
+				const y = Math.floor(idx / width)
+				if (x > 0) q.push(idx - 1)
+				if (x < width - 1) q.push(idx + 1)
+				if (y > 0) q.push(idx - width)
+				if (y < height - 1) q.push(idx + width)
+			}
+			// refresh
+			renderPreview()
+			updateDataUrl()
+		}
 
+		// Temporary preview pixels (for line preview)
+		let previewPixels = new Set()
+
+		function clearPreview() {
+			for (const idx of previewPixels) {
+				const cell = gridEl.querySelector(`.cell[data-idx='${idx}']`)
+				if (cell) {
+					const color = pixels[idx]
+					cell.style.background = color === 'transparent'
+						? "repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 6px 6px"
+						: color
+				}
+			}
+			previewPixels.clear()
+		}
+
+		function drawPreviewLine(startIdx, endIdx) {
+			clearPreview()
+
+			let x0 = startIdx % width
+			let y0 = Math.floor(startIdx / width)
+			const x1 = endIdx % width
+			const y1 = Math.floor(endIdx / width)
+
+			let dx = Math.abs(x1 - x0)
+			const sx = x0 < x1 ? 1 : -1
+			let dy = -Math.abs(y1 - y0)
+			const sy = y0 < y1 ? 1 : -1
+			let err = dx + dy
+
+			while (true) {
+				const idx = y0 * width + x0
+				previewPixels.add(idx)
+
+				const cell = gridEl.querySelector(`.cell[data-idx='${idx}']`)
+				if (cell) cell.style.background = currentColor
+
+				if (x0 === x1 && y0 === y1) break
+				const e2 = 2 * err
+				if (e2 >= dy) { err += dy; x0 += sx }
+				if (e2 <= dx) { err += dx; y0 += sy }
+			}
+		}
+
+		function drawLineByIdx(startIdx, endIdx) {
+			let x0 = startIdx % width
+			let y0 = Math.floor(startIdx / width)
+			const x1 = endIdx % width
+			const y1 = Math.floor(endIdx / width)
+
+			let dx = Math.abs(x1 - x0)
+			const sx = x0 < x1 ? 1 : -1
+			let dy = -Math.abs(y1 - y0)
+			const sy = y0 < y1 ? 1 : -1
+			let err = dx + dy
+
+			while (true) {
+				const idx = y0 * width + x0
+				setPixelIdx(idx, currentColor)
+				if (x0 === x1 && y0 === y1) break
+				const e2 = 2 * err
+				if (e2 >= dy) { err += dy; x0 += sx }
+				if (e2 <= dx) { err += dx; y0 += sy }
+			}
+			renderPreview();
+			updateDataUrl();
+		}
+
+		function getCellIdxFromEventTarget(target) {
+			const cell = target.closest ? target.closest('.cell') : null
+			if (!cell) return null
+			return parseInt(cell.dataset.idx, 10)
+		}
+
+		// Attach events with tool behavior
+		function attachEvents() {
+			// pointer interactions on the grid
+			gridEl.addEventListener('pointerdown', e => {
+				const cell = e.target.closest ? e.target.closest('.cell') : null
+				if (!cell) return
+				const idx = parseInt(cell.dataset.idx, 10)
+
+				if (currentTool === 'pencil') {
+					isPainting = true
+					paintCell(cell)
+				} else if (currentTool === 'fill') {
+					floodFill(idx)
+				} else if (currentTool === 'line') {
+					lineStartIdx = idx
+					clearPreview()
+				}
+			})
+
+			gridEl.addEventListener('pointermove', e => {
+				const cell = e.target.closest ? e.target.closest('.cell') : null
+				if (!cell) return
+
+				// Pencil drag
+				if (currentTool === 'pencil') {
+					if (isPainting) paintCell(cell)
+					return
+				}
+
+				// Line preview
+				if (currentTool === 'line' && lineStartIdx !== null) {
+					const idx = parseInt(cell.dataset.idx, 10)
+					drawPreviewLine(lineStartIdx, idx)
+				}
+			})
+
+			window.addEventListener('pointerup', e => {
+				if (currentTool === 'pencil') {
+					isPainting = false
+					return
+				}
+
+				if (currentTool === 'line') {
+					if (lineStartIdx !== null) {
+						const idx = getCellIdxFromEventTarget(e.target)
+						clearPreview() // remove ghost pixels
+
+						if (idx !== null) {
+							drawLineByIdx(lineStartIdx, idx)
+						}
+
+						lineStartIdx = null
+					}
+				}
+			})
+
+
+			// size / zoom / color events
 			document.getElementById('applySize').addEventListener('click', () => {
 				const newW = parseInt(document.getElementById('width').value, 10)
 				const newH = parseInt(document.getElementById('height').value, 10)
@@ -422,9 +639,34 @@
 				if (base64.startsWith('data:image')) loadBase64(base64)
 				else alert('Invalid base64 PNG data URL.')
 			})
+
+			// TOOL BUTTONS
+			document.getElementById('toolPencil').addEventListener('click', () => { currentTool = 'pencil'; updateToolUI() })
+			document.getElementById('toolFill').addEventListener('click', () => { currentTool = 'fill'; updateToolUI() })
+			document.getElementById('toolLine').addEventListener('click', () => { currentTool = 'line'; updateToolUI() })
+
+			// keyboard shortcuts (optional): P = pencil, B = bucket/fill, L = line
+			window.addEventListener('keydown', e => {
+				if (e.key === 'p' || e.key === 'P') { currentTool = 'pencil'; updateToolUI() }
+				if (e.key === 'b' || e.key === 'B') { currentTool = 'fill'; updateToolUI() }
+				if (e.key === 'l' || e.key === 'L') { currentTool = 'line'; updateToolUI() }
+			});
 		}
 
-		init()
+		function updateToolUI() {
+			const btnP = document.getElementById('toolPencil')
+			const btnF = document.getElementById('toolFill')
+			const btnL = document.getElementById('toolLine')
+			btnP.classList.toggle('active', currentTool === 'pencil')
+			btnF.classList.toggle('active', currentTool === 'fill')
+			btnL.classList.toggle('active', currentTool === 'line')
+			toolLabel.textContent = currentTool.charAt(0).toUpperCase() + currentTool.slice(1)
+		}
+
+		// helper to update a single cell's background if you've changed pixels programmatically
+		// (used by setPixelIdx)
+		// init call
+		init();
 	</script>
 </body>
 
