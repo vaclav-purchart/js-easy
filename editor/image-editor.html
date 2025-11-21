@@ -167,9 +167,9 @@
 
 			<div class="row">
 				<label for="width">Width</label>
-				<input id="width" type="number" min="1" max="256" value="16">
+				<input id="width" type="number" min="1" max="256" value="32">
 				<label for="height">Height</label>
-				<input id="height" type="number" min="1" max="256" value="16">
+				<input id="height" type="number" min="1" max="256" value="32">
 				<button id="applySize">Apply size</button>
 			</div>
 
@@ -247,7 +247,7 @@
 	<script>
 		// state
 		let isPainting = false
-		let width = 16, height = 16
+		let width = 32, height = 32
 		let pixelSize = 16
 		let currentColor = '#ff0000'
 		let pixels = []
@@ -262,7 +262,7 @@
 
 		const toolLabel = document.getElementById('toolLabel')
 
-		const basicColors = ['transparent', '#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#8b4513', '#808080']
+const basicColors = ['transparent', '#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#8b4513', '#808080']
 
 		// init
 		function init() {
@@ -279,11 +279,12 @@
 		function buildPalette() {
 			const pal = document.getElementById('palette')
 			pal.innerHTML = ''
-			basicColors.forEach(c => {
+			basicColors.forEach((c) => {
 				const b = document.createElement('button')
 				if (c === 'transparent') {
 					b.style.background = "repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 6px 6px"
-				} else b.style.background = c
+				}
+				else b.style.background = c
 				b.addEventListener('click', () => setCurrentColor(c))
 				pal.appendChild(b)
 			})
@@ -350,7 +351,8 @@
 					if (pixels[idx] !== 'transparent') {
 						ctx.fillStyle = pixels[idx]
 						ctx.fillRect(x, y, 1, 1)
-					} else {
+					}
+					else {
 						// clear pixel — leave transparent
 						ctx.clearRect(x, y, 1, 1)
 					}
@@ -502,9 +504,9 @@
 				if (e2 >= dy) { err += dy; x0 += sx }
 				if (e2 <= dx) { err += dx; y0 += sy }
 			}
-			renderPreview();
-			updateDataUrl();
-		}
+			renderPreview()
+	updateDataUrl()
+}
 
 		function getCellIdxFromEventTarget(target) {
 			const cell = target.closest ? target.closest('.cell') : null
@@ -515,7 +517,7 @@
 		// Attach events with tool behavior
 		function attachEvents() {
 			// pointer interactions on the grid
-			gridEl.addEventListener('pointerdown', e => {
+			gridEl.addEventListener('pointerdown', (e) => {
 				const cell = e.target.closest ? e.target.closest('.cell') : null
 				if (!cell) return
 				const idx = parseInt(cell.dataset.idx, 10)
@@ -523,15 +525,17 @@
 				if (currentTool === 'pencil') {
 					isPainting = true
 					paintCell(cell)
-				} else if (currentTool === 'fill') {
+				}
+				else if (currentTool === 'fill') {
 					floodFill(idx)
-				} else if (currentTool === 'line') {
+				}
+				else if (currentTool === 'line') {
 					lineStartIdx = idx
 					clearPreview()
 				}
 			})
 
-			gridEl.addEventListener('pointermove', e => {
+			gridEl.addEventListener('pointermove', (e) => {
 				const cell = e.target.closest ? e.target.closest('.cell') : null
 				if (!cell) return
 
@@ -548,7 +552,7 @@
 				}
 			})
 
-			window.addEventListener('pointerup', e => {
+			window.addEventListener('pointerup', (e) => {
 				if (currentTool === 'pencil') {
 					isPainting = false
 					return
@@ -598,7 +602,7 @@
 				renderGrid()
 			})
 
-			document.getElementById('colorPicker').addEventListener('input', e => setCurrentColor(e.target.value))
+			document.getElementById('colorPicker').addEventListener('input', (e) => setCurrentColor(e.target.value))
 
 			document.getElementById('setRgb').addEventListener('click', () => {
 				const r = document.getElementById('r').value | 0
@@ -630,7 +634,7 @@
 				const file = fileInput.files[0]
 				if (!file) return
 				const reader = new FileReader()
-				reader.onload = e => loadBase64(e.target.result)
+				reader.onload = (e) => loadBase64(e.target.result)
 				reader.readAsDataURL(file)
 			})
 
@@ -646,12 +650,12 @@
 			document.getElementById('toolLine').addEventListener('click', () => { currentTool = 'line'; updateToolUI() })
 
 			// keyboard shortcuts (optional): P = pencil, B = bucket/fill, L = line
-			window.addEventListener('keydown', e => {
+			window.addEventListener('keydown', (e) => {
 				if (e.key === 'p' || e.key === 'P') { currentTool = 'pencil'; updateToolUI() }
 				if (e.key === 'b' || e.key === 'B') { currentTool = 'fill'; updateToolUI() }
 				if (e.key === 'l' || e.key === 'L') { currentTool = 'line'; updateToolUI() }
-			});
-		}
+			})
+}
 
 		function updateToolUI() {
 			const btnP = document.getElementById('toolPencil')
@@ -666,7 +670,7 @@
 		// helper to update a single cell's background if you've changed pixels programmatically
 		// (used by setPixelIdx)
 		// init call
-		init();
+		init()
 	</script>
 </body>
 

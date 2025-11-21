@@ -65,7 +65,7 @@ const ctx = canvas.getContext("2d")
 
 let animationId = null
 let angle = 0
-var unusedVariable = "test" // This should trigger a warning
+let unusedVariable = "test" // This should trigger a warning
 
 function drawCircle() {
 	ctx.beginPath()
@@ -95,21 +95,21 @@ function clearCanvas() {
 
 function drawHouse() {
 	// Set line width
-	ctx.lineWidth = 10;
+	ctx.lineWidth = 10
 
 	// Wall
-	ctx.strokeRect(75, 140, 150, 110);
+	ctx.strokeRect(75, 140, 150, 110)
 
 	// Door
-	ctx.fillRect(130, 190, 40, 60);
+	ctx.fillRect(130, 190, 40, 60)
 
 	// Roof
-	ctx.beginPath();
-	ctx.moveTo(50, 140);
-	ctx.lineTo(150, 60);
-	ctx.lineTo(250, 140);
-	ctx.closePath();
-	ctx.stroke();
+	ctx.beginPath()
+	ctx.moveTo(50, 140)
+	ctx.lineTo(150, 60)
+	ctx.lineTo(250, 140)
+	ctx.closePath()
+	ctx.stroke()
 }
 
 function animateCircle() {

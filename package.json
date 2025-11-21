@@ -1,0 +1,26 @@
+{
+  "name": "js-easy",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vaclav-purchart/js-easy.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/vaclav-purchart/js-easy/issues"
+  },
+  "homepage": "https://github.com/vaclav-purchart/js-easy#readme",
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@html-eslint/eslint-plugin": "^0.49.0",
+    "eslint": "^9.39.1",
+    "eslint-plugin-html": "^8.1.3",
+    "globals": "^16.5.0"
+  }
+}
