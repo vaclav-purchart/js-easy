@@ -23,7 +23,7 @@ export default defineConfig([
 			"no-var": "warn",
 			"radix": "warn",
 			"no-multiple-empty-lines": "warn",
-			"brace-style": ["warn", "stroustrup", {"allowSingleLine": true}],
+			// "brace-style": ["warn", "stroustrup", {"allowSingleLine": true}],
 			"no-multi-spaces": ["warn", {"ignoreEOLComments": true}],
 			"semi": ["warn", "never"],
 			// "quotes": ["warn", "single", { "allowTemplateLiterals": true }], // disabled for kids
@@ -32,7 +32,7 @@ export default defineConfig([
 				"named": "never",
 				"asyncArrow": "always",
 			}],
-			"object-curly-spacing": ["warn", "never"],
+			// "object-curly-spacing": ["warn", "never"],
 			"space-before-blocks": ["warn", "always"],
 			"arrow-parens": ["warn", "always"],
 			"no-console": 0,
