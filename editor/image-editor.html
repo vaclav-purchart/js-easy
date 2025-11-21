@@ -217,6 +217,7 @@
 				<div class="row" style="margin-top:8px"><button id="clearBtn">Clear image</button></div>
 				<div class="row" style="margin-top:8px"><button id="copyBtn">Copy</button><button
 						id="downloadBtn">Download PNG</button></div>
+				<div class="row" style="margin-top:8px"><button id="undoBtn">Undo</button></div>
 			</div>
 
 			<div class="foot">Tip: this version uses a single canvas for the grid (no thousands of DOM nodes).
@@ -252,6 +253,8 @@
 		// pixel buffer stores colors as strings or null for transparent
 		let pixels = [] // length width*height
 
+		const undoStack = []
+
 		// DOM
 		const displayCanvas = document.getElementById('displayCanvas')
 		const overlayCanvas = document.getElementById('overlayCanvas')
@@ -275,7 +278,7 @@
 
 		function buildPalette() {
 			const pal = document.getElementById('palette'); pal.innerHTML = ''
-			basicColors.forEach(c => {
+			basicColors.forEach((c) => {
 				const b = document.createElement('button')
 				if (c === 'transparent') b.style.background = "repeating-conic-gradient(#ccc 0% 25%, #eee 0% 50%) 50% / 6px 6px"
 				else b.style.background = c
@@ -398,7 +401,7 @@
 			ctx.putImageData(imgData, 0, 0)
 		}
 
-		function renderAll() { renderDisplay(); renderPreview(); updateDataUrl(); }
+		function renderAll() { renderDisplay(); renderPreview(); updateDataUrl() }
 
 		// --- Pixel manipulation helpers (no DOM queries per pixel) ---
 		function setPixel(idx, color) { pixels[idx] = color === 'transparent' ? null : color }
@@ -478,6 +481,9 @@
 		function attachEvents() {
 			// pointer down / move / up on displayCanvas
 			displayCanvas.addEventListener('pointerdown', (e) => {
+				undoStack.push([...pixels])
+				console.log('add undo: ', undoStack.length)
+
 				displayCanvas.setPointerCapture(e.pointerId)
 				isPointerDown = true
 				const idx = getIdxFromPointerEvent(e)
@@ -525,11 +531,11 @@
 						newPixels[y * newW + x] = pixels[y * width + x]
 					}
 				}
-				width = newW; height = newH; pixels = newPixels; resizeCanvases(); renderAll();
+				width = newW; height = newH; pixels = newPixels; resizeCanvases(); renderAll()
 			})
 
-			document.getElementById('zoomIn').addEventListener('click', () => { pixelSize = Math.min(64, pixelSize + 4); document.getElementById('zoomVal').textContent = pixelSize; resizeCanvases(); renderAll() })
-			document.getElementById('zoomOut').addEventListener('click', () => { pixelSize = Math.max(4, pixelSize - 4); document.getElementById('zoomVal').textContent = pixelSize; resizeCanvases(); renderAll() })
+			document.getElementById('zoomIn').addEventListener('click', () => { pixelSize = Math.min(64, pixelSize + 4); document.getElementById('zoomVal').textContent = pixelSize; resizeCanvases(); renderAll(); saveToLocalStorage() })
+			document.getElementById('zoomOut').addEventListener('click', () => { pixelSize = Math.max(4, pixelSize - 4); document.getElementById('zoomVal').textContent = pixelSize; resizeCanvases(); renderAll(); saveToLocalStorage() })
 
 			document.getElementById('colorPicker').addEventListener('input', (e) => setCurrentColor(e.target.value))
 			document.getElementById('setRgb').addEventListener('click', () => {
@@ -537,10 +543,11 @@
 				setCurrentColor(`#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`)
 			})
 
-			document.getElementById('clearBtn').addEventListener('click', () => { pixels.fill(null); renderAll(); })
+			document.getElementById('clearBtn').addEventListener('click', () => { pixels.fill(null); renderAll() })
 
 			document.getElementById('copyBtn').addEventListener('click', async () => { try { await navigator.clipboard.writeText(document.getElementById('dataUrlInput').value); alert('Copied!') } catch (e) { alert('Copy failed.') } })
 			document.getElementById('downloadBtn').addEventListener('click', () => { const a = document.createElement('a'); a.href = document.getElementById('dataUrlInput').value; a.download = 'pixelart.png'; a.click() })
+			document.getElementById('undoBtn').addEventListener('click', () => { let p = undoStack.pop(); if (!p) return; pixels.length=0; pixels.push(...p); renderAll() })
 
 			document.getElementById('pasteBase64Btn').addEventListener('click', () => {
 				const base64 = document.getElementById('dataUrlInput').value.trim(); if (base64.startsWith('data:image')) loadBase64(base64); else alert('Invalid base64 PNG data URL.')
@@ -605,9 +612,23 @@
 			saveToLocalStorage()
 		}
 
-		function saveToLocalStorage() { localStorage.setItem('pixelart_dataurl', document.getElementById('dataUrlInput').value) }
+		function saveToLocalStorage() {
+			localStorage.setItem('pixelart_dataurl', document.getElementById('dataUrlInput').value)
+			localStorage.setItem('pixelart_zoom', pixelSize)
+		}
 
-		function loadFromLocalStorage() { const saved = localStorage.getItem('pixelart_dataurl'); if (!saved) return; loadBase64(saved) }
+		function loadFromLocalStorage() {
+			const zoom = localStorage.getItem('pixelart_zoom')
+			if (zoom && zoom !== 'undefined') {
+				document.getElementById('zoomVal').textContent = zoom
+				pixelSize = Number(zoom)
+			}
+			const saved = localStorage.getItem('pixelart_dataurl')
+			if (saved) loadBase64(saved)
+
+			resizeCanvases()
+			renderAll()
+		}
 
 		function loadBase64(base64) {
 			const img = new Image(); img.onload = () => {
@@ -616,27 +637,12 @@
 				const data = ctx.getImageData(0, 0, width, height).data
 				pixels = new Array(width * height)
 				for (let i = 0; i < pixels.length; i++) { const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2], a = data[i * 4 + 3]; pixels[i] = a === 0 ? null : `rgba(${r},${g},${b},${(a / 255).toFixed(3)})` }
-				resizeCanvases(); renderAll();
+				resizeCanvases(); renderAll()
 			}
 			img.src = base64
 		}
 
 		// file import/export listeners are already attached in attachEvents
-
-		// --- Utilities ---
-		// function drawLineByIdx(startIdx, endIdx) { drawLineByIdx_impl(startIdx, endIdx) }
-		function drawLineByIdx_impl(startIdx, endIdx) {
-			let x0 = startIdx % width, y0 = Math.floor(startIdx / width)
-			const x1 = endIdx % width, y1 = Math.floor(endIdx / width)
-			let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1
-			let dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1
-			let err = dx + dy
-			const col = currentColor === 'transparent' ? null : currentColor
-			while (true) { setPixel(y0 * width + x0, col); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx } if (e2 <= dx) { err += dx; y0 += sy } }
-			renderAll()
-		}
-
-		// --- Start ---
 		init()
 	</script>
 </body>
