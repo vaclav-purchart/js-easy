@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Arrays Demo Game (Canvas)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; display:flex; gap:16px; padding:16px; }
+    canvas { background: #0b1220; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.6); width: 640px; height: 480px; }
+    .panel { width:360px; }
+    .panel h2 { margin:0 0 8px 0; font-size:16px; }
+    .panel pre { background:#f3f4f6; padding:8px; border-radius:6px; height:360px; overflow:auto; }
+    .controls { margin-top:8px; }
+    .controls button { margin-right:6px; margin-bottom:6px; }
+    small { color:#666; }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="640" height="480"></canvas>
+
+  <div class="panel">
+    <h2>Arrays demo (live)</h2>
+    <p>This tiny game demonstrates how arrays work in JavaScript:</p>
+    <ul>
+      <li><strong>enemies</strong>: a list of enemy objects (spawn, update, remove)</li>
+      <li><strong>bullets</strong>: bullets you shoot (collision removes enemies)</li>
+      <li><strong>inventory</strong>: items you pick up (push, splice)</li>
+    </ul>
+
+    <pre id="debug"></pre>
+
+    <div class="controls">
+      <button id="spawn">Spawn enemy</button>
+      <button id="spawnMany">Spawn 5 enemies</button>
+      <button id="clearEnemies">Clear enemies</button>
+      <br>
+      <button id="addItem">Add item to inventory</button>
+      <button id="dropItem">Drop last item</button>
+      <button id="clearInventory">Clear inventory</button>
+      <br>
+      <button id="reset">Reset all</button>
+    </div>
+
+    <p><small>Controls: Click canvas to shoot toward cursor. Press <code>E</code> to spawn enemy. Press <code>I</code> to add inventory item.</small></p>
+  </div>
+
+<script>
+/*
+  Simple canvas demo that uses arrays to manage game objects.
+  Key array operations used in the demo:
+   - .push() to add
+   - .splice() to remove by index
+   - .filter() to remove by condition (functional style)
+   - .map() / .forEach() to iterate
+*/
+
+let canvas = document.getElementById('game')
+let ctx = canvas.getContext('2d')
+let debug = document.getElementById('debug')
+
+// --- Game state (arrays!) ---
+let enemies = [] // each enemy: {x,y,r,spd,id}
+let bullets = [] // each bullet: {x,y,dx,dy,spd}
+let inventory = [] // simple array of strings
+let nextEnemyId = 1
+
+// Player
+let player = { x: canvas.width/2, y: canvas.height - 40, r: 12 }
+
+// Utilities
+function rand(min, max) { return Math.random()*(max-min)+min }
+
+// Spawn an enemy and push into enemies array
+function spawnEnemy(x = rand(20, canvas.width-20), y = -20) {
+	let e = { x, y, r: 14, spd: rand(0.5, 1.6), id: nextEnemyId++ }
+	enemies.push(e) // <-- push adds to the array's end
+}
+
+// Shoot a bullet towards (tx,ty)
+function shootAt(tx, ty) {
+	let angle = Math.atan2(ty - player.y, tx - player.x)
+	let speed = 6
+	bullets.push({ x: player.x, y: player.y, dx: Math.cos(angle)*speed, dy: Math.sin(angle)*speed, spd: speed })
+}
+
+// Pick up an item (demonstrates push and array length)
+function addItem() {
+	let item = `Potion_${Math.floor(rand(1,999))}`
+	inventory.push(item) // add item to inventory
+}
+
+// Drop last item (pop) - examples of stack-like behaviour
+function dropLastItem() {
+	inventory.pop() // remove last element
+}
+
+// Remove enemy by id using splice (find its index first)
+function removeEnemyById(id) {
+	let idx = enemies.findIndex((e) => e.id === id)
+	if (idx !== -1) enemies.splice(idx, 1) // splice removes 1 item at index
+}
+
+// Game update: move bullets & enemies, check collisions, and remove dead objects.
+function update() {
+	// Move bullets
+	for (let i=bullets.length-1; i>=0; i--) {
+		let b = bullets[i]
+		b.x += b.dx; b.y += b.dy
+		// remove bullets off-screen using splice
+		if (b.x < -10 || b.x > canvas.width+10 || b.y < -10 || b.y > canvas.height+10) {
+			bullets.splice(i, 1)
+		}
+	}
+
+	// Move enemies
+	for (let i=enemies.length-1; i>=0; i--) {
+		let e = enemies[i]
+		e.y += e.spd
+		// enemy reached bottom -> remove via splice
+		if (e.y - e.r > canvas.height) {
+			enemies.splice(i, 1)
+		}
+	}
+
+	// Check collisions: bullets vs enemies
+	// We'll loop bullets and enemies; on collision remove both using splice.
+	for (let bi = bullets.length-1; bi >= 0; bi--) {
+		let b = bullets[bi]
+		for (let ei = enemies.length-1; ei >= 0; ei--) {
+			let e = enemies[ei]
+			let dx = b.x - e.x
+			let dy = b.y - e.y
+			let dist = Math.hypot(dx, dy)
+			if (dist < e.r + 4) {
+				// collision!
+				bullets.splice(bi, 1) // remove this bullet
+				enemies.splice(ei, 1) // remove enemy
+				break // bullet is gone, go to next bullet
+			}
+		}
+	}
+
+	// Example of using filter to remove enemies by condition (functional style)
+	// (This isn't necessary here, but demonstrates a different approach.)
+	// enemies = enemies.filter(e => e.hp > 0);
+}
+
+// Draw everything
+function render() {
+	ctx.clearRect(0,0,canvas.width,canvas.height)
+
+	// player
+	ctx.fillStyle = '#6ee7b7'
+	ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI*2); ctx.fill()
+
+	// bullets
+	ctx.fillStyle = '#a78bfa'
+	bullets.forEach((b) => {
+		ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill()
+	})
+
+	// enemies
+	ctx.fillStyle = '#fb7185'
+	enemies.forEach((e) => {
+		ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.fill()
+		// draw id to show it's an object inside the array
+		ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.fillText(e.id, e.x-6, e.y+3)
+		ctx.fillStyle = '#fb7185'
+	})
+
+	// HUD: arrays summary
+	ctx.fillStyle = 'rgba(255,255,255,0.06)'
+	ctx.fillRect(6,6,220,62)
+	ctx.fillStyle = '#fff'; ctx.font = '12px sans-serif'
+	ctx.fillText(`enemies: ${enemies.length}`, 12, 24)
+	ctx.fillText(`bullets: ${bullets.length}`, 12, 42)
+	ctx.fillText(`inventory: ${inventory.length}`, 12, 60)
+}
+
+// Main loop
+function loop() {
+	update()
+	render()
+	writeDebug()
+	requestAnimationFrame(loop)
+}
+
+// Write a readable debug view (shows arrays in plain form)
+function writeDebug() {
+	// We'll show only the important fields to keep the text short
+	let enemiesView = enemies.map((e) => ({id:e.id, x: Math.round(e.x), y: Math.round(e.y)}))
+	let bulletsView = bullets.map((b,i) => ({i, x: Math.round(b.x), y: Math.round(b.y)}))
+
+	// Demonstrate map() to create a transformed view
+	let enemyIds = enemies.map((e) => e.id)
+
+	debug.textContent = `enemies (count ${enemies.length}):\n${JSON.stringify(enemiesView, null, 2)}\n\n` +
+                      `bullets (count ${bullets.length}):\n${JSON.stringify(bulletsView, null, 2)}\n\n` +
+                      `enemyIds (using map): [${enemyIds.join(', ')}]\n\n` +
+                      `inventory (stack-like): [${inventory.join(', ')}]\n`
+}
+
+// --- Input handlers ---
+canvas.addEventListener('click', (e) => {
+	let rect = canvas.getBoundingClientRect()
+	let mx = e.clientX - rect.left
+	let my = e.clientY - rect.top
+	shootAt(mx, my)
+})
+
+// keyboard shortcuts
+window.addEventListener('keydown', (e) => {
+	if (e.key === 'e' || e.key === 'E') spawnEnemy()
+	if (e.key === 'i' || e.key === 'I') addItem()
+	if (e.key === 'd' || e.key === 'D') dropLastItem()
+	if (e.key === 'c' || e.key === 'C') { enemies.length = 0; bullets.length = 0; inventory.length = 0 }
+})
+
+// Buttons
+document.getElementById('spawn').addEventListener('click', ()=>spawnEnemy())
+document.getElementById('spawnMany').addEventListener('click', ()=>{ for (let i=0;i<5;i++) spawnEnemy() })
+document.getElementById('clearEnemies').addEventListener('click', ()=>enemies.length=0)
+document.getElementById('addItem').addEventListener('click', ()=>addItem())
+document.getElementById('dropItem').addEventListener('click', ()=>dropLastItem())
+document.getElementById('clearInventory').addEventListener('click', ()=>inventory.length=0)
+document.getElementById('reset').addEventListener('click', ()=>{ enemies.length=0; bullets.length=0; inventory.length=0; nextEnemyId=1 })
+
+// Start with a few enemies
+for (let i=0;i<3;i++) spawnEnemy()
+requestAnimationFrame(loop)
+</script>
+</body>
+</html>
