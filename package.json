@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "test-server": "cd editor && python3 -m http.server",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

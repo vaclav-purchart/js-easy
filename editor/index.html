@@ -386,6 +386,7 @@
 <body>
 	<div class="toolbar">
 		<button id="send-btn">✉️ Send</button>
+		<button id="keyboard-btn">⌨️ Keyboard</button>
 		<button id="fullscreen-btn">📱 Fullscreen</button>
 		<button id="list-btn">🔍 List</button>
 		<button id="chat-btn">💬 Chat</button>
@@ -501,7 +502,11 @@
 	<!-- Monaco Editor -->
 	<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs/loader.js"></script>
 
-	<script>
+	<script type="module">
+	</script>
+	<script type="module">
+		import { openKeyboard } from "./keyboard.js";
+
 		console.log('JavaScript is running!')
 
 		class JSEasyIDE {
@@ -569,6 +574,10 @@
 						this.editor.onDidChangeModelContent(() => {
 							this.debouncedUpdate()
 						})
+
+						document.getElementById("keyboard-btn").addEventListener("click", () => {
+							openKeyboard(this.editor);   // JSEasyIDE stores Monaco editor in this.editor
+						});
 
 						resolve()
 					})
