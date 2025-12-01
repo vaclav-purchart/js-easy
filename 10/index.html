@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<style>
+		* {
+			font-family: Intern, Arial, sans-serif;
+			font-size: 16px;
+		}
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+		}
+	</style>
+</head>
+<body>
+<label for="name">Nový soused:</label>
+<input id="name" placeholder="zadej jméno">
+<button id="addFloor">Přidej patro</button>
+<button id="removeFloor">Odeber patro</button>
+<hr/>
+
+<canvas id="myCanvas" width="500" height="500"></canvas>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+let grass = 50
+let names = ["Vašík", "Olík", "Krištof", "Bíža", "Adam", "Sáry", "Luky", "Anička"]
+let house = ["VAŠEK"]
+
+function drawWindow(floorX, floorY, floorH, order) {
+	let w = 50
+	let h = floorH - 30
+	let x = floorX + 30 + order * (w + 40)
+	let y = floorY + 20
+
+	// Window box
+	ctx.fillStyle = "#6ed6efff"
+	ctx.fillRect(x, y, w, h)
+
+	ctx.strokeStyle = "#22829a"
+	ctx.strokeRect(x, y, w, h)
+
+	// Window lines
+	ctx.strokeStyle = "white"
+	ctx.lineWidth = 3
+
+	ctx.beginPath()
+	ctx.moveTo(x + w/2, y)
+	ctx.lineTo(x + w/2, y + h)
+
+	ctx.moveTo(x, y + h/2)
+	ctx.lineTo(x+w, y + h/2)
+	ctx.stroke()
+}
+
+function drawFloor(floorNumber, name = "test") {
+	let x = 150
+	let w = 200
+	let h = 80
+	let y = canvas.height - floorNumber * h - h - grass
+
+	// Main walls
+	ctx.fillStyle = "#e0e1e6"
+	ctx.fillRect(x, y, w, h)
+
+	ctx.lineWidth = 3
+	ctx.strokeStyle = 'rgba(177, 185, 188, 1)'
+	ctx.strokeRect(x, y, w, h)
+
+	// Windows
+	drawWindow(x, y, h, 0)
+	drawWindow(x, y, h, 1)
+
+	// Balcony
+	let balconyW = 30
+	ctx.strokeStyle = "#87827cff"
+	ctx.lineWidth = 5
+	ctx.beginPath()
+	ctx.moveTo(x, y + h - 10)
+	ctx.lineTo(x - balconyW, y + h - 10)
+	ctx.lineTo(x - balconyW, y + h - 40)
+	ctx.stroke()
+
+	ctx.fillStyle = "black"
+	ctx.font = "20px sans-serif";
+	ctx.fillText(floorNumber + ": " + name.toUpperCase(), x + w + 10, y + h / 2 + 10)
+
+}
+
+function draw() {
+	// Clear canvas
+	ctx.fillStyle = "white"
+	ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+	// Grass
+	ctx.fillStyle = "#6ec555ff"
+	ctx.fillRect(0, canvas.height - grass, canvas.width, canvas.height)
+
+	// Draw house
+	for (let i=0; i<house.length; i++) {
+		let name = house[i]
+		drawFloor(i, name)
+	}
+}
+
+function getRandomName() {
+	let index = Math.floor(Math.random()*names.length)
+	return names[index]
+}
+
+draw()
+
+document.getElementById('addFloor').addEventListener('click', function() {
+	let name = document.getElementById('name').value
+	house.push(name)
+	draw()
+
+	// New suggested name
+	document.getElementById('name').value = getRandomName()
+})
+
+document.getElementById('removeFloor').addEventListener('click', function() {
+	house.pop()
+	draw()
+})
+
+document.getElementById('name').value = getRandomName()
+
+</script>
+</body>
+</html>

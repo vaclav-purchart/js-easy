@@ -10,7 +10,7 @@
 	--bg: #f3f3f3;
 	--panel-bg: #fff;
 	--accent: #0b84ff;
-	--controls-width: 300px;
+	--controls-width: 275px;
 	--layers-width: 275px;
 	--topbar-height: 48px;
 }
@@ -62,9 +62,17 @@ body {
 	overflow-y: auto;
 }
 
-#showHidePanel {
+#showHideControls {
 	position: absolute;
 	left: calc(var(--controls-width) - 40px);
+	top: calc(var(--topbar-height) + 20px);
+	border: none;
+}
+
+#showHideLayers {
+	position: absolute;
+	right: 20px;
+	top: calc(var(--topbar-height) + 20px);
 	border: none;
 }
 
@@ -254,7 +262,7 @@ button {
 	flex-direction: column;
 	padding: 12px;
 	margin: auto;
-	max-width: calc(100% - var(--controls-width) - var(--layers-width));
+	/* max-width: calc(100% - var(--controls-width) - var(--layers-width)); */
 	max-height: calc(100vh - var(--topbar-height) - 24px);
 	overflow: auto;
 }
@@ -290,9 +298,10 @@ button {
 			<button id="zoomIn" class="tool-btn">+</button>
 		</div>
 	</header>
+	<button id="showHideControls">◀️</button>
+	<button id="showHideLayers">◀️</button>
 	<div id="app">
-		<div class="panel controls">
-			<button id="showHidePanel">◀️</button>
+		<div class="panel controls" id="sidePanel-controls">
 			<div class="controls-section">
 				<h3>Image size</h3>
 
@@ -370,7 +379,7 @@ button {
 			</div>
 		</div>
 
-		<div class="panel layers-panel">
+		<div class="panel layers-panel" id="sidePanel-layers">
 			<h3>Layers</h3>
 			<div id="layersList"></div>
 			<div style="display:flex;gap:8px;margin-top:8px">
@@ -1237,6 +1246,31 @@ function attachEvents() {
 		cancelBtn.disabled = false
 		pasteClipboardAt(0, 0)
 	})
+	document.getElementById('showHideControls').addEventListener('click', () => {
+		const panel = document.getElementById('sidePanel-controls')
+		const button = document.getElementById('showHideControls')
+		if (panel.style.display === 'none') {
+			panel.style.display = 'block'
+			button.textContent = '◀️'
+			button.style.left = 'calc(var(--controls-width) - 40px)'
+		} else {
+			panel.style.display = 'none'
+			button.textContent = '▶️'
+			button.style.left = '10px'
+		}
+	})
+
+	document.getElementById('showHideLayers').addEventListener('click', () => {
+		const panel = document.getElementById('sidePanel-layers')
+		const button = document.getElementById('showHideLayers')
+		if (panel.style.display === 'none') {
+			panel.style.display = 'block'
+			button.textContent = '◀️'
+		} else {
+			panel.style.display = 'none'
+			button.textContent = '▶️'
+		}
+	})
 
 	// layers controls
 	document.getElementById("addLayer").addEventListener("click", () => {
@@ -1266,10 +1300,14 @@ function attachEvents() {
 		// arrow keys move selection by 1px if selection exists
 		if (selection) {
 			let moved = false
-			if (e.key === "ArrowLeft") { selection.x = Math.max(0, selection.x - 1); moved = true }
-			if (e.key === "ArrowRight") { selection.x = Math.min(width - selection.w, selection.x + 1); moved = true }
-			if (e.key === "ArrowUp") { selection.y = Math.max(0, selection.y - 1); moved = true }
-			if (e.key === "ArrowDown") { selection.y = Math.min(height - selection.h, selection.y + 1); moved = true }
+			// if (e.key === "ArrowLeft") { selection.x = Math.max(0, selection.x - 1); moved = true }
+			// if (e.key === "ArrowRight") { selection.x = Math.min(width - selection.w, selection.x + 1); moved = true }
+			// if (e.key === "ArrowUp") { selection.y = Math.max(0, selection.y - 1); moved = true }
+			// if (e.key === "ArrowDown") { selection.y = Math.min(height - selection.h, selection.y + 1); moved = true }
+			if (e.key === "ArrowLeft") { selection.x = selection.x - 1; moved = true }
+			if (e.key === "ArrowRight") { selection.x = selection.x + 1; moved = true }
+			if (e.key === "ArrowUp") { selection.y = selection.y - 1; moved = true }
+			if (e.key === "ArrowDown") { selection.y = selection.y + 1; moved = true }
 			if (moved) { drawOverlay(); e.preventDefault(); return }
 		}
 		if (e.key === "p" || e.key === "P") {

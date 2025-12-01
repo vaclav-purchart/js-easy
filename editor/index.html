@@ -980,6 +980,10 @@ console.log("test")
 			}
 
 			updatePreview() {
+				if (location.search.includes('preview=false')) {
+					console.log('Preview update skipped due to no preview parameter')
+					return
+				}
 				if (this.isUpdating) return
 
 				this.isUpdating = true
