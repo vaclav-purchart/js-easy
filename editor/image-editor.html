@@ -58,8 +58,10 @@ body {
 .controls {
 	width: var(--controls-width);
 	min-width: var(--controls-width);
+	max-width: var(--controls-width);
 	max-height: 100%;
 	overflow-y: auto;
+	overflow-x: hidden;
 }
 
 #showHideControls {
@@ -347,7 +349,10 @@ button {
 
 			<div class="controls-section">
 				<h3>Import / Export</h3>
-				<div class="row"><input type="file" id="fileInput" accept="image/png,image/*" /></div>
+				<div class="row">
+					<label for="fileInput">Load image:</label>
+					<input type="file" id="fileInput" accept="image/png,image/*" />
+				</div>
 				<div style="margin-top:12px">
 					<div class="small">Image data URL (updates on every change)</div>
 					<input id="dataUrlInput" type="text">
@@ -358,6 +363,14 @@ button {
 						<button id="copyUrlBtn">Copy URL</button>
 						<button id="downloadBtn">Download PNG</button>
 					</div>
+				</div>
+				<h3>Layers Import / Export</h3>
+				<div class="row">
+					<label for="layersFileInput">Load layers:</label>
+					<input type="file" id="layersFileInput" accept="application/JSON" />
+				</div>
+				<div class="row">
+					<button id="downloadLayersBtn">Download Layers</button>
 				</div>
 			</div>
 			<div class="foot small" style="margin-top:8px">Tip: Right-click on the canvas to set the Secondary color.
@@ -570,6 +583,12 @@ function resizeCanvases() {
 	overlayCanvas.style.height = cssH + "px"
 	preview.width = width
 	preview.height = height
+
+	layers.forEach((layer) => {
+		layer.width = width
+		layer.height = height
+		layer.pixelSize = pixelSize
+	})
 	// preview.style.width = width <= 32 ? width * 4 + "px" : width + "px"
 	// preview.style.height = height <= 32 ? height * 4 + "px" : height + "px"
 	preview.style.width = width + "px"
@@ -1142,7 +1161,26 @@ function attachEvents() {
 		const a = document.createElement("a")
 		a.href = document.getElementById("dataUrlInput").value
 		a.download = "pixelart.png"
+
+		a.style.display = 'none'
+		document.body.appendChild(a)
+
 		a.click()
+
+		document.body.removeChild(a)
+	})
+	document.getElementById("downloadLayersBtn").addEventListener("click", () => {
+		const text = JSON.stringify(layers, null, '\t')
+		const a = document.createElement('a')
+		a.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text))
+		a.setAttribute('download', "pixelart.json")
+
+		a.style.display = 'none'
+		document.body.appendChild(a)
+
+		a.click()
+
+		document.body.removeChild(a)
 	})
 	document.getElementById("undoBtn").addEventListener("click", () => {
 		const s = undoStack.pop()
@@ -1164,6 +1202,34 @@ function attachEvents() {
 		const reader = new FileReader()
 		reader.onload = (e) => loadBase64(e.target.result)
 		reader.readAsDataURL(file)
+	})
+	document.getElementById("layersFileInput").addEventListener("change", () => {
+		const file = document.getElementById("layersFileInput").files[0]
+		if (!file) return
+		const reader = new FileReader()
+		reader.onload = (e) => {
+			try {
+				const loadedLayers = JSON.parse(e.target.result)
+				if (Array.isArray(loadedLayers)) {
+					layers = loadedLayers
+					activeLayer = 0
+					width = layers[0].width
+					height = layers[0].height
+					pixelSize = layers[0].pixelSize
+					document.getElementById("width").value = width
+					document.getElementById("height").value = height
+					document.getElementById("zoomVal").textContent = pixelSize
+					resizeCanvases()
+					renderLayersUI()
+					renderAll()
+				} else {
+					showNotification.error("Invalid layers file.")
+				}
+			} catch (err) {
+				showNotification.error("Error loading layers file.")
+			}
+		}
+		reader.readAsText(file)
 	})
 
 	document.getElementById("toolPencil").addEventListener("click", () => {
