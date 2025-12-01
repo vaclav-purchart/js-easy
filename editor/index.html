@@ -505,7 +505,7 @@
 	<script type="module">
 	</script>
 	<script type="module">
-		import { openKeyboard } from "./keyboard.js";
+		import { openKeyboard } from "./keyboard.js"
 
 		console.log('JavaScript is running!')
 
@@ -576,8 +576,8 @@
 						})
 
 						document.getElementById("keyboard-btn").addEventListener("click", () => {
-							openKeyboard(this.editor);   // JSEasyIDE stores Monaco editor in this.editor
-						});
+							openKeyboard(this.editor)   // JSEasyIDE stores Monaco editor in this.editor
+						})
 
 						resolve()
 					})
@@ -1487,14 +1487,14 @@ console.log("test")
 			}
 
 			checkScriptSyntax(scriptContent) {
-				try {
-					// First, try to parse the entire script to see if it's syntactically valid
-					new Function(scriptContent)
-					return null // No syntax errors found
-				} catch (error) {
-					console.error('IDE Syntax Error:', error.message, error)
-					return `Syntax Error: ${error.message}`
-				}
+				// try {
+				// 	// First, try to parse the entire script to see if it's syntactically valid
+				// 	new Function(scriptContent)
+				// 	return null // No syntax errors found
+				// } catch (error) {
+				// 	console.error('IDE Syntax Error:', error.message, error)
+				// 	return `Syntax Error: ${error.message}`
+				// }
 			}
 
 
