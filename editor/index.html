@@ -979,11 +979,26 @@ console.log("test")
 				}, 300)
 			}
 
+			detectPossibleEndlessLoop(code) {
+				let m = code.match(/for\s*\(.*;.*;(.*)\)/)
+				let incrementPart = m ? m[1].trim() : null
+				if (incrementPart &&
+					!incrementPart.includes('++')
+					&& !incrementPart.includes('--')
+					&& !incrementPart.includes('=')
+				) {
+					console.warn('Potential endless loop detected in for loop increment part:', incrementPart)
+					return true
+				}
+				return false
+			}
+
 			updatePreview() {
 				if (location.search.includes('preview=false')) {
 					console.log('Preview update skipped due to no preview parameter')
 					return
 				}
+
 				if (this.isUpdating) return
 
 				this.isUpdating = true
@@ -992,6 +1007,12 @@ console.log("test")
 				try {
 					const code = this.editor.getValue()
 					this.currentCode = code
+					if (this.detectPossibleEndlessLoop(code)) {
+						this.showError('Possible infinite loop detected in code')
+						this.updateStatus('error', 'Infinite loop detected')
+						this.isUpdating = false
+						return
+					}
 
 					// Check for basic syntax errors in JavaScript
 					const syntaxError = this.checkSyntaxErrors(code)
