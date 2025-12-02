@@ -283,6 +283,8 @@ button {
 			<button class="tool-btn" data-tool="rect" id="toolRect">▭ Rect</button>
 			<button class="tool-btn" data-tool="ellipse" id="toolEllipse">◯ Ellipse</button>
 			<button class="tool-btn" data-tool="select" id="toolSelect">▤ Select</button>
+			<input type="checkbox" id="fillShapes" title="Fill shapes (rectangle, ellipse)" checked>
+			<label for="fillShapes">Fill shapes</label>
 		</div>
 
 		<div class="small" style="opacity:0.8">Tool: <span id="toolLabel">Pencil</span></div>
@@ -569,6 +571,14 @@ function setSecondary(hex) {
 	document.getElementById("colorPicker2").value = hex === "transparent" ? "#ffffff" : hex
 }
 
+function drawRect() {
+
+}
+
+function drawEllipse() {
+
+}
+
 // --- Canvas sizing & rendering ---
 function resizeCanvases() {
 	const cssW = width * pixelSize,
@@ -583,12 +593,6 @@ function resizeCanvases() {
 	overlayCanvas.style.height = cssH + "px"
 	preview.width = width
 	preview.height = height
-
-	layers.forEach((layer) => {
-		layer.width = width
-		layer.height = height
-		layer.pixelSize = pixelSize
-	})
 	// preview.style.width = width <= 32 ? width * 4 + "px" : width + "px"
 	// preview.style.height = height <= 32 ? height * 4 + "px" : height + "px"
 	preview.style.width = width + "px"
@@ -780,8 +784,8 @@ function commitSelectionToLayer() {
 		for (let sx = 0; sx < sel.w; sx++) {
 			const px = sel.pixels[sy * sel.w + sx]
 			if (px !== null) {
-				const tx = sel.x + sx,
-					ty = sel.y + sy
+				const tx = sel.x + sx
+				const ty = sel.y + sy
 				if (tx >= 0 && tx < width && ty >= 0 && ty < height) {
 					setPixelOnLayer(activeLayer, ty * width + tx, px)
 				}
@@ -819,8 +823,8 @@ function commitShape() {
 	if (s.type === "rect") {
 		for (let yy = 0; yy < s.h; yy++) {
 			for (let xx = 0; xx < s.w; xx++) {
-				const tx = s.x + xx,
-					ty = s.y + yy
+				const tx = s.x + xx
+				const ty = s.y + yy
 				if (tx >= 0 && tx < width && ty >= 0 && ty < height)
 					setPixelOnLayer(activeLayer, ty * width + tx, s.color)
 			}
@@ -833,8 +837,8 @@ function commitShape() {
 
 		for (let ty = Math.floor(s.y); ty < Math.ceil(s.y + s.h); ty++) {
 			for (let tx = Math.floor(s.x); tx < Math.ceil(s.x + s.w); tx++) {
-				const nx = (tx + 0.5 - cx) / rx,
-					ny = (ty + 0.5 - cy) / ry
+				const nx = (tx + 0.5 - cx) / rx
+				const ny = (ty + 0.5 - cy) / ry
 				if (nx * nx + ny * ny <= 1) {
 					if (tx >= 0 && tx < width && ty >= 0 && ty < height)
 						setPixelOnLayer(activeLayer, ty * width + tx, s.color)
@@ -933,8 +937,8 @@ function drawOverlay() {
 				cy = s.y + ry
 			for (let ty = Math.floor(s.y); ty < Math.ceil(s.y + s.h); ty++) {
 				for (let tx = Math.floor(s.x); tx < Math.ceil(s.x + s.w); tx++) {
-					const nx = (tx + 0.5 - cx) / rx,
-						ny = (ty + 0.5 - cy) / ry
+					const nx = (tx + 0.5 - cx) / rx
+					const ny = (ty + 0.5 - cy) / ry
 					if (nx * nx + ny * ny <= 1) {
 						ctx.fillRect(tx * pixelSize, ty * pixelSize, pixelSize, pixelSize)
 					}
@@ -1170,7 +1174,17 @@ function attachEvents() {
 		document.body.removeChild(a)
 	})
 	document.getElementById("downloadLayersBtn").addEventListener("click", () => {
-		const text = JSON.stringify(layers, null, '\t')
+		const data = {
+			width,
+			height,
+			pixelSize,
+			activeLayer,
+			primaryColor,
+			secondaryColor,
+			currentTool,
+			layers,
+		}
+		const text = JSON.stringify(data, null, '\t')
 		const a = document.createElement('a')
 		a.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text))
 		a.setAttribute('download', "pixelart.json")
@@ -1209,22 +1223,30 @@ function attachEvents() {
 		const reader = new FileReader()
 		reader.onload = (e) => {
 			try {
-				const loadedLayers = JSON.parse(e.target.result)
-				if (Array.isArray(loadedLayers)) {
-					layers = loadedLayers
-					activeLayer = 0
-					width = layers[0].width
-					height = layers[0].height
-					pixelSize = layers[0].pixelSize
-					document.getElementById("width").value = width
-					document.getElementById("height").value = height
-					document.getElementById("zoomVal").textContent = pixelSize
-					resizeCanvases()
-					renderLayersUI()
-					renderAll()
-				} else {
-					showNotification.error("Invalid layers file.")
+				const data = JSON.parse(e.target.result)
+				const loadedLayers = data.layers
+
+				if (!data.width || !data.height || !data.pixelSize || !Array.isArray(loadedLayers)) {
+					throw new Error("Invalid image file.")
 				}
+
+				width = data.width
+				height = data.height
+				pixelSize = data.pixelSize
+				activeLayer = data.activeLayer || 0
+				primaryColor = data.primaryColor
+				secondaryColor = data.secondaryColor
+				currentTool = data.currentTool || "pencil"
+
+				document.getElementById("width").value = width
+				document.getElementById("height").value = height
+				document.getElementById("zoomVal").textContent = pixelSize
+
+				layers = loadedLayers
+
+				resizeCanvases()
+				renderLayersUI()
+				renderAll()
 			} catch (err) {
 				showNotification.error("Error loading layers file.")
 			}
