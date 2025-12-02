@@ -577,8 +577,14 @@ function drawRect(floatingShape, renderPixel) {
 		for (let xx = 0; xx < s.w; xx++) {
 			const tx = s.x + xx
 			const ty = s.y + yy
-			if (tx >= 0 && tx < width && ty >= 0 && ty < height)
+			if (s.fillShape) {
 				renderPixel(tx, ty, s.color)
+			}
+			else {
+				if (yy === 0 || yy === s.h - 1 || xx === 0 || xx === s.w - 1) {
+					renderPixel(tx, ty, s.color)
+				}
+			}
 		}
 	}
 }
@@ -590,12 +596,29 @@ function drawEllipse(floatingShape, renderPixel) {
 	const cx = s.x + rx
 	const cy = s.y + ry
 
+	// precompute neighbor step in normalized ellipse coordinates
+	const stepX = 1 / rx
+	const stepY = 1 / ry
+
 	for (let ty = Math.floor(s.y); ty < Math.ceil(s.y + s.h); ty++) {
 		for (let tx = Math.floor(s.x); tx < Math.ceil(s.x + s.w); tx++) {
 			const nx = (tx + 0.5 - cx) / rx
 			const ny = (ty + 0.5 - cy) / ry
-			if (nx * nx + ny * ny <= 1) {
-				renderPixel(tx, ty, s.color)
+			const inside = nx * nx + ny * ny <= 1
+			if (inside) {
+				if (s.fillShape) {
+					renderPixel(tx, ty, s.color)
+				} else {
+					// pixel is inside ellipse — check 4-neighbour pixels;
+					// if any neighbour is outside, this is a border pixel
+					const leftOutside = ((nx - stepX) * (nx - stepX) + ny * ny) > 1
+					const rightOutside = ((nx + stepX) * (nx + stepX) + ny * ny) > 1
+					const upOutside = (nx * nx + (ny - stepY) * (ny - stepY)) > 1
+					const downOutside = (nx * nx + (ny + stepY) * (ny + stepY)) > 1
+					if (leftOutside || rightOutside || upOutside || downOutside) {
+						renderPixel(tx, ty, s.color)
+					}
+				}
 			}
 		}
 	}
@@ -980,6 +1003,7 @@ function attachEvents() {
 		lastIdx = pm.idx
 		// push undo snapshot (layers deep copy)
 		undoStack.push(JSON.stringify(layers))
+		const fillShape = document.getElementById('fillShapes').checked
 
 		// right-click sets secondary color
 		if (e.button === 2) {
@@ -1006,6 +1030,7 @@ function attachEvents() {
 				x2: pm.x,
 				y2: pm.y,
 				color: e.button === 2 ? secondaryColor : primaryColor,
+				fillShape,
 			}
 			drawOverlay()
 		} else if (currentTool === "rect" || currentTool === "ellipse") {
@@ -1018,6 +1043,7 @@ function attachEvents() {
 				w: 1,
 				h: 1,
 				color: e.button === 2 ? secondaryColor : primaryColor,
+				fillShape,
 			}
 			drawOverlay()
 		} else if (currentTool === "select") {
