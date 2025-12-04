@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Isometric Tilemap (64x32) — Click to place base64 image</title>
+  <style>
+    :root{--bg:#1e1e1f}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;display:flex;height:100vh;background:var(--bg);color:#ddd}
+    #ui{width:360px;padding:16px;background:#111;box-shadow:2px 0 10px rgba(0,0,0,.6);overflow:auto}
+    #canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center}
+    canvas{background:linear-gradient(180deg,#0b2 #024);border:1px solid rgba(255,255,255,.04)}
+    label{display:block;margin:12px 0 6px;font-size:13px;color:#9aa}
+    textarea{width:100%;height:120px;background:#0a0a0a;color:#dfe;padding:8px;border:1px solid #222;resize:vertical}
+    button{margin-top:8px;padding:8px 10px;border-radius:6px;border:0;background:#0b84ff;color:white;cursor:pointer}
+    .small{font-size:12px;color:#9aa}
+    .row{display:flex;gap:8px}
+    .legend{display:flex;gap:8px;margin-top:12px}
+    .legend div{display:flex;gap:6px;align-items:center}
+    .swatch{width:18px;height:12px;border-radius:2px;border:1px solid rgba(0,0,0,.4)}
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h2>Isometric Tilemap (64×32)</h2>
+    <p class="small">Click / touch a tile to place the base64 image from the box below. Move the mouse or drag to highlight the tile under pointer.</p>
+
+    <label for="b64">Base64 image (data URL or raw base64):</label>
+    <textarea id="b64" placeholder="Paste a data:image/png;base64,... or raw base64 string"></textarea>
+    <div class="row">
+      <button id="load">Load image</button>
+      <button id="clear">Clear overlays</button>
+      <button id="sample">Sample image</button>
+    </div>
+
+    <div class="legend">
+      <div><span class="swatch" style="background:linear-gradient(#5aa64c,#2e7a2b)"></span><span class="small">Grass</span></div>
+      <div><span class="swatch" style="background:linear-gradient(#4aa3e6,#0b5fa8)"></span><span class="small">Water</span></div>
+      <div><span class="swatch" style="background:linear-gradient(#f2d58b,#e0b24a)"></span><span class="small">Sand</span></div>
+      <div><span class="swatch" style="background:linear-gradient(#8b6ec6,#5a3a9a)"></span><span class="small">Stone</span></div>
+    </div>
+
+    <p class="small" style="margin-top:14px">Touch: tap to place. Right-click a tile to remove overlay. Use the sample image to try a demo.</p>
+    <hr style="border:none;border-top:1px solid #222;margin:12px 0" />
+    <div class="small">Map size: <span id="sizeInfo"></span></div>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+  </div>
+
+  <script>
+    // Config
+    const TILE_W = 64 // tile pixel width
+const TILE_H = 32 // tile pixel height
+const MAP_W = 12 // tiles
+const MAP_H = 12
+
+// DOM
+const canvas = document.getElementById('c')
+const ctx = canvas.getContext('2d')
+const loadBtn = document.getElementById('load')
+const clearBtn = document.getElementById('clear')
+const sampleBtn = document.getElementById('sample')
+const b64box = document.getElementById('b64')
+const sizeInfo = document.getElementById('sizeInfo')
+sizeInfo.textContent = MAP_W + ' × ' + MAP_H + ' tiles'
+
+// device pixel ratio for crisp canvas
+function resizeCanvas() {
+    	const ratio = window.devicePixelRatio || 1
+	const wrap = document.getElementById('canvas-wrap')
+	const availableW = Math.max(600, wrap.clientWidth - 80)
+	const availableH = Math.max(400, window.innerHeight - 40)
+	canvas.style.width = availableW + 'px'
+	canvas.style.height = availableH + 'px'
+	canvas.width = Math.floor(availableW * ratio)
+	canvas.height = Math.floor(availableH * ratio)
+	ctx.setTransform(ratio,0,0,ratio,0,0)
+	draw()
+}
+    window.addEventListener('resize', resizeCanvas)
+
+// Map data
+const terrains = ['grass','water','sand','stone']
+const map = new Array(MAP_H)
+for (let y=0;y<MAP_H;y++) {
+    	map[y] = new Array(MAP_W)
+	for (let x=0;x<MAP_W;x++) {
+    		// some random terrain for demo
+    		const r = Math.random()
+    const t = r < .55 ? 'grass' : r < .75 ? 'water' : r < .9 ? 'sand' : 'stone'
+    map[y][x] = t
+	}
+    }
+
+    // Overlays: store images placed on tiles
+    const overlays = {} // key: `${x},${y}` -> {img, w, h}
+let currentImage = null // Image object loaded from base64
+
+// origin to center the map
+function mapPixelBounds() {
+    	// compute pixel size of full map
+    	const fullW = (MAP_W + MAP_H) * (TILE_W/2)
+	const fullH = (MAP_W + MAP_H) * (TILE_H/2)
+	const cx = canvas.width / (window.devicePixelRatio || 1) / 2
+	const cy = canvas.height / (window.devicePixelRatio || 1) / 2
+	const offsetX = cx - fullW/2
+	const offsetY = cy - TILE_H/2 - 20 // push up a little
+	return {offsetX, offsetY, fullW, fullH, cx, cy}
+}
+
+    // map coord -> screen
+    function isoToScreen(i,j) {
+    	const {offsetX, offsetY} = mapPixelBounds()
+	const x = (i - j) * (TILE_W/2) + offsetX + (MAP_H * (TILE_W/2))
+	const y = (i + j) * (TILE_H/2) + offsetY
+	return {x,y}
+}
+
+    // screen -> map coord (floating)
+    function screenToIso(screenX, screenY) {
+    	const {offsetX, offsetY} = mapPixelBounds()
+	// adjust for the way isoToScreen added MAP_H offset
+	const adjX = screenX - (offsetX + (MAP_H * (TILE_W/2)))
+	const adjY = screenY - offsetY
+	const rx = adjX / (TILE_W/2)
+	const ry = adjY / (TILE_H/2)
+	const i = (ry + rx) / 2
+	const j = (ry - rx) / 2
+	return {i,j}
+}
+
+    // draw one diamond tile at pixel x,y (top vertex)
+    function drawTileTop(x,y,terrain,highlight=false) {
+    	ctx.save()
+	// diamond path
+	ctx.beginPath()
+	ctx.moveTo(x, y)
+	ctx.lineTo(x + TILE_W/2, y + TILE_H/2)
+	ctx.lineTo(x, y + TILE_H)
+	ctx.lineTo(x - TILE_W/2, y + TILE_H/2)
+	ctx.closePath()
+
+	// fill styles per terrain
+	if (terrain === 'grass') {
+    		const g = ctx.createLinearGradient(x, y, x, y+TILE_H)
+    g.addColorStop(0,'#6fc24b'); g.addColorStop(1,'#2b8a3a')
+    ctx.fillStyle = g
+    ctx.fill()
+    // slight texture
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)'; ctx.stroke()
+	} else if (terrain === 'water') {
+    		const g = ctx.createLinearGradient(x, y, x, y+TILE_H)
+    g.addColorStop(0,'#68c0ff'); g.addColorStop(1,'#0b6ab0')
+    ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.08)'; ctx.stroke()
+	} else if (terrain === 'sand') {
+    		const g = ctx.createLinearGradient(x, y, x, y+TILE_H)
+    g.addColorStop(0,'#f7e3a1'); g.addColorStop(1,'#e6c06a')
+    ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.06)'; ctx.stroke()
+	} else if (terrain === 'stone') {
+    		const g = ctx.createLinearGradient(x, y, x, y+TILE_H)
+    g.addColorStop(0,'#a18bd3'); g.addColorStop(1,'#6f4da3')
+    ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.08)'; ctx.stroke()
+	}
+
+    	if (highlight) {
+    		ctx.fillStyle = 'rgba(255,255,255,0.08)'
+    ctx.fill()
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.stroke()
+	}
+    	ctx.restore()
+}
+
+    function drawGrid() {
+    	for (let j = 0; j < MAP_H; j++) {
+    		for (let i = 0; i < MAP_W; i++) {
+    			const pt = isoToScreen(i,j)
+    			// pt.x, pt.y is top of diamond
+    			drawTileTop(pt.x, pt.y, map[j][i], false)
+    }
+    	}
+    }
+
+    function drawOverlays() {
+    	for (const key in overlays) {
+    		const [i,j] = key.split(',').map(Number)
+    const obj = overlays[key]
+    const pt = isoToScreen(i,j)
+    // draw image centered on tile (slightly above center)
+    const iw = obj.w, ih = obj.h
+    const drawW = Math.min(TILE_W * 0.9, iw)
+    const scale = drawW / iw
+    const drawH = ih * scale
+    const dx = pt.x - drawW/2
+    const dy = pt.y + TILE_H/2 - drawH // sit on tile
+    ctx.drawImage(obj.img, dx, dy, drawW, drawH)
+	}
+    }
+
+    let hover = null // {i,j}
+
+function draw() {
+    	// clear
+    	ctx.clearRect(0,0,canvas.width,canvas.height)
+	// draw all tiles
+	drawGrid()
+	// highlight hovered tile by redrawing that tile with highlight
+	if (hover) {
+    		const pt = isoToScreen(hover.i, hover.j)
+    drawTileTop(pt.x, pt.y, map[hover.j][hover.i], true)
+	}
+    	// draw overlays after so they appear above tiles
+    	drawOverlays()
+}
+
+    // pointer handling
+    function getPointerPos(evt) {
+    	const rect = canvas.getBoundingClientRect()
+	const clientX = evt.clientX !== undefined ? evt.clientX : (evt.touches && evt.touches[0].clientX)
+	const clientY = evt.clientY !== undefined ? evt.clientY : (evt.touches && evt.touches[0].clientY)
+	const x = (clientX - rect.left)
+	const y = (clientY - rect.top)
+	return {x,y}
+}
+
+    function handleMove(evt) {
+    	evt.preventDefault()
+	const p = getPointerPos(evt)
+	const iso = screenToIso(p.x, p.y)
+	const i = Math.floor(iso.i + 0.000001)
+	const j = Math.floor(iso.j + 0.000001)
+	if (i >= 0 && j >= 0 && i < MAP_W && j < MAP_H) {
+    		hover = {i,j}
+	} else hover = null
+	draw()
+}
+
+    function handleDown(evt) {
+    	evt.preventDefault()
+	const p = getPointerPos(evt)
+	const iso = screenToIso(p.x, p.y)
+	const i = Math.floor(iso.i + 0.000001)
+	const j = Math.floor(iso.j + 0.000001)
+	if (!(i >= 0 && j >= 0 && i < MAP_W && j < MAP_H)) return
+
+	// right-click or two-finger touch -> remove overlay
+	if ((evt.button === 2) || (evt.touches && evt.touches.length === 2)) {
+    		delete overlays[`${i},${j}`]; draw(); return
+	}
+
+    	if (currentImage) {
+    		overlays[`${i},${j}`] = {img: currentImage, w: currentImage.width, h: currentImage.height}
+    draw()
+	}
+    }
+
+    // prevent context menu on canvas
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault())
+
+// pointer events for mouse + touch unified
+canvas.addEventListener('pointermove', handleMove)
+canvas.addEventListener('pointerdown', handleDown)
+canvas.addEventListener('pointerleave', () => { hover = null; draw() })
+
+// load base64 image
+function loadBase64(str) {
+    	if (!str) return alert('Paste a base64 string or data URL first')
+	const img = new Image()
+	img.onload = () => {
+    		currentImage = img; alert('Image loaded — click map to place it.')
+	}
+	img.onerror = (e) => { alert('Failed to load image. Ensure it is valid base64 / data URL.') }
+	const trimmed = str.trim()
+	if (trimmed.startsWith('data:')) img.src = trimmed
+	else img.src = 'data:image/png;base64,' + trimmed
+}
+
+    loadBtn.addEventListener('click', ()=> loadBase64(b64box.value))
+
+clearBtn.addEventListener('click', ()=>{ for (const k in overlays) delete overlays[k]; draw() })
+
+// sample base64: small circle (PNG) — included so user can try quickly
+sampleBtn.addEventListener('click', ()=>{
+    	const sample = 'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAYAAAB0f5b2AAAACXBIWXMAAAsTAAALEwEAmpwYAAABW0lEQVR4nO2XvUoDQRSGv8kJtLQ+QXkJkY2Nra2tY2NkY2JiY2NnY2GqF3s7Oxs7CwqP8kB9o0k3Qw8QhD8E6bM7s97n+9n3Onv3sQ+gk4mQm2uM3gJc7M1oQj76Vb0YpwezaS3yJME6b0l5cYfU6+z9qg4Y12W4QYxXqgGd8j+zYb7v8kqM2+6rZ0B7Qp0B0Q46x/hp6YQ3g1oQX6w0s8c1vS+O9y4A3Qq0q7c3wBX8D7n8F8b3kRoe8j2H3r1I4V3gC3g4mwoQd8U2gGf0m1v0F4gW8YxQk3mYcP0Ww8gQe8x3kI4w4rPZJb9l7n+5j3k0d8B3s7U8o4w4nP9s5xNqgJz8x6Bj8Fv3m3k2m5m2I3Vb0T6q+z9qg4Y12W4QYxXqgGd8j+zYb7v8kqM2+6rZ0B7Qp0B0Q46x/hp6YQ3g1oQX6w0s8c1vS+O9y4A3Qq0q7c3wBX8D7n8F8b3kRoe8j2H3r1I4V3gC3g4mwoQd8U2gGf0m1v0F4gW8YxQk3mYcP0Ww8gQe8x3kI4w4rPNhIr8b1r0wAAAABJRU5ErkJggg=='
+	b64box.value = 'data:image/png;base64,' + sample
+	loadBase64(b64box.value)
+})
+
+// initialize
+resizeCanvas()
+
+// expose some debug on console for conversions
+window._iso = {screenToIso, isoToScreen, TILE_W, TILE_H}
+  </script>
+</body>
+</html>

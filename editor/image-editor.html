@@ -277,23 +277,24 @@ button {
 <body>
 	<header id="topbar">
 		<div id="tools" role="toolbar" aria-label="Tools">
-			<button class="tool-btn" data-tool="pencil" id="toolPencil">✎ Pencil</button>
-			<button class="tool-btn" data-tool="fill" id="toolFill">🪣 Fill</button>
-			<button class="tool-btn" data-tool="line" id="toolLine">╱ Line</button>
-			<button class="tool-btn" data-tool="rect" id="toolRect">▭ Rect</button>
-			<button class="tool-btn" data-tool="ellipse" id="toolEllipse">◯ Ellipse</button>
-			<button class="tool-btn" data-tool="select" id="toolSelect">▤ Select</button>
+			<button class="tool-btn" data-tool="pencil" id="toolPencil" title="Hotkey: P">✎ Pencil</button>
+			<button class="tool-btn" data-tool="fill" id="toolFill" title="Hotkey: B">🪣 Fill</button>
+			<button class="tool-btn" data-tool="line" id="toolLine" title="Hotkey: L">╱ Line</button>
+			<button class="tool-btn" data-tool="rect" id="toolRect" title="Hotkey: R">▭ Rect</button>
+			<button class="tool-btn" data-tool="ellipse" id="toolEllipse" title="Hotkey: E">◯ Ellipse</button>
+			<button class="tool-btn" data-tool="select" id="toolSelect" title="Hotkey: A">▤ Select</button>
 			<input type="checkbox" id="fillShapes" title="Fill shapes (rectangle, ellipse)" checked>
 			<label for="fillShapes">Fill shapes</label>
 		</div>
 
 		<div class="small" style="opacity:0.8">Tool: <span id="toolLabel">Pencil</span></div>
+		<div class="small" style="opacity:0.8"><span id="currentCursorInfo"></span></div>
 
 		<div style="margin-left:auto;display:flex;gap:8px;align-items:center">
 			<button id="undoBtn" class="tool-btn">↩️Undo</button>
 			<button id="redoBtn" class="tool-btn not-implemented-yet">Redo</button>
-			<button id="confirmBtn" class="tool-btn" disabled>✅Confirm</button>
-			<button id="cancelBtn" class="tool-btn" disabled>❌Cancel</button>
+			<button id="confirmBtn" class="tool-btn" disabled title="Hotkey: Enter">✅Confirm</button>
+			<button id="cancelBtn" class="tool-btn" disabled title="Hotkey: Escape">❌Cancel</button>
 			<button id="toggleLayers" class="tool-btn not-implemented-yet">Toggle Layers</button>
 			<div style="width:1px;height:28px;background:#eee;margin:0 8px"></div>
 			🔎
@@ -325,7 +326,7 @@ button {
 			<div class="controls-section">
 				<div class="row align-sides">
 					<h3>Colors</h3>
-					<button id="colorSwitch">⇄ Switch colors</button>
+					<button id="colorSwitch" title="Hotkey: O">⇄ Switch colors</button>
 				</div>
 				<div class="row">
 					<label for="colorPicker">Primary</label>
@@ -338,6 +339,7 @@ button {
 					<div class="small">Secondary: <span id="currentColor2">#0000ff</span></div>
 				</div>
 				<div class="row palette" id="palette"></div>
+				<div class="row palette" id="imagePalette"></div>
 			</div>
 
 			<div class="controls-section">
@@ -377,6 +379,16 @@ button {
 			</div>
 			<div class="foot small" style="margin-top:8px">Tip: Right-click on the canvas to set the Secondary color.
 				Selection and shapes require confirmation (Confirm button or Enter) to apply.</div>
+			<div class="controls-section not-implemented-yet">
+				<h3>Isometric helpers</h3>
+				<div class="row">
+					<label for="isoWidth">ISO width</label>
+					<input id="isoWidth" type="number" min="1" max="512" value="32">px (1:2)
+				</div>
+				<div class="row">
+					<button id="isoShowHide">Show/hide ISO grid</button>
+				</div>
+			</div>
 		</div>
 
 		<div class="panel canvas-panel">
@@ -418,6 +430,7 @@ let pixelSize = 16 // display pixels (zoom)
 let primaryColor = "#ff0000"
 let secondaryColor = "#0000ff"
 let currentTool = "pencil" // 'pencil' | 'fill' | 'line' | 'rect' | 'ellipse' | 'select'
+let showIsometricGrid = false
 
 // layers: array of {name, pixels(array), visible:boolean}
 let layers = []
@@ -474,6 +487,7 @@ function init() {
 	attachEvents()
 	updateToolUI()
 	renderLayersUI()
+	addImageColorsToCustomPalette()
 }
 
 function updateUIState() {
@@ -488,6 +502,8 @@ function updateUIState() {
 function saveToLocalStorage() {
 	localStorage.setItem('pixelart_dataurl', document.getElementById('dataUrlInput').value)
 	localStorage.setItem('pixelart_zoom', pixelSize)
+	localStorage.setItem('pixelart_showIsometricGrid', showIsometricGrid)
+	localStorage.setItem('pixelart_fillShapes', document.getElementById('fillShapes').checked)
 }
 
 function loadFromLocalStorage() {
@@ -499,9 +515,16 @@ function loadFromLocalStorage() {
 	const saved = localStorage.getItem('pixelart_dataurl')
 	if (saved) loadBase64(saved)
 
+	showIsometricGrid = localStorage.getItem('pixelart_showIsometricGrid')
+	document.getElementById('fillShapes').checked = localStorage.getItem('pixelart_fillShapes') === 'true'
+
 	resizeCanvases()
 	renderAll()
 	renderLayerThumbnails()
+}
+
+function setCurrentCursorInfo(x, y) {
+	document.getElementById("currentCursorInfo").textContent = `[${x}, ${y}]`
 }
 
 
@@ -556,6 +579,32 @@ function buildPalette() {
 		b.addEventListener("click", () => setPrimary(c))
 		pal.appendChild(b)
 	})
+}
+
+function addImageColorsToCustomPalette() {
+	const existingColors = new Set(basicColors)
+	const newColors = new Set()
+
+	// gather colors from all layers
+	layers.forEach((layer) => {
+		layer.pixels.forEach((c) => {
+			if (c && !existingColors.has(c) && !newColors.has(c)) {
+				newColors.add(c)
+			}
+		})
+	})
+
+	const pal = document.getElementById("imagePalette")
+	pal.innerHTML = ""
+
+	newColors.forEach((c, index) => {
+		if (index >= 24) return // limit number of colors in palette
+		const b = document.createElement("button")
+		b.style.background = c
+		b.addEventListener("click", () => setPrimary(c))
+		pal.appendChild(b)
+	})
+
 }
 
 function setPrimary(hex) {
@@ -670,6 +719,7 @@ function resizeCanvases() {
 	canvasStage.style.height = cssH + "px"
 	drawOverlayGrid()
 	renderLayerThumbnails()
+	addImageColorsToCustomPalette()
 }
 
 function drawOverlayGrid() {
@@ -983,10 +1033,8 @@ function attachEvents() {
 			// start preview
 			floatingShape = {
 				type: "line",
-				x: pm.x,
-				y: pm.y,
-				x2: pm.x,
-				y2: pm.y,
+				x: pm.x, y: pm.y,
+				x2: pm.x, y2: pm.y,
 				color: e.button === 2 ? secondaryColor : primaryColor,
 				fillShape,
 			}
@@ -996,10 +1044,8 @@ function attachEvents() {
 			cancelBtn.disabled = false
 			floatingShape = {
 				type: currentTool,
-				x: pm.x,
-				y: pm.y,
-				w: 1,
-				h: 1,
+				x: pm.x, y: pm.y,
+				w: 1, h: 1,
 				color: e.button === 2 ? secondaryColor : primaryColor,
 				fillShape,
 			}
@@ -1014,10 +1060,21 @@ function attachEvents() {
 		updateUIState()
 	})
 
+	displayCanvas.addEventListener("mousemove", (e) => {
+		const rect = displayCanvas.getBoundingClientRect()
+		const clientX = e.clientX
+		const clientY = e.clientY
+		const x = Math.floor((clientX - rect.left) / pixelSize)
+		const y = Math.floor((clientY - rect.top) / pixelSize)
+		if (x < 0 || x >= width || y < 0 || y >= height) return
+		setCurrentCursorInfo(x, y)
+	})
+
 	displayCanvas.addEventListener("pointermove", (e) => {
 		if (!isPointerDown) return
 		const pm = getPointerMap(e)
 		if (!pm) return
+		setCurrentCursorInfo(pm.x, pm.y)
 		if (currentTool === "pencil") {
 			const col = e.buttons & 2 ? secondaryColor : primaryColor // right button bit
 			// draw line between lastIdx and pm.idx for continuous stroke
@@ -1368,18 +1425,43 @@ function attachEvents() {
 			if (e.key === "ArrowDown") { selection.y = selection.y + 1; moved = true }
 			if (moved) { drawOverlay(); e.preventDefault(); return }
 		}
-		if (e.key === "p" || e.key === "P") {
+		console.log(e)
+		if (e.code === "KeyP") {
 			currentTool = "pencil"
 			updateToolUI()
 		}
-		if (e.key === "b" || e.key === "B") {
+		if (e.code === "KeyB") {
 			currentTool = "fill"
 			updateToolUI()
 		}
-		if (e.key === "l" || e.key === "L") {
+		if (e.code === "KeyL") {
 			currentTool = "line"
 			updateToolUI()
 		}
+		if (e.code === "KeyR") {
+			currentTool = "rect"
+			updateToolUI()
+		}
+		if (e.code === "KeyE") {
+			currentTool = "ellipse"
+			updateToolUI()
+		}
+		if (e.code === "KeyA") {
+			currentTool = "select"
+			updateToolUI()
+		}
+		if (e.code === "KeyO") {
+			document.getElementById("colorSwitch").click()
+			updateToolUI()
+		}
+	})
+
+	document.getElementById("isoShowHide").addEventListener("click", () => {
+		showIsometricGrid = !showIsometricGrid
+		document.getElementById("isoShowHide").textContent = showIsometricGrid
+			? "Hide Isometric Grid"
+			: "Show Isometric Grid"
+		drawOverlayGrid()
 	})
 }
 
@@ -1503,6 +1585,7 @@ function loadBase64(base64) {
 		}
 		resizeCanvases()
 		renderAll()
+		addImageColorsToCustomPalette()
 	}
 	img.src = base64
 }
