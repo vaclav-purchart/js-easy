@@ -362,6 +362,7 @@ button {
 				<div class="row">
 					<button id="clearBtn">🗑️Clear</button>
 					<button id="copySelBtn">Copy</button>
+					<button id="cutSelBtn">Cut</button>
 					<button id="pasteSelBtn">Paste</button>
 				</div>
 			</div>
@@ -488,6 +489,7 @@ const secondaryPicker = document.getElementById("secondaryColor")
 const confirmBtn = document.getElementById("confirmBtn")
 const cancelBtn = document.getElementById("cancelBtn")
 const copySelBtn = document.getElementById("copySelBtn")
+const cutSelBtn = document.getElementById("cutSelBtn")
 const pasteSelBtn = document.getElementById("pasteSelBtn")
 const handleNames = ["nw", "n", "ne", "e", "se", "s", "sw", "w"]
 let handles = []
@@ -511,6 +513,7 @@ function updateUIState() {
 	confirmBtn.disabled = !(floatingShape || (selection && selection.floating))
 	cancelBtn.disabled = !(floatingShape || selection)
 	copySelBtn.disabled = !(selection != null)
+	cutSelBtn.disabled = !(selection != null)
 	pasteSelBtn.disabled = !(clipboard != null)
 	document.getElementById("undoBtn").disabled = undoStack.length === 0
 	// document.getElementById("redoBtn").disabled = redoStack.length === 0
@@ -535,6 +538,8 @@ function loadFromLocalStorage() {
 	showIsometricGrid = localStorage.getItem('pixelart_showIsometricGrid')
 	document.getElementById('fillShapes').checked = localStorage.getItem('pixelart_fillShapes') === 'true'
 
+	currentTool = localStorage.getItem('pixelart_currentTool') || 'pencil'
+
 	resizeCanvases()
 	renderAll()
 	renderLayerThumbnails()
@@ -546,6 +551,12 @@ function setCurrentCursorInfo(x, y) {
 		pickerPreview.style.backgroundColor = getPixelFromComposite(x, y) || 'transparent'
 		pickerPreview.style.display = 'block'
 	}
+}
+
+function historyPush() {
+	undoStack.push(JSON.stringify(layers))
+	// redoStack = [] // clear redo stack
+	updateUIState()
 }
 
 
@@ -852,24 +863,28 @@ function floodFillLayer(startIdx, color) {
 function clearFloatingSelection() {
 	pasteSelBtn.disabled = true
 	copySelBtn.disabled = true
+	cutSelBtn.disabled = true
 	selection = null
 	drawOverlay()
 }
 function copySelectionToClipboard() {
 	if (!selection) return
 	clipboard = {
+		x: selection.x,
+		y: selection.y,
 		w: selection.w,
 		h: selection.h,
 		pixels: selection.pixels.slice(),
 	}
 	pasteSelBtn.disabled = false
 	copySelBtn.disabled = true
+	cutSelBtn.disabled = true
 }
 function pasteClipboardAt(x, y) {
 	if (!clipboard) return // create floating selection
 	selection = {
-		x,
-		y,
+		x: x === undefined ? clipboard.x : x,
+		y: y === undefined ? clipboard.y : y,
 		w: clipboard.w,
 		h: clipboard.h,
 		pixels: clipboard.pixels.slice(),
@@ -879,11 +894,40 @@ function pasteClipboardAt(x, y) {
 	}
 	pasteSelBtn.disabled = false
 	copySelBtn.disabled = true
+	cutSelBtn.disabled = true
 	drawOverlay()
+}
+
+function cutSelectionToClipboard() {
+	// Copy selection to clipboard
+	copySelectionToClipboard()
+	historyPush()
+	showNotification("Selection cut to clipboard (internal)")
+
+	// Clear pixels in selection area on active layer
+	const sel = selection
+	for (let sy = 0; sy < sel.h; sy++) {
+		for (let sx = 0; sx < sel.w; sx++) {
+			const px = sel.pixels[sy * sel.w + sx]
+			const tx = sel.x + sx
+			const ty = sel.y + sy
+			if (tx >= 0 && tx < width && ty >= 0 && ty < height) {
+				console.log('clearing pixel at', tx, ty)
+				setPixelOnLayer(activeLayer, ty * width + tx, null)
+			}
+		}
+	}
+
+	drawOverlay()
+	renderLayersUI()
+	renderAll()
+	copySelBtn.disabled = true
+	pasteSelBtn.disabled = false
 }
 
 function commitSelectionToLayer() {
 	if (!selection) return // write selection pixels to active layer at selection.x/y
+	historyPush()
 	const sel = selection
 	for (let sy = 0; sy < sel.h; sy++) {
 		for (let sx = 0; sx < sel.w; sx++) {
@@ -900,6 +944,7 @@ function commitSelectionToLayer() {
 	selection = null
 	pasteSelBtn.disabled = false
 	copySelBtn.disabled = true
+	cutSelBtn.disabled = true
 	renderAll()
 }
 
@@ -908,12 +953,14 @@ function deleteSelection() {
 	selection = null
 	pasteSelBtn.disabled = false
 	copySelBtn.disabled = true
+	cutSelBtn.disabled = true
 	drawOverlay()
 }
 
 // shapes: create floating shape (rect/ellipse) with editable bounds until confirmed
 function commitShape() {
 	if (!floatingShape) return
+	historyPush()
 	const renderPixel = (x, y, color) => {
 		if (x >= 0 && x < width && y >= 0 && y < height) {
 			setPixelOnLayer(activeLayer, y * width + x, color)
@@ -1046,7 +1093,7 @@ function attachEvents() {
 		pointerStart = pm
 		lastIdx = pm.idx
 		// push undo snapshot (layers deep copy)
-		undoStack.push(JSON.stringify(layers))
+		historyPush()
 		const fillShape = document.getElementById('fillShapes').checked
 
 		// right-click sets secondary color
@@ -1418,6 +1465,10 @@ function attachEvents() {
 		copySelectionToClipboard()
 		showNotification("Selection copied to clipboard (internal)")
 	})
+	document.getElementById("cutSelBtn").addEventListener("click", () => {
+		cutSelectionToClipboard()
+		showNotification("Selection copied to clipboard (internal)")
+	})
 	document.getElementById("pasteSelBtn").addEventListener("click", () => {
 		// paste at 0,0 by default
 		if (!clipboard) {
@@ -1426,7 +1477,7 @@ function attachEvents() {
 		}
 		confirmBtn.disabled = false
 		cancelBtn.disabled = false
-		pasteClipboardAt(0, 0)
+		pasteClipboardAt()
 	})
 	document.getElementById('showHideControls').addEventListener('click', () => {
 		const panel = document.getElementById('sidePanel-controls')
@@ -1509,6 +1560,39 @@ function attachEvents() {
 			pasteSelBtn.disabled = true
 			return
 		}
+		// CMD+C (macOS) or CTRL+C - copy selection
+		if ((e.metaKey || e.ctrlKey) && e.code === "KeyC") {
+			e.preventDefault()
+			copySelectionToClipboard()
+			copySelBtn.disabled = true
+			pasteSelBtn.disabled = false
+			showNotification("Selection copied to clipboard (internal)")
+			return
+		}
+		// CMD+X (macOS) or CTRL+X - cut selection
+		if ((e.metaKey || e.ctrlKey) && e.code === "KeyX") {
+			e.preventDefault()
+			if (!selection) {
+				showNotification("No selection to cut")
+				return
+			}
+
+			cutSelectionToClipboard()
+			return
+		}
+		// CMD+V (macOS) or CTRL+V - paste selection
+		if ((e.metaKey || e.ctrlKey) && e.code === "KeyV") {
+			e.preventDefault()
+			// paste at 0,0 by default
+			if (!clipboard) {
+				showNotification("Clipboard empty")
+				return
+			}
+			confirmBtn.disabled = false
+			cancelBtn.disabled = false
+			pasteClipboardAt()
+			return
+		}
 		if (e.code === "KeyP") {
 			currentTool = "pencil"
 			updateToolUI()
@@ -1525,7 +1609,7 @@ function attachEvents() {
 			currentTool = "line"
 			updateToolUI()
 		}
-		if (e.code === "KeyR") {
+		if (e.code === "KeyR" && (!e.metaKey && !e.ctrlKey)) {
 			currentTool = "rect"
 			updateToolUI()
 		}
@@ -1574,8 +1658,9 @@ function updateToolUI() {
 	document
 		.getElementById("toolSelect")
 		.classList.toggle("active", currentTool === "select")
-	document.getElementById("toolLabel").textContent =
-    currentTool.charAt(0).toUpperCase() + currentTool.slice(1)
+
+	document.getElementById("toolLabel").textContent = currentTool.charAt(0).toUpperCase() + currentTool.slice(1)
+	localStorage.setItem("pixelart_currentTool", currentTool)
 }
 
 function drawLineBetweenOnLayer(aIdx, bIdx, color) {
