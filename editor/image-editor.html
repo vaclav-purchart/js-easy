@@ -38,6 +38,7 @@ body {
 	top: 0;
 	white-space: nowrap;
 	overflow-x: auto;
+	z-index: 10;
 }
 
 #app {
@@ -267,6 +268,19 @@ button {
 	/* max-width: calc(100% - var(--controls-width) - var(--layers-width)); */
 	max-height: calc(100vh - var(--topbar-height) - 24px);
 	overflow: auto;
+	margin-top: 0;
+}
+
+#pickerPreview {
+	display: none;
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 40px;
+	height: 40px;
+	border: 3px dotted black;
+	z-index: 20;
+	border-radius: 10px;
 }
 
 /* not implemented yet */
@@ -278,6 +292,7 @@ button {
 	<header id="topbar">
 		<div id="tools" role="toolbar" aria-label="Tools">
 			<button class="tool-btn" data-tool="pencil" id="toolPencil" title="Hotkey: P">✎ Pencil</button>
+			<button class="tool-btn" data-tool="fill" id="toolPicker" title="Hotkey: I">👆 Picker</button>
 			<button class="tool-btn" data-tool="fill" id="toolFill" title="Hotkey: B">🪣 Fill</button>
 			<button class="tool-btn" data-tool="line" id="toolLine" title="Hotkey: L">╱ Line</button>
 			<button class="tool-btn" data-tool="rect" id="toolRect" title="Hotkey: R">▭ Rect</button>
@@ -418,7 +433,7 @@ button {
 			</div>
 		</div>
 	</div>
-
+	<div id="pickerPreview"></div>
 <script type="module">
 
 import { showNotification } from './notification.js'
@@ -429,8 +444,9 @@ let width = 32,
 let pixelSize = 16 // display pixels (zoom)
 let primaryColor = "#ff0000"
 let secondaryColor = "#0000ff"
-let currentTool = "pencil" // 'pencil' | 'fill' | 'line' | 'rect' | 'ellipse' | 'select'
+let currentTool = "pencil" // 'pencil' | 'picker' | 'fill' | 'line' | 'rect' | 'ellipse' | 'select'
 let showIsometricGrid = false
+let toolBeforePicker = "pencil"
 
 // layers: array of {name, pixels(array), visible:boolean}
 let layers = []
@@ -465,6 +481,7 @@ const display = document.getElementById("display")
 const overlay = document.getElementById("overlay")
 const stage = document.getElementById("stage")
 const zoomVal = document.getElementById("zoomVal")
+const pickerPreview = document.getElementById("pickerPreview")
 
 const primaryPicker = document.getElementById("primaryColor")
 const secondaryPicker = document.getElementById("secondaryColor")
@@ -525,6 +542,10 @@ function loadFromLocalStorage() {
 
 function setCurrentCursorInfo(x, y) {
 	document.getElementById("currentCursorInfo").textContent = `[${x}, ${y}]`
+	if (currentTool === 'picker') {
+		pickerPreview.style.backgroundColor = getPixelFromComposite(x, y) || 'transparent'
+		pickerPreview.style.display = 'block'
+	}
 }
 
 
@@ -597,17 +618,24 @@ function addImageColorsToCustomPalette() {
 	const pal = document.getElementById("imagePalette")
 	pal.innerHTML = ""
 
-	newColors.forEach((c, index) => {
+	let index = 0
+	newColors.forEach((c) => {
 		if (index >= 24) return // limit number of colors in palette
 		const b = document.createElement("button")
 		b.style.background = c
 		b.addEventListener("click", () => setPrimary(c))
 		pal.appendChild(b)
+		index++
 	})
 
 }
 
 function setPrimary(hex) {
+	if (hex.startsWith('rgb(')) {
+		// convert rgb() to hex
+		const rgb = hex.match(/\d+/g).map(Number)
+		hex = '#' + rgb.map((v) => v.toString(16).padStart(2, '0')).join('')
+	}
 	primaryColor = hex
 	document.getElementById("currentColor").textContent = hex
 	if (hex !== "transparent") document.getElementById("colorPicker").value = hex
@@ -1003,6 +1031,14 @@ function attachEvents() {
 	})
 
 	displayCanvas.addEventListener("pointerdown", (e) => {
+		if (currentTool === 'picker') {
+			setPrimary(pickerPreview.style.backgroundColor)
+			currentTool = toolBeforePicker
+			pickerPreview.style.display = 'none'
+			updateToolUI()
+			return
+		}
+
 		displayCanvas.setPointerCapture(e.pointerId)
 		isPointerDown = true
 		const pm = getPointerMap(e)
@@ -1060,8 +1096,25 @@ function attachEvents() {
 		updateUIState()
 	})
 
+	displayCanvas.addEventListener('mouseenter', (e) => {
+		if (currentTool === 'picker') {
+			pickerPreview.style.display = 'block'
+		}
+	})
+
+	displayCanvas.addEventListener('mouseleave', (e) => {
+		if (currentTool === 'picker') {
+			pickerPreview.style.display = 'none'
+		}
+	})
+
 	displayCanvas.addEventListener("mousemove", (e) => {
 		const rect = displayCanvas.getBoundingClientRect()
+		if (currentTool === 'picker') {
+			pickerPreview.style.left = (e.x - 45) + 'px'
+			pickerPreview.style.top = (e.y - 45) + 'px'
+		}
+
 		const clientX = e.clientX
 		const clientY = e.clientY
 		const x = Math.floor((clientX - rect.left) / pixelSize)
@@ -1072,9 +1125,14 @@ function attachEvents() {
 
 	displayCanvas.addEventListener("pointermove", (e) => {
 		if (!isPointerDown) return
+		if (currentTool === 'picker') {
+			pickerPreview.style.left = (e.x - 45) + 'px'
+			pickerPreview.style.top = (e.y - 45) + 'px'
+		}
 		const pm = getPointerMap(e)
 		if (!pm) return
 		setCurrentCursorInfo(pm.x, pm.y)
+
 		if (currentTool === "pencil") {
 			const col = e.buttons & 2 ? secondaryColor : primaryColor // right button bit
 			// draw line between lastIdx and pm.idx for continuous stroke
@@ -1301,6 +1359,11 @@ function attachEvents() {
 		currentTool = "pencil"
 		updateToolUI()
 	})
+	document.getElementById("toolPicker").addEventListener("click", () => {
+		toolBeforePicker = currentTool || "pencil"
+		currentTool = "picker"
+		updateToolUI()
+	})
 	document.getElementById("toolFill").addEventListener("click", () => {
 		currentTool = "fill"
 		updateToolUI()
@@ -1425,9 +1488,12 @@ function attachEvents() {
 			if (e.key === "ArrowDown") { selection.y = selection.y + 1; moved = true }
 			if (moved) { drawOverlay(); e.preventDefault(); return }
 		}
-		console.log(e)
 		if (e.code === "KeyP") {
 			currentTool = "pencil"
+			updateToolUI()
+		}
+		if (e.code === "KeyI") {
+			currentTool = "picker"
 			updateToolUI()
 		}
 		if (e.code === "KeyB") {
@@ -1469,6 +1535,9 @@ function updateToolUI() {
 	document
 		.getElementById("toolPencil")
 		.classList.toggle("active", currentTool === "pencil")
+	document
+		.getElementById("toolPicker")
+		.classList.toggle("active", currentTool === "picker")
 	document
 		.getElementById("toolFill")
 		.classList.toggle("active", currentTool === "fill")
@@ -1586,6 +1655,7 @@ function loadBase64(base64) {
 		resizeCanvases()
 		renderAll()
 		addImageColorsToCustomPalette()
+		renderLayerThumbnails()
 	}
 	img.src = base64
 }
@@ -1633,7 +1703,6 @@ function renderLayersUI() {
 		thumb.className = "layer-thumb"
 		thumb.width = width
 		thumb.height = height
-		console.log(width, height)
 		thumb.style.width = "56px"
 		thumb.style.height = "56px"
 		const tctx = thumb.getContext("2d")
@@ -1715,8 +1784,9 @@ function renderLayerThumbnails() {
 	// small update for any thumb canvases
 	const thumbs = document.querySelectorAll(".layer-thumb")
 	thumbs.forEach((thumb, i) => {
-		thumbs.width = width
-		thumbs.height = height
+		thumb.width = Math.max(width, height)
+		thumb.height = Math.max(width, height)
+
 		const index = layers.length - 1 - i
 		const tctx = thumb.getContext("2d")
 		tctx.clearRect(0, 0, thumb.width, thumb.height)
