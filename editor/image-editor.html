@@ -972,7 +972,7 @@ function drawOverlay() {
 	if (selection) {
 		ctx.save()
 		ctx.strokeStyle = "rgba(0,0,0,0.9)"
-		ctx.lineWidth = 1
+		ctx.lineWidth = 3
 		ctx.setLineDash([4, 2])
 		ctx.strokeRect(
 			selection.x * pixelSize,
@@ -1473,20 +1473,41 @@ function attachEvents() {
 	})
 
 	window.addEventListener("keydown", (e) => {
-		if (e.key === "Enter") {
+		console.log(e)
+		if (e.code === "Enter") {
 			document.getElementById("confirmBtn").click()
 		}
-		if (e.key === "Escape") {
+		if (e.code === "Escape") {
 			document.getElementById("cancelBtn").click()
 		}
 		// arrow keys move selection by 1px if selection exists
 		if (selection) {
 			let moved = false
-			if (e.key === "ArrowLeft") { selection.x = selection.x - 1; moved = true }
-			if (e.key === "ArrowRight") { selection.x = selection.x + 1; moved = true }
-			if (e.key === "ArrowUp") { selection.y = selection.y - 1; moved = true }
-			if (e.key === "ArrowDown") { selection.y = selection.y + 1; moved = true }
+			if (e.code === "ArrowLeft") { selection.x = selection.x - 1; moved = true }
+			if (e.code === "ArrowRight") { selection.x = selection.x + 1; moved = true }
+			if (e.code === "ArrowUp") { selection.y = selection.y - 1; moved = true }
+			if (e.code === "ArrowDown") { selection.y = selection.y + 1; moved = true }
 			if (moved) { drawOverlay(); e.preventDefault(); return }
+		}
+		// CMD+A (macOS) or CTRL+A - select all
+		if ((e.metaKey || e.ctrlKey) && e.code === "KeyA") {
+			e.preventDefault()
+			selection = {
+				x: 0,
+				y: 0,
+				w: width,
+				h: height,
+				pixels: [],
+				floating: false,
+			}
+			// Copy all pixels from active layer to selection
+			for (let i = 0; i < width * height; i++) {
+				selection.pixels[i] = getPixelOnLayer(activeLayer, i)
+			}
+			drawOverlay()
+			copySelBtn.disabled = false
+			pasteSelBtn.disabled = true
+			return
 		}
 		if (e.code === "KeyP") {
 			currentTool = "pencil"
