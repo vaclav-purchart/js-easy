@@ -20,13 +20,15 @@
 		}
 
 		.toolbar {
-			height: 50px;
 			background: #f8f9fa;
 			border-bottom: 1px solid #e9ecef;
 			display: flex;
 			align-items: center;
 			padding: 0 20px;
 			gap: 20px;
+			overflow-x: auto;
+			overflow-y: hidden;
+			height: 70px;
 		}
 
 		.toolbar button {
@@ -378,6 +380,31 @@
 	.fullscreen-close-btn:active {
 		transform: scale(0.95);
 	}
+
+	/* Modern github-example-select styling */
+	#github-example-select {
+		border: 3px solid #d6dbe6;
+		padding: 8px 36px 8px 12px;
+		height: 40px;
+		min-width: 160px;
+		border-radius: 8px;
+		font-size: 14px;
+		color: #1f2937;
+		/* box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); */
+		cursor: pointer;
+		/* transition: box-shadow 120ms ease, border-color 120ms ease, transform 80ms ease; */
+	}
+
+	#github-example-select:focus {
+		outline: none;
+		border-color: #0b84ff;
+		box-shadow: 0 6px 18px rgba(11, 132, 255, 0.12), 0 0 0 4px rgba(11,132,255,0.06);
+		transform: translateY(-1px);
+	}
+
+	#github-example-select option[disabled] {
+		color: #6b7280;
+	}
 	</style>
 	<!-- ESLint for browser -->
 	<script src="https://cdn.jsdelivr.net/npm/eslint-linter-browserify@9.11.1/linter.js"></script>
@@ -389,6 +416,7 @@
 		<button id="keyboard-btn">⌨️ Keyboard</button>
 		<button id="fullscreen-btn">📱 Fullscreen</button>
 		<button id="list-btn">🔍 List</button>
+		<select id="github-example-select"></select>
 		<button id="chat-btn">💬 Chat</button>
 		<button id="ai-btn">🤖 AI</button>
 		<button id="image-btn">🖼️ Image</button>
@@ -401,7 +429,6 @@
 		<button id="paste-btn">📥 Paste</button>
 		<button id="clear-storage-btn">🗑️ Clear</button>
 		<button id="image-upload-btn">🖼️ Upload Image</button>
-		<select id="github-example-select"></select>
 		<input type="file" id="file-input" class="file-input" accept=".html,.js,.txt">
 		<input type="file" id="image-input" class="file-input" accept="image/*">
 
