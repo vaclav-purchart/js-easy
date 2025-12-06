@@ -452,6 +452,7 @@ let toolBeforePicker = "pencil"
 // layers: array of {name, pixels(array), visible:boolean}
 let layers = []
 let activeLayer = 0
+addLayer("Layer 1", false)
 
 let selection = null // {x,y,w,h, pixels:[], floating:boolean, offsetX,offsetY}
 let clipboard = null
@@ -495,11 +496,7 @@ const handleNames = ["nw", "n", "ne", "e", "se", "s", "sw", "w"]
 let handles = []
 
 function init() {
-	// initialize single layer
 	loadFromLocalStorage()
-	layers = []
-	addLayer("Layer 1")
-	initPixelsForLayer(activeLayer)
 	buildPalette()
 	resizeCanvases()
 	renderAll()
@@ -519,27 +516,75 @@ function updateUIState() {
 	// document.getElementById("redoBtn").disabled = redoStack.length === 0
 }
 
+/**
+ * Apply loaded editor data from JSON
+ * @param {{
+ *   width,
+ *   height,
+ *   pixelSize,
+ *   layers,
+ *   primaryColor,
+ *   secondaryColor,
+ *   activeLayer,
+ *   currentTool,
+ *   fillShapes,
+ *   showIsometricGrid,
+ * }} data
+ */
+function applyEditorData(data) {
+	const loadedLayers = data.layers
+
+	width = data.width || 32
+	height = data.height || 32
+	pixelSize = data.pixelSize || pixelSize
+	activeLayer = data.activeLayer || 0
+	primaryColor = data.primaryColor || primaryColor
+	secondaryColor = data.secondaryColor || secondaryColor
+	currentTool = data.currentTool || "pencil"
+	showIsometricGrid = data.showIsometricGrid || false
+
+	document.getElementById("width").value = width
+	document.getElementById("height").value = height
+	document.getElementById("zoomVal").textContent = pixelSize
+	document.getElementById("fillShapes").checked = data.fillShapes || true
+
+	if (!Array.isArray(loadedLayers) || loadedLayers.length === 0) {
+		layers = []
+		addLayer("Layer 1", false)
+	} else {
+		layers = loadedLayers
+	}
+
+	resizeCanvases()
+	renderLayersUI()
+	// saveToLocalStorage()
+	renderAll()
+}
+
 function saveToLocalStorage() {
-	localStorage.setItem('pixelart_dataurl', document.getElementById('dataUrlInput').value)
-	localStorage.setItem('pixelart_zoom', pixelSize)
-	localStorage.setItem('pixelart_showIsometricGrid', showIsometricGrid)
-	localStorage.setItem('pixelart_fillShapes', document.getElementById('fillShapes').checked)
+	const data = {
+		width,
+		height,
+		pixelSize,
+		layers,
+		primaryColor,
+		secondaryColor,
+		activeLayer,
+		currentTool,
+		fillShapes: document.getElementById('fillShapes').checked,
+		showIsometricGrid,
+	}
+	localStorage.setItem('pixelart_data', JSON.stringify(data))
 }
 
 function loadFromLocalStorage() {
-	const zoom = localStorage.getItem('pixelart_zoom')
-	if (zoom && zoom !== 'undefined') {
-		document.getElementById('zoomVal').textContent = zoom
-		pixelSize = Number(zoom)
+	let data = {}
+	try {
+		data = JSON.parse(localStorage.getItem('pixelart_data')) || {}
+	} catch (e) {
+		console.error('Failed to load editor data from localStorage', e)
 	}
-	const saved = localStorage.getItem('pixelart_dataurl')
-	if (saved) loadBase64(saved)
-
-	showIsometricGrid = localStorage.getItem('pixelart_showIsometricGrid')
-	document.getElementById('fillShapes').checked = localStorage.getItem('pixelart_fillShapes') === 'true'
-
-	currentTool = localStorage.getItem('pixelart_currentTool') || 'pencil'
-
+	applyEditorData(data)
 	resizeCanvases()
 	renderAll()
 	renderLayerThumbnails()
@@ -560,7 +605,7 @@ function historyPush() {
 }
 
 
-function addLayer(name) {
+function addLayer(name, updateUI = true) {
 	const pixels = new Array(width * height).fill(null)
 	layers.push({
 		name: name || `Layer ${layers.length + 1}`,
@@ -568,13 +613,17 @@ function addLayer(name) {
 		visible: true,
 	})
 	activeLayer = layers.length - 1
-	renderLayersUI()
+	if (updateUI) {
+		saveToLocalStorage()
+		renderLayersUI()
+	}
 }
 
 function deleteLayer(index) {
 	if (layers.length <= 1) return
 	layers.splice(index, 1)
 	activeLayer = Math.max(0, Math.min(activeLayer, layers.length - 1))
+	saveToLocalStorage()
 	renderLayersUI()
 	renderAll()
 }
@@ -585,6 +634,7 @@ function moveLayerUp(index) {
 	layers.splice(index - 1, 0, a)
 	activeLayer = index - 1
 	renderLayersUI()
+	saveToLocalStorage()
 	renderAll()
 }
 
@@ -594,6 +644,7 @@ function moveLayerDown(index) {
 	layers.splice(index + 1, 0, a)
 	activeLayer = index + 1
 	renderLayersUI()
+	saveToLocalStorage()
 	renderAll()
 }
 
@@ -651,12 +702,14 @@ function setPrimary(hex) {
 	document.getElementById("currentColor").textContent = hex
 	if (hex !== "transparent") document.getElementById("colorPicker").value = hex
 	document.getElementById("colorPicker").value = hex === "transparent" ? "#ffffff" : hex
+	saveToLocalStorage()
 }
 function setSecondary(hex) {
 	secondaryColor = hex
 	document.getElementById("currentColor2").textContent = hex
 	if (hex !== "transparent") document.getElementById("colorPicker2").value = hex
 	document.getElementById("colorPicker2").value = hex === "transparent" ? "#ffffff" : hex
+	saveToLocalStorage()
 }
 
 function drawRect(floatingShape, renderPixel) {
@@ -920,6 +973,7 @@ function cutSelectionToClipboard() {
 
 	drawOverlay()
 	renderLayersUI()
+	saveToLocalStorage()
 	renderAll()
 	copySelBtn.disabled = true
 	pasteSelBtn.disabled = false
@@ -1350,6 +1404,7 @@ function attachEvents() {
 		layers = JSON.parse(s)
 		activeLayer = Math.max(0, Math.min(activeLayer, layers.length - 1))
 		renderLayersUI()
+		saveToLocalStorage()
 		renderAll()
 	})
 
@@ -1366,35 +1421,20 @@ function attachEvents() {
 		reader.readAsDataURL(file)
 	})
 	document.getElementById("layersFileInput").addEventListener("change", () => {
-		const file = document.getElementById("layersFileInput").files[0]
+		const fileInput = document.getElementById("layersFileInput")
+		const file = fileInput.files[0]
 		if (!file) return
 		const reader = new FileReader()
 		reader.onload = (e) => {
 			try {
 				const data = JSON.parse(e.target.result)
-				const loadedLayers = data.layers
-
-				if (!data.width || !data.height || !data.pixelSize || !Array.isArray(loadedLayers)) {
+				if (!data.width || !data.height || !data.pixelSize || !Array.isArray(data.layers)) {
 					throw new Error("Invalid image file.")
 				}
 
-				width = data.width
-				height = data.height
-				pixelSize = data.pixelSize
-				activeLayer = data.activeLayer || 0
-				primaryColor = data.primaryColor
-				secondaryColor = data.secondaryColor
-				currentTool = data.currentTool || "pencil"
-
-				document.getElementById("width").value = width
-				document.getElementById("height").value = height
-				document.getElementById("zoomVal").textContent = pixelSize
-
-				layers = loadedLayers
-
-				resizeCanvases()
-				renderLayersUI()
-				renderAll()
+				applyEditorData(data)
+				fileInput.value = ""
+				saveToLocalStorage()
 			} catch (err) {
 				showNotification.error("Error loading layers file.")
 			}
@@ -1438,6 +1478,7 @@ function attachEvents() {
 		setPrimary(primaryColor)
 		setSecondary(secondaryColor)
 		updateToolUI()
+		saveToLocalStorage()
 	})
 
 	document.getElementById("confirmBtn").addEventListener("click", () => {
@@ -1660,7 +1701,7 @@ function updateToolUI() {
 		.classList.toggle("active", currentTool === "select")
 
 	document.getElementById("toolLabel").textContent = currentTool.charAt(0).toUpperCase() + currentTool.slice(1)
-	localStorage.setItem("pixelart_currentTool", currentTool)
+	saveToLocalStorage()
 }
 
 function drawLineBetweenOnLayer(aIdx, bIdx, color) {
@@ -1771,6 +1812,7 @@ function removeLayer(i) {
 	layers.splice(i, 1)
 	activeLayer = Math.max(0, Math.min(activeLayer, layers.length - 1))
 	renderLayersUI()
+	saveToLocalStorage()
 	renderAll()
 }
 function moveLayer(i, dir) {
@@ -1780,6 +1822,7 @@ function moveLayer(i, dir) {
 	layers.splice(to, 0, a)
 	activeLayer = to
 	renderLayersUI()
+	saveToLocalStorage()
 	renderAll()
 }
 function mergeDown(i) {
@@ -1792,6 +1835,7 @@ function mergeDown(i) {
 	layers.splice(i, 1)
 	activeLayer = i - 1
 	renderLayersUI()
+	saveToLocalStorage()
 	renderAll()
 }
 
@@ -1839,6 +1883,7 @@ function renderLayersUI() {
 		sel.textContent = "Select"
 		sel.addEventListener("click", () => {
 			activeLayer = idx
+			saveToLocalStorage()
 			renderLayersUI()
 		})
 
@@ -1883,6 +1928,7 @@ layersList.addEventListener("drop", (e) => {
 	const item = layers.splice(from, 1)[0]
 	layers.splice(to, 0, item)
 	renderLayersUI()
+	saveToLocalStorage()
 	renderAll()
 })
 
