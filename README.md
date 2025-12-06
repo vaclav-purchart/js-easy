@@ -4,7 +4,19 @@ https://docs.google.com/presentation/d/1ZwRTC7aS7IogWoJid2r-NBH6ydSjQqmQnBbqQL11
 
 # IDE
 
+https://purchart.cloud/
+
+-- OR --
+
+https://code.visualstudio.com/
+
+-- OR --
+
 https://vscode.dev/
+
+# Canvas API
+
+https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D
 
 # Colors
 
@@ -12,4 +24,4 @@ https://www.w3schools.com/tags/ref_colornames.asp
 
 # Git repo
 
-# bit.ly/3IyoAaA
+https://github.com/vaclav-purchart/js-easy/
