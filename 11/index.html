@@ -34,7 +34,7 @@
 		canvas {
 			background: #0a3;
 			border: 1px solid #000;
-			image-rendering: pixelated;
+			/* image-rendering: pixelated; */
 		}
 
 		label {
@@ -76,12 +76,14 @@
 		<label>Base64 image:</label>
 		<textarea id="b64"></textarea>
 		<button id="load">Load image</button>
-		<button id="clear">Clear overlays</button>
 		<button id="sample">Sample image</button>
+		<button id="clear">Clear image</button>
 
 		<p style="font-size:12px;color:#999;margin-top:12px">
-			Move camera: W A S D or Arrow Keys<br>
-			Right-click a tile to remove overlay.
+			* Move camera: W A S D or Arrow Keys<br>
+			* Left-click a tile to build object.<br>
+			* Middle-click a tile to change terrain to sand.<br>
+			* Right-click a tile to set built object.
 		</p>
 	</div>
 
@@ -105,24 +107,82 @@ const sample = document.getElementById('sample')
 ctx.imageSmoothingEnabled = false
 
 // ==== CAMERA ====
-let camX = 0
-let camY = 0
-let zoom = 1
+const camera = {
+	x: 500,
+	y: 240,
+	zoom: 1,
+}
+
+const cursor = {
+	x: null,
+	y: null,
+}
 
 // ==== MAP ====
-const terrains = ['grass', 'water', 'sand', 'stone']
 const map = []
 for (let y = 0; y < MAP_H; y++) {
 	map[y] = []
 	for (let x = 0; x < MAP_W; x++) {
-		const r = Math.random()
-		map[y][x] = r < .55 ? 'grass' : r < .75 ? 'water' : r < .9 ? 'sand' : 'stone'
+		if (x >=4 && x <=7 && y >=4 && y <=7 || (x === 5 && y <= 4)) {
+			// center area
+			map[y][x] = ["water", null]
+			continue
+		}
+		if (x >= 6 && x <= 8 && y >= 0 && y <= 3) {
+			// top-right area
+			map[y][x] = ["sand", null]
+			continue
+		}
+		map[y][x] = ['grass', null]
 	}
 }
+map[0][0][1] = "house"
+map[8][2][1] = "tree"
 
 // overlays
 const overlays = {}
-let currentImage = null
+let currentImage = "house"
+let allLoaded = false
+
+const assets = {
+	"cursor": {
+		img: new Image(),
+		loaded: false,
+		url: "https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/11/cursor-line.png",
+	},
+	"grass": {
+		img: new Image(),
+		loaded: false,
+		url: "https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/11/grass-big.png",
+	},
+	"sand": {
+		img: new Image(),
+		loaded: false,
+		url: "https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/11/sand-big.png",
+	},
+	"water": {
+		img: new Image(),
+		loaded: false,
+		url: "https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/11/water-big.png",
+	},
+	"house": {
+		img: new Image(),
+		loaded: false,
+		url: "data:image/png;base64,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",
+	},
+	"tree": {
+		img: new Image(),
+		loaded: false,
+		url: "data:image/png;base64,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",
+	},
+}
+
+// Load assets
+for (const key in assets) {
+	const a = assets[key]
+	a.img.onload = () => {a.loaded = true; allLoaded = Object.values(assets).every((x) => x.loaded)}
+	a.img.src = a.url
+}
 
 // ==== CANVAS RESIZE ====
 function resize() {
@@ -140,86 +200,72 @@ function resize() {
 window.addEventListener('resize', resize)
 
 // ==== ISOMETRIC MATH ====
-function isoToScreen(i, j) {
-	const x = (i - j) * (TILE_W / 2)
-	const y = (i + j) * (TILE_H / 2)
+function isoToScreen(iso) {
+	const x = (iso.x - iso.y) * (TILE_W / 2)
+	const y = (iso.x + iso.y) * (TILE_H / 2)
 	return { x, y }
 }
-function screenToIso(x, y) {
-	x -= camX
-	y -= camY
-	x /= zoom
-	y /= zoom
+function screenToIso(screen) {
+	let x = screen.x
+	let y = screen.y
+
+	x -= camera.x
+	y -= camera.y
+	x /= camera.zoom
+	y /= camera.zoom
 	const rx = x / (TILE_W / 2)
 	const ry = y / (TILE_H / 2)
 	const i = (ry + rx) / 2
-	const j = (ry - rx) / 2
-	return { i, j }
+	const j = (ry - rx) / 2 + 1
+	return { x: i, y: j }
 }
 
 // ==== DRAW TILE ====
-function drawTile(x, y, terrain, highlight) {
+function drawTile(x, y, [terrain, building]) {
 	ctx.save()
-	ctx.translate(camX, camY)
-	ctx.scale(zoom, zoom)
-	ctx.beginPath()
-	ctx.moveTo(x, y)
-	ctx.lineTo(x + TILE_W / 2, y + TILE_H / 2)
-	ctx.lineTo(x, y + TILE_H)
-	ctx.lineTo(x - TILE_W / 2, y + TILE_H / 2)
-	ctx.closePath()
+	ctx.translate(camera.x, camera.y)
+	ctx.scale(camera.zoom, camera.zoom)
 
-	const g = ctx.createLinearGradient(x, y, x, y + TILE_H)
-	if (terrain === 'grass') { g.addColorStop(0, '#6fc24b'); g.addColorStop(1, '#2b8a3a') }
-	else if (terrain === 'water') { g.addColorStop(0, '#68c0ff'); g.addColorStop(1, '#0b6ab0') }
-	else if (terrain === 'sand') { g.addColorStop(0, '#f7e3a1'); g.addColorStop(1, '#e6c06a') }
-	else if (terrain === 'stone') { g.addColorStop(0, '#a18bd3'); g.addColorStop(1, '#6f4da3') }
+	const {x: screenX, y: screenY} = isoToScreen({x, y})
+	const imgTerrain = assets[terrain].img
+	if (terrain === 'water' && building === null) {
+		// water offset
+		ctx.drawImage(imgTerrain, screenX, screenY - imgTerrain.height + TILE_H + 5)
+	} else {
+		ctx.drawImage(imgTerrain, screenX, screenY - imgTerrain.height + TILE_H)
+	}
 
-	ctx.fillStyle = g
-	ctx.fill()
-	ctx.strokeStyle = 'rgba(0,0,0,.08)'; ctx.stroke()
-
-	if (highlight) {
-		ctx.fillStyle = 'rgba(255,255,255,.1)'
-		ctx.fill()
-		ctx.lineWidth = 2
-		ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.stroke()
+	const imgBuilding = assets[building]?.img
+	if (imgBuilding) {
+		ctx.drawImage(imgBuilding, screenX, screenY - imgBuilding.height)
 	}
 	ctx.restore()
 }
 
-// ==== DRAW OVERLAYS ====
-function drawOverlays() {
-	for (const k in overlays) {
-		const [i, j] = k.split(',').map(Number)
-		const pt = isoToScreen(i, j)
-		const o = overlays[k]
-
-		ctx.save()
-		ctx.translate(camX, camY)
-		ctx.scale(zoom, zoom)
-		const w = o.w, h = o.h
-		const dw = Math.min(TILE_W * 0.9, w)
-		const sc = dw / w
-		const dh = h * sc
-		const dx = pt.x - dw / 2
-		const dy = pt.y + TILE_H / 2 - dh
-		ctx.drawImage(o.img, dx, dy, dw, dh)
-		ctx.restore()
-	}
-}
-
-let hover = null
 function draw() {
+	if (!allLoaded) {
+		requestAnimationFrame(draw)
+		return
+	}
 	ctx.clearRect(0, 0, canvas.width, canvas.height)
 
 	for (let j = 0; j < MAP_H; j++) {
 		for (let i = 0; i < MAP_W; i++) {
-			const pt = isoToScreen(i, j)
-			drawTile(pt.x, pt.y, map[j][i], hover && hover.i === i && hover.j === j)
+			drawTile(i, j, map[j][i])
 		}
 	}
-	drawOverlays()
+
+	if (cursor.x !== null && cursor.y !== null) {
+		const img = assets['cursor'].img
+
+		const {x: screenX, y: screenY} = isoToScreen(cursor)
+		ctx.save()
+		ctx.translate(camera.x, camera.y)
+		ctx.scale(camera.zoom, camera.zoom)
+		ctx.drawImage(img, screenX, screenY - img.height)
+		ctx.restore()
+	}
+
 
 	ctx.fillText(Math.round((1000.0 / (performance.now() - lastTime))), 10, 50)
 	lastTime = performance.now()
@@ -234,23 +280,48 @@ function getPos(e) {
 }
 
 canvas.addEventListener('pointermove', (e) => {
-	const p = getPos(e)
-	const iso = screenToIso(p.x, p.y)
-	const i = Math.floor(iso.i + 1e-6)
-	const j = Math.floor(iso.j + 1e-6)
-	hover = (i >= 0 && j >= 0 && i < MAP_W && j < MAP_H) ? { i, j } : null
-	draw()
+	const iso = screenToIso(getPos(e))
+	const i = Math.round(iso.x)
+	const j = Math.round(iso.y)
+	if (i >= 0 && j >= 0 && i < MAP_W && j < MAP_H) {
+		cursor.x = i
+		cursor.y = j
+	} else {
+		cursor.x = null
+		cursor.y = null
+	}
+	console.log(cursor)
 })
+
+function build(i, j, what = currentImage) {
+	if (!currentImage) {
+		map[j][i][1] = null
+		return
+	}
+	map[j][i][1] = what
+}
+
+function destroy(i, j) {
+	map[j][i][1] = null
+}
+
 
 canvas.addEventListener('pointerdown', (e) => {
 	const p = getPos(e)
-	const iso = screenToIso(p.x, p.y)
-	const i = Math.floor(iso.i + 1e-6)
-	const j = Math.floor(iso.j + 1e-6)
+	const iso = screenToIso(p)
+	const i = Math.round(iso.x)
+	const j = Math.round(iso.y)
 	if (!(i >= 0 && j >= 0 && i < MAP_W && j < MAP_H)) return
 
-	if (e.button === 2) { delete overlays[`${i},${j}`]; draw(); return }
-	if (currentImage) { overlays[`${i},${j}`] = { img: currentImage, w: currentImage.width, h: currentImage.height }; draw() }
+	if (e.button === 0) {
+		build(i, j)
+	}
+	if (e.button === 2) {
+		currentImage = map[j][i][1]
+	}
+	if (e.button === 1) {
+		map[j][i][0] = "sand"
+	}
 })
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
@@ -261,18 +332,21 @@ function loadBase64(str) {
 		return
 	}
 	const img = new Image()
-	img.onload = () => { currentImage = img; alert('Loaded.') }
+	const id = new Date().getTime()
+	img.onload = () => { currentImage = id; assets[id] = { img: img, loaded: true } }
 	img.onerror = () => alert('Invalid base64')
 	const t = str.trim()
 	img.src = t.startsWith('data:') ? t : 'data:image/png;base64,' + t
 }
 
 load.onclick = () => loadBase64(b64.value)
-clear.onclick = () => { for (const k in overlays) delete overlays[k]; draw() }
 sample.onclick = () => {
 	const s = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEEAAABACAYAAABFqxrgAAADoElEQVR4AeyYoa7UQBSGe2sIr4BFoHAoeBskr4AjwaJIUFgUCoMiQV2FICQECAQEguQaEhwK5iP5lmZ3u53ptNPt3iH9Mveenjnn//8UBG2z0J9HL2782WYhKU3xEDR+5epZs43vSofRllqoQY3v2+s7e/f1zFGbPQQNaTDGhL3ejbmT0zNbCBrQ0BiR3nXWmBkxdyYPQcEaiBEx1OMsZw/1p76fLAQFKjhVSEy/s90VcyemJzsEBSkwZmluj7vcnTtvdAgKUFCukDH33a2WMTO4kxyCCxXAkKVRi9pS9USH4AIXpi4q0a82tcbuHAzBgS6IHbxkn1rVPqSlNwQHOHBo0DG+V7te+jTuhOAFB/RdXFNdL3rb1r4JwQYvbDeewu9606ueWgs2+OKYz1xtetV7e+v6nQZyB6/xPr6hfXb/Y/PywZfm5rXb/1ijmVTNen1y723z8O75//9UIQiwIXXwGvr1hnlQ8+YfRgsEAV6wvuZTLxiHbS87IdhAEOAA62s61Y5x6NPeG4IXCAIcaP2YT7ViHIa0DobgAIIAF1g/plNtGIdYbdEhOJAgwIXWlzzVgnFI1ZIcggsIAhRgveTpbozD2N2jQ3AhQYCCrM95ugvjkLsrOwQFEAQo0PqUp7MxDlPNniwEBREEKNh6zuksjEPOrH13Jw/BJQQBGrCecnoX45ByN6V3thAUQRCgIeuHTnsxDod6p3g3ewiKJAjQoPXu6TuMQ/fdnD8XCaFrgCBAw90T49DtL/Fz8RA0RRBw/viiwTj4rvS5WAiljR7aV0MI6dQQagghgfDUL6GGEBIIT/0SagghgfDUL6GGEBIIT/0SagghgfDUL6GGEBIIz94vIdQv1dO++vSjef7u+6Uyrdk3Fz+br79+N+3nD9/OgCDAhlM+MQ/4hs1fB34BgoBTDAHjgE/Q4yYEC7wEggDraz4xDviCbS87IdhAMxAEWF/TiXHAB/Rp7w3BC1wGggDrx3xiHNANQ1oHQ3AAw4AgwPoxnRgHdEKstugQHMhwIAiwvuSJcUAXpGpJDsEFLAOCAOslT4wDOmDs7tEhuJDlQBBgfc4T48BeyN2VHYICEAMEAdanPDEO7IGpZk8WgoIQBwQB1nNOjANzIWfWvruTh+ASxAJBgPWUE+PAHEi5m9I7WwiKQDwQBFg/dGIcuAeHeqd4N3sIisQMEARY754YB/qg+27w54yGYiGoEXNAEPD09fsG40Ad7C11/gUAAP//oKU8SQAAAAZJREFUAwDknX3FayunJgAAAABJRU5ErkJggg=='
 	b64.value = s
 	loadBase64(b64.value)
+}
+clear.onclick = () => {
+	b64.value = ''
 }
 
 // ==== CAMERA KEYS ====
@@ -283,10 +357,10 @@ window.addEventListener('keyup', (e) => { keys[e.code] = false })
 let lastTime = performance.now()
 function camLoop() {
 	let sp = 8
-	if (keys['ArrowUp'] || keys['KeyW']) camY += sp
-	if (keys['ArrowDown'] || keys['KeyS']) camY -= sp
-	if (keys['ArrowLeft'] || keys['KeyA']) camX += sp
-	if (keys['ArrowRight'] || keys['KeyD']) camX -= sp
+	if (keys['ArrowUp'] || keys['KeyW']) camera.y += sp
+	if (keys['ArrowDown'] || keys['KeyS']) camera.y -= sp
+	if (keys['ArrowLeft'] || keys['KeyA']) camera.x += sp
+	if (keys['ArrowRight'] || keys['KeyD']) camera.x -= sp
 	draw()
 	requestAnimationFrame(camLoop)
 }
@@ -294,7 +368,7 @@ camLoop()
 
 // ==== ZOOM INPUT ====
 document.getElementById('zoom').addEventListener('change', (e) => {
-	zoom = Math.max(1, Number(e.target.value))
+	camera.zoom = Math.max(1, Number(e.target.value))
 	ctx.imageSmoothingEnabled = false
 	draw()
 })
