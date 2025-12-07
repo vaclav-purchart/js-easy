@@ -85,6 +85,9 @@
 			* Middle-click a tile to change terrain to sand.<br>
 			* Right-click a tile to set built object.
 		</p>
+
+		Building:<br>
+		<img id="preview" src="" style="max-width:64px;max-height:64px;border:1px solid #333;margin-top:6px" />
 	</div>
 
 	<div id="canvas-wrap"><canvas id="c"></canvas></div>
@@ -103,6 +106,7 @@ const load = document.getElementById('load')
 const b64 = document.getElementById('b64')
 const clear = document.getElementById('clear')
 const sample = document.getElementById('sample')
+const preview = document.getElementById('preview')
 
 ctx.imageSmoothingEnabled = false
 
@@ -176,6 +180,8 @@ const assets = {
 		url: "data:image/png;base64,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",
 	},
 }
+
+preview.src = assets[currentImage].url
 
 // Load assets
 for (const key in assets) {
@@ -318,6 +324,7 @@ canvas.addEventListener('pointerdown', (e) => {
 	}
 	if (e.button === 2) {
 		currentImage = map[j][i][1]
+		preview.src = assets[currentImage]?.url || ""
 	}
 	if (e.button === 1) {
 		map[j][i][0] = "sand"
@@ -337,6 +344,7 @@ function loadBase64(str) {
 	img.onerror = () => alert('Invalid base64')
 	const t = str.trim()
 	img.src = t.startsWith('data:') ? t : 'data:image/png;base64,' + t
+	preview.src = t.startsWith('data:') ? t : 'data:image/png;base64,' + t
 }
 
 load.onclick = () => loadBase64(b64.value)
