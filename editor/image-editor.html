@@ -395,11 +395,11 @@ button {
 			</div>
 			<div class="foot small" style="margin-top:8px">Tip: Right-click on the canvas to set the Secondary color.
 				Selection and shapes require confirmation (Confirm button or Enter) to apply.</div>
-			<div class="controls-section not-implemented-yet">
+			<div class="controls-section">
 				<h3>Isometric helpers</h3>
 				<div class="row">
 					<label for="isoWidth">ISO width</label>
-					<input id="isoWidth" type="number" min="1" max="512" value="32">px (1:2)
+					<input id="isoWidth" type="number" min="1" max="512" value="64">px (1:2)
 				</div>
 				<div class="row">
 					<button id="isoShowHide">Show/hide ISO grid</button>
@@ -547,6 +547,7 @@ function applyEditorData(data) {
 	document.getElementById("height").value = height
 	document.getElementById("zoomVal").textContent = pixelSize
 	document.getElementById("fillShapes").checked = data.fillShapes || true
+	document.getElementById("isoWidth").value = data.isoWidth || 64
 
 	if (!Array.isArray(loadedLayers) || loadedLayers.length === 0) {
 		layers = []
@@ -561,8 +562,8 @@ function applyEditorData(data) {
 	renderAll()
 }
 
-function saveToLocalStorage() {
-	const data = {
+function serializeEditorData() {
+	return {
 		width,
 		height,
 		pixelSize,
@@ -573,7 +574,12 @@ function saveToLocalStorage() {
 		currentTool,
 		fillShapes: document.getElementById('fillShapes').checked,
 		showIsometricGrid,
+		isoWidth: document.getElementById('isoWidth').value,
 	}
+}
+
+function saveToLocalStorage() {
+	const data = serializeEditorData()
 	localStorage.setItem('pixelart_data', JSON.stringify(data))
 }
 
@@ -832,6 +838,29 @@ function drawOverlayGrid() {
 			ctx.beginPath()
 			ctx.moveTo(0, py)
 			ctx.lineTo(overlayCanvas.width, py)
+			ctx.stroke()
+		}
+	}
+	if (showIsometricGrid) {
+		// draw isometric grid
+		const isoW = parseInt(document.getElementById("isoWidth").value, 10) || 64
+		const isoH = isoW / 2
+		ctx.strokeStyle = "rgba(0,0,0,0.15)"
+		ctx.lineWidth = 3
+		const hStepPerCanvas = isoH * pixelSize
+
+		for (let step = -100; step < 100; step++) {
+			let startY = overlayCanvas.height - step * hStepPerCanvas + (hStepPerCanvas) / 2
+			// left-up lines
+			ctx.beginPath()
+			ctx.moveTo(0, startY)
+			ctx.lineTo(overlayCanvas.width, startY - hStepPerCanvas * (overlayCanvas.width / (isoW * pixelSize)))
+			ctx.stroke()
+
+			// left-down lines
+			ctx.beginPath()
+			ctx.moveTo(0, startY)
+			ctx.lineTo(overlayCanvas.width, startY + hStepPerCanvas * (overlayCanvas.width / (isoW * pixelSize)))
 			ctx.stroke()
 		}
 	}
@@ -1674,6 +1703,12 @@ function attachEvents() {
 			? "Hide Isometric Grid"
 			: "Show Isometric Grid"
 		drawOverlayGrid()
+		saveToLocalStorage()
+	})
+
+	document.getElementById("isoWidth").addEventListener("input", (e) => {
+		drawOverlayGrid()
+		saveToLocalStorage()
 	})
 }
 
