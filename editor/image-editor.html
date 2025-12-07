@@ -243,12 +243,15 @@ button {
 
 /* selection handles */
 .sel-handle {
-	width: 8px;
-	height: 8px;
+	width: 12px;
+	height: 12px;
 	background: #fff;
-	border: 1px solid #333;
+	border: 2px solid #333;
 	position: absolute;
 	transform: translate(-50%, -50%);
+	border-radius: 2px;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+	pointer-events: auto
 }
 
 .controls-footer {
@@ -964,6 +967,7 @@ function copySelectionToClipboard() {
 }
 function pasteClipboardAt(x, y) {
 	if (!clipboard) return // create floating selection
+	removeHandles()
 	selection = {
 		x: x === undefined ? clipboard.x : x,
 		y: y === undefined ? clipboard.y : y,
@@ -994,7 +998,6 @@ function cutSelectionToClipboard() {
 			const tx = sel.x + sx
 			const ty = sel.y + sy
 			if (tx >= 0 && tx < width && ty >= 0 && ty < height) {
-				console.log('clearing pixel at', tx, ty)
 				setPixelOnLayer(activeLayer, ty * width + tx, null)
 			}
 		}
@@ -1094,6 +1097,149 @@ function getPointerMap(e) {
 	return { x, y, idx: y * width + x }
 }
 
+// --- Selection handles ---
+function createHandles() {
+	removeHandles()
+	if (!selection) return
+	handleNames.forEach((pos) => {
+		const el = document.createElement("div")
+		el.className = "sel-handle"
+		el.dataset.pos = pos
+		el.style.position = "absolute"
+		positionHandle(el, pos)
+		el.addEventListener("pointerdown", onHandleDown)
+		canvasStage.appendChild(el)
+		handles.push(el)
+	})
+}
+function positionHandle(el, pos) {
+	const x = selection.x * pixelSize,
+		y = selection.y * pixelSize,
+		w = selection.w * pixelSize,
+		h = selection.h * pixelSize
+	let cx = x, cy = y
+	switch (pos) {
+		case "nw": cx = x; cy = y; break
+		case "n": cx = x + w / 2; cy = y; break
+		case "ne": cx = x + w; cy = y; break
+		case "e": cx = x + w; cy = y + h / 2; break
+		case "se": cx = x + w; cy = y + h; break
+		case "s": cx = x + w / 2; cy = y + h; break
+		case "sw": cx = x; cy = y + h; break
+		case "w": cx = x; cy = y + h / 2; break
+	}
+	el.style.left = cx + "px"
+	el.style.top = cy + "px"
+}
+function removeHandles() {
+	handles.forEach((h) => h.remove())
+	handles = []
+}
+
+let handleState = null
+function onHandleDown(e) {
+	e.stopPropagation()
+	const pos = e.currentTarget.dataset.pos
+	handleState = {
+		pos,
+		startX: e.clientX,
+		startY: e.clientY,
+		orig: { ...selection },
+	}
+	window.addEventListener("pointermove", onHandleMove)
+	window.addEventListener("pointerup", onHandleUp)
+}
+function onHandleMove(e) {
+	console.log(selection)
+	if (!handleState) return
+	const dx = Math.round((e.clientX - handleState.startX) / pixelSize)
+	const dy = Math.round((e.clientY - handleState.startY) / pixelSize)
+	let s = JSON.parse(JSON.stringify(handleState.orig))
+	switch (handleState.pos) {
+		case "nw":
+			s.x += dx
+			s.y += dy
+			s.w -= dx
+			s.h -= dy
+			break
+		case "ne":
+			s.y += dy
+			s.w += dx
+			s.h -= dy
+			break
+		case "se":
+			s.w += dx
+			s.h += dy
+			break
+		case "sw":
+			s.x += dx
+			s.w -= dx
+			s.h += dy
+			break
+		case "n":
+			s.y += dy
+			s.h -= dy
+			break
+		case "s":
+			s.h += dy
+			break
+		case "e":
+			s.w += dx
+			break
+		case "w":
+			s.x += dx
+			s.w -= dx
+			break
+	}
+	if (s.w < 1) s.w = 1
+	if (s.h < 1) s.h = 1
+	if (s.x < 0) s.x = 0
+	if (s.y < 0) s.y = 0
+	if (s.x + s.w > width) s.w = width - s.x
+	if (s.y + s.h > height) s.h = height - s.y
+	selection.x = s.x
+	selection.y = s.y
+	selection.w = s.w
+	selection.h = s.h
+
+	// if not floating, update pixels array
+	if (!selection.floating) {
+		const pix = new Array(selection.w * selection.h).fill(null)
+		for (let yy = 0; yy < selection.h; yy++) {
+			for (let xx = 0; xx < selection.w; xx++) {
+				const tx = selection.x + xx,
+					ty = selection.y + yy
+				pix[yy * selection.w + xx] =
+			tx >= 0 && tx < width && ty >= 0 && ty < height
+				? getPixelFromComposite(ty * width + tx)
+				: null
+			}
+		}
+		selection.pixels = pix
+	} else {
+		// floating - placing already selected pixels - resize pixels via nearest neighbor
+		const newPixels = new Array(selection.w * selection.h).fill(null)
+		for (let yy = 0; yy < selection.h; yy++) {
+			for (let xx = 0; xx < selection.w; xx++) {
+				const srcX = Math.floor(xx * handleState.orig.w / selection.w)
+				const srcY = Math.floor(yy * handleState.orig.h / selection.h)
+				newPixels[yy * selection.w + xx] =
+			handleState.orig.pixels[srcY * handleState.orig.w + srcX]
+			}
+		}
+		selection.pixels = newPixels
+
+	}
+	drawOverlay()
+}
+function onHandleUp() {
+	window.removeEventListener("pointermove", onHandleMove)
+	window.removeEventListener("pointerup", onHandleUp)
+	handleState = null
+	updateUIState()
+}
+
+
 function drawOverlay() {
 	const ctx = overlayCanvas.getContext("2d")
 	ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
@@ -1102,7 +1248,7 @@ function drawOverlay() {
 	if (selection) {
 		ctx.save()
 		ctx.strokeStyle = "rgba(0,0,0,0.9)"
-		ctx.lineWidth = 3
+		ctx.lineWidth = 1
 		ctx.setLineDash([4, 2])
 		ctx.strokeRect(
 			selection.x * pixelSize,
@@ -1110,17 +1256,16 @@ function drawOverlay() {
 			selection.w * pixelSize,
 			selection.h * pixelSize,
 		)
-		// draw floating pixels
 		if (selection.floating) {
-			ctx.globalAlpha = 0.9
-			for (let sy = 0; sy < selection.h; sy++) {
-				for (let sx = 0; sx < selection.w; sx++) {
-					const c = selection.pixels[sy * selection.w + sx]
+			ctx.globalAlpha = 0.95
+			for (let yy = 0; yy < selection.h; yy++) {
+				for (let xx = 0; xx < selection.w; xx++) {
+					const c = selection.pixels[yy * selection.w + xx]
 					if (!c) continue
 					ctx.fillStyle = c
 					ctx.fillRect(
-						(selection.x + sx) * pixelSize,
-						(selection.y + sy) * pixelSize,
+						(selection.x + xx) * pixelSize,
+						(selection.y + yy) * pixelSize,
 						pixelSize,
 						pixelSize,
 					)
@@ -1129,7 +1274,11 @@ function drawOverlay() {
 			ctx.globalAlpha = 1
 		}
 		ctx.restore()
+		createHandles()
+	} else {
+		removeHandles()
 	}
+
 
 	const renderPixel = (x, y, color) => {
 		if (x >= 0 && x < width && y >= 0 && y < height) {
@@ -1814,6 +1963,7 @@ function updateDataUrl() {
 function loadBase64(base64) {
 	const img = new Image()
 	img.onload = () => {
+		applyEditorData({})
 		width = img.width
 		height = img.height
 		document.getElementById("width").value = width
