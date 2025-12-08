@@ -305,6 +305,7 @@ button {
 <body>
 	<header id="topbar">
 		<div id="tools" role="toolbar" aria-label="Tools">
+			<button class="tool-btn" id="send-btn">✉️ Send</button> |
 			<button class="tool-btn" data-tool="pencil" id="toolPencil" title="Hotkey: P">✎ Pencil</button>
 			<button class="tool-btn" data-tool="fill" id="toolPicker" title="Hotkey: I">👆 Picker</button>
 			<button class="tool-btn" data-tool="fill" id="toolFill" title="Hotkey: B">🪣 Fill</button>
@@ -423,6 +424,10 @@ button {
 				<div class="row">
 					<button id="isoShowHide">Show/hide ISO grid</button>
 				</div>
+				<div class="row">
+					<button id="isoLoad1x1">ISO 1x1</button>
+					<button id="isoLoad2x2">ISO 2x2</button>
+				</div>
 			</div>
 		</div>
 
@@ -457,6 +462,9 @@ button {
 <script type="module">
 
 import { showNotification } from './notification.js'
+
+const ISO_1x1 = await (await fetch('https://purchart.cloud/images?file=iso1x1.json')).json()
+const ISO_2x2 = await (await fetch('https://purchart.cloud/images?file=iso2x2.json')).json()
 
 // --- State ---
 let width = 32,
@@ -1321,6 +1329,42 @@ function drawOverlay() {
 	}
 }
 
+// Send Dialog Methods
+function showSendDialog() {
+	const modal = document.getElementById('send-modal')
+	const userNameInput = document.getElementById('user-name-input')
+	const projectNameInput = document.getElementById('project-name-input')
+	const statusDiv = document.getElementById('send-status')
+
+	// Load saved values from localStorage
+	const savedUserName = localStorage.getItem('js-easy-user-name') || ''
+	const savedProjectName = localStorage.getItem('js-easy-project-name') || ''
+
+	userNameInput.value = savedUserName
+	projectNameInput.value = savedProjectName
+
+	// Clear status
+	statusDiv.className = 'modal-status'
+	statusDiv.textContent = ''
+
+	// Show modal
+	modal.classList.add('active')
+
+	// Focus on first empty field or user name
+	if (!savedUserName) {
+		userNameInput.focus()
+	} else if (!savedProjectName) {
+		projectNameInput.focus()
+	} else {
+		userNameInput.focus()
+	}
+}
+
+function closeSendDialog() {
+	const modal = document.getElementById('send-modal')
+	modal.classList.remove('active')
+}
+
 // --- Events ---
 function attachEvents() {
 	displayCanvas.addEventListener("contextmenu", (e) => {
@@ -1678,6 +1722,7 @@ function attachEvents() {
 		currentTool = "select"
 		updateToolUI()
 	})
+	document.getElementById('send-btn').addEventListener('click', () => showSendDialog())
 	document.getElementById("colorSwitch").addEventListener("click", () => {
 		const c = primaryColor
 		primaryColor = secondaryColor
@@ -1881,6 +1926,26 @@ function attachEvents() {
 			? "Hide Isometric Grid"
 			: "Show Isometric Grid"
 		drawOverlayGrid()
+		saveToLocalStorage()
+	})
+
+	document.getElementById("isoLoad1x1").addEventListener("click", () => {
+		const data = ISO_1x1
+		if (!data.width || !data.height || !data.pixelSize || !Array.isArray(data.layers)) {
+			throw new Error("Invalid image file.")
+		}
+
+		applyEditorData(data)
+		saveToLocalStorage()
+	})
+
+	document.getElementById("isoLoad2x2").addEventListener("click", () => {
+		const data = ISO_2x2
+		if (!data.width || !data.height || !data.pixelSize || !Array.isArray(data.layers)) {
+			throw new Error("Invalid image file.")
+		}
+
+		applyEditorData(data)
 		saveToLocalStorage()
 	})
 
@@ -2207,6 +2272,41 @@ function renderLayerThumbnails() {
 
 // init
 init()
+
+if (location.search) {
+	try {
+		const urlParams = new URLSearchParams(window.location.search)
+		const fileName = urlParams.get('load')
+		if (!fileName) throw new Error('no parameter')
+
+		if (fileName.includes('.json')) {
+			const data = await (await fetch(`https://purchart.cloud/images?file=${fileName}`)).json()
+			if (!data.width || !data.height || !data.pixelSize || !Array.isArray(data.layers)) {
+				throw new Error("Invalid image file.")
+			}
+			applyEditorData(data)
+			saveToLocalStorage()
+		} else {
+			function blobToBase64(blob) {
+				return new Promise((resolve, _) => {
+					const reader = new FileReader()
+					reader.onloadend = () => resolve(reader.result)
+					reader.readAsDataURL(blob)
+				})
+			}
+
+			const binaryData = await (await fetch(`https://purchart.cloud/images?file=${fileName}`)).blob()
+			applyEditorData({})
+			const base64 = await blobToBase64(binaryData)
+			if (base64.startsWith("data:image")) loadBase64(base64)
+			else throw new Error('Not an image file!')
+			saveToLocalStorage()
+		}
+	} catch (err) {
+		showNotification.error("Error loading file. " + err.message)
+	}
+}
+
 </script>
 </body>
 
