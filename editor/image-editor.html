@@ -10,7 +10,7 @@
 	--bg: #f3f3f3;
 	--panel-bg: #fff;
 	--accent: #0b84ff;
-	--controls-width: 275px;
+	--controls-width: 290px;
 	--layers-width: 275px;
 	--topbar-height: 48px;
 }
@@ -286,6 +286,17 @@ button {
 	border-radius: 10px;
 }
 
+#sidePanel-controls {
+	overflow-y: auto;
+    max-height: calc(100vh - var(--topbar-height) - 24px);
+}
+
+#sidePanel-layers {
+	overflow-y: auto;
+    max-height: calc(100vh - var(--topbar-height) - 24px);
+	width: 315px;
+}
+
 /* not implemented yet */
 .not-implemented-yet { display: none; }
 	</style>
@@ -376,6 +387,11 @@ button {
 					<label for="fileInput">Load image:</label>
 					<input type="file" id="fileInput" accept="image/png,image/*" />
 				</div>
+				<div class="row">
+					<label for="fileImport">Import only:</label>
+					<input type="file" id="fileImport" accept="image/png,image/*" />
+				</div>
+
 				<div style="margin-top:12px">
 					<div class="small">Image data URL (updates on every change)</div>
 					<input id="dataUrlInput" type="text">
@@ -637,7 +653,7 @@ function deleteLayer(index) {
 	renderAll()
 }
 
-function moveLayerUp(index) {
+function moveLayerDown(index) {
 	if (index <= 0) return
 	const a = layers.splice(index, 1)[0]
 	layers.splice(index - 1, 0, a)
@@ -647,7 +663,7 @@ function moveLayerUp(index) {
 	renderAll()
 }
 
-function moveLayerDown(index) {
+function moveLayerUp(index) {
 	if (index >= layers.length - 1) return
 	const a = layers.splice(index, 1)[0]
 	layers.splice(index + 1, 0, a)
@@ -851,9 +867,11 @@ function drawOverlayGrid() {
 		ctx.strokeStyle = "rgba(0,0,0,0.15)"
 		ctx.lineWidth = 3
 		const hStepPerCanvas = isoH * pixelSize
+		let shift = 1
+		if (isoW == width) shift = 2
 
 		for (let step = -100; step < 100; step++) {
-			let startY = overlayCanvas.height - step * hStepPerCanvas + (hStepPerCanvas) / 2
+			let startY = overlayCanvas.height - step * hStepPerCanvas + (hStepPerCanvas / shift)
 			// left-up lines
 			ctx.beginPath()
 			ctx.moveTo(0, startY)
@@ -1018,7 +1036,7 @@ function commitSelectionToLayer() {
 	for (let sy = 0; sy < sel.h; sy++) {
 		for (let sx = 0; sx < sel.w; sx++) {
 			const px = sel.pixels[sy * sel.w + sx]
-			if (px !== null) {
+			if (px !== null && px !== "rgba(0,0,0,0.000)") {
 				const tx = sel.x + sx
 				const ty = sel.y + sy
 				if (tx >= 0 && tx < width && ty >= 0 && ty < height) {
@@ -1598,6 +1616,17 @@ function attachEvents() {
 		reader.onload = (e) => loadBase64(e.target.result)
 		reader.readAsDataURL(file)
 	})
+	document.getElementById("fileImport").addEventListener("change", () => {
+		const fileInput = document.getElementById("fileImport")
+		const file = fileInput.files[0]
+		if (!file) return
+		const reader = new FileReader()
+		reader.onload = (e) => {
+			importImage(e.target.result)
+			fileInput.value = ""
+		}
+		reader.readAsDataURL(file)
+	})
 	document.getElementById("layersFileInput").addEventListener("change", () => {
 		const fileInput = document.getElementById("layersFileInput")
 		const file = fileInput.files[0]
@@ -1958,6 +1987,47 @@ function updateDataUrl() {
 	const url = c.toDataURL("image/png")
 	document.getElementById("dataUrlInput").value = url
 	saveToLocalStorage()
+}
+
+function importImage(imgSrc, fileInput) {
+	const img = new Image()
+
+	img.onload = () => {
+		const w = img.width
+		const h = img.height
+
+		const renderPixel = (x, y, color) => {
+			if (x >= 0 && x < width && y >= 0 && y < height) {
+				setPixelOnLayer(activeLayer, y * width + x, color)
+			}
+		}
+
+		addLayer("image")
+		const temp = document.createElement("canvas")
+		temp.width = w
+		temp.height = h
+		const ctx = temp.getContext("2d")
+		ctx.drawImage(img, 0, 0)
+		const data = ctx.getImageData(0, 0, w, h).data
+		// debugger
+		for (let y = 0; y < h; y++) {
+			for (let x = 0; x < w; x++) {
+				const i = y * w + x
+				const r = data[i * 4]
+				const g = data[i * 4 + 1]
+				const b = data[i * 4 + 2]
+				const a = data[i * 4 + 3]
+				const c = `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`
+				// const c = `rgb(${r},${g},${b})`
+				renderPixel(x, y, c)
+			}
+		}
+		renderAll()
+		addImageColorsToCustomPalette()
+		renderLayersUI()
+		renderLayerThumbnails()
+	}
+	img.src = imgSrc
 }
 
 function loadBase64(base64) {
