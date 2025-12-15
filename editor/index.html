@@ -403,6 +403,12 @@
 	#github-example-select option[disabled] {
 		color: #6b7280;
 	}
+
+	#status-container {
+		width: 150px;
+		max-width: 150px;
+		overflow: hidden;
+	}
 	</style>
 	<!-- ESLint for browser -->
 	<script src="https://cdn.jsdelivr.net/npm/eslint-linter-browserify@9.11.1/linter.js"></script>
@@ -439,8 +445,10 @@
 
 		<div class="spacer"></div>
 
-		<span id="status-indicator" class="status-indicator status-success"></span>
-		<span id="status-text">Ready</span>
+		<span id="status-container">
+			<span id="status-indicator" class="status-indicator status-success"></span>
+			<span id="status-text">Ready</span>
+		</span>
 	</div>
 
 	<div class="main-container">
@@ -1027,7 +1035,7 @@ console.log("test")
 				if (this.isUpdating) return
 
 				this.isUpdating = true
-				this.updateStatus('loading', 'Updating...')
+				this.updateStatus('loading', 'Updating')
 
 				try {
 					const code = this.editor.getValue()

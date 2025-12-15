@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8" />
+	<title>JavaScript Objects – Cars on Canvas</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			margin: 0;
+			padding: 16px;
+			background: #f4f4f4;
+		}
+
+		h1 {
+			margin-top: 0;
+		}
+
+		.controls {
+			display: flex;
+			gap: 12px;
+			flex-wrap: wrap;
+			margin-bottom: 16px;
+			background: #fff;
+			padding: 12px;
+			border-radius: 8px;
+			box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+		}
+
+		.controls label {
+			display: flex;
+			flex-direction: column;
+			font-size: 14px;
+		}
+
+		canvas {
+			background: #ffffff;
+			border: 1px solid #ccc;
+			border-radius: 8px;
+		}
+
+		.info {
+			margin-top: 12px;
+			background: #fff;
+			padding: 12px;
+			border-radius: 8px;
+			box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+		}
+
+		button {
+			padding: 8px 16px;
+			cursor: pointer;
+		}
+	</style>
+</head>
+
+<body>
+	<h1>JavaScript Objects Demo: Cars</h1>
+
+	<div class="controls">
+		<label>
+			Brand
+			<input type="text" id="brand" placeholder="e.g. Toyota" />
+		</label>
+		<label>
+			Model
+			<input type="text" id="model" placeholder="e.g. Corolla" />
+		</label>
+		<label>
+			Color
+			<input type="color" id="color" value="#ff0000" />
+		</label>
+		<label>
+			Max Speed (km/h)
+			<input type="number" id="maxSpeed" value="180" />
+		</label>
+		<button id="addCarBtn">Add Car</button>
+	</div>
+
+	<canvas id="canvas" width="800" height="300"></canvas>
+
+	<div class="info" id="info"></div>
+
+	<script>
+		// Canvas setup
+		const canvas = document.getElementById('canvas')
+		const ctx = canvas.getContext('2d')
+
+		// Store all car objects
+		const cars = []
+
+		// Car constructor (Object blueprint)
+		function Car(brand, model, color, maxSpeed, x, y) {
+			// Properties
+			this.brand = brand
+			this.model = model
+			this.color = color
+			this.maxSpeed = maxSpeed
+			this.x = x
+			this.y = y
+			this.speed = 0
+
+			// Method: accelerate the car
+			this.accelerate = function(amount) {
+				this.speed += amount
+				if (this.speed > this.maxSpeed) {
+					this.speed = this.maxSpeed
+				}
+			}
+
+			// Method: calculate time to travel a distance
+			this.timeToTravel = function(distanceKm) {
+				if (this.speed === 0) return Infinity
+				return distanceKm / this.speed // hours
+			}
+
+			// Method: draw the car on the canvas
+			this.draw = function(context) {
+				// Car body
+				context.fillStyle = this.color
+				context.fillRect(this.x, this.y, 80, 30)
+
+				// Wheels
+				context.fillStyle = '#000'
+				context.beginPath()
+				context.arc(this.x + 15, this.y + 30, 6, 0, Math.PI * 2)
+				context.arc(this.x + 65, this.y + 30, 6, 0, Math.PI * 2)
+				context.fill()
+
+				// Text info
+				context.fillStyle = '#000'
+				context.font = '12px Arial'
+				context.fillText(`${this.brand} ${this.model}`, this.x, this.y - 5)
+			}
+		}
+
+		// Redraw everything
+		function redraw() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height)
+			cars.forEach((car) => car.draw(ctx))
+			updateInfo()
+		}
+
+		// Update textual info about cars
+		function updateInfo() {
+			const infoDiv = document.getElementById('info')
+			if (cars.length === 0) {
+				infoDiv.innerHTML = '<strong>No cars added yet.</strong>'
+				return
+			}
+
+			infoDiv.innerHTML = cars.map((car, index) => {
+				const time = car.timeToTravel(100)
+				return `
+					<div>
+						<strong>Car ${index + 1}</strong>: ${car.brand} ${car.model}<br />
+						Color: ${car.color}<br />
+						Speed: ${car.speed} / ${car.maxSpeed} km/h<br />
+						Time to travel 100 km at current speed:
+						${time === Infinity ? 'N/A' : time.toFixed(2) + ' hours'}
+					</div>
+					<hr />
+    		`
+			}).join('')
+		}
+
+		// Add car button
+		document.getElementById('addCarBtn').addEventListener('click', () => {
+			const brand = document.getElementById('brand').value || 'Unknown'
+			const model = document.getElementById('model').value || 'Model'
+			const color = document.getElementById('color').value
+			const maxSpeed = Number(document.getElementById('maxSpeed').value) || 150
+
+			const x = 20 + cars.length * 100
+			const y = 150
+
+			const car = new Car(brand, model, color, maxSpeed, x, y)
+
+			// Demonstrate object methods
+			car.accelerate(Math.random() * maxSpeed)
+
+			cars.push(car)
+			redraw()
+		})
+
+		updateInfo()
+	</script>
+</body>
+
+</html>

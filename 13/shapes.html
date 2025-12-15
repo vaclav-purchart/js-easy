@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8" />
+	<title>JavaScript Objects – Shapes on Canvas (ES6 Classes)</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			margin: 0;
+			padding: 16px;
+			background: #f4f4f4;
+		}
+
+		h1 {
+			margin-top: 0;
+		}
+
+		.controls {
+			display: flex;
+			gap: 12px;
+			flex-wrap: wrap;
+			margin-bottom: 16px;
+			background: #fff;
+			padding: 12px;
+			border-radius: 8px;
+			box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+		}
+
+		.controls label {
+			display: flex;
+			flex-direction: column;
+			font-size: 14px;
+		}
+
+		canvas {
+			background: #ffffff;
+			border: 1px solid #ccc;
+			border-radius: 8px;
+		}
+
+		.info {
+			margin-top: 12px;
+			background: #fff;
+			padding: 12px;
+			border-radius: 8px;
+			box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+		}
+
+		button {
+			padding: 8px 16px;
+			cursor: pointer;
+		}
+	</style>
+</head>
+
+<body>
+	<h1>JavaScript ES6 Classes Demo: Shapes</h1>
+
+	<div class="controls">
+		<label>
+			Shape Type
+			<select id="shapeType">
+				<option value="rectangle">Rectangle</option>
+				<option value="circle">Circle</option>
+			</select>
+		</label>
+		<label>
+			Width / Radius
+			<input type="number" id="size1" value="60" />
+		</label>
+		<label>
+			Height (Rectangle only)
+			<input type="number" id="size2" value="40" />
+		</label>
+		<label>
+			Color
+			<input type="color" id="color" value="#3498db" />
+		</label>
+		<button id="addShapeBtn">Add Shape</button>
+	</div>
+
+	<canvas id="canvas" width="800" height="350"></canvas>
+
+	<div class="info" id="info"></div>
+
+	<script>
+		// Canvas setup
+		const canvas = document.getElementById('canvas')
+		const ctx = canvas.getContext('2d')
+
+		const shapes = []
+
+		// Parent class
+		class Shape {
+			constructor(x, y, color) {
+				this.x = x
+				this.y = y
+				this.color = color
+			}
+
+			area() {
+				throw new Error('area() must be implemented')
+			}
+
+			perimeter() {
+				throw new Error('perimeter() must be implemented')
+			}
+
+			draw(ctx) {
+				throw new Error('draw() must be implemented')
+			}
+		}
+
+		// Rectangle subclass
+		class Rectangle extends Shape {
+			constructor(x, y, width, height, color) {
+				super(x, y, color)
+				this.width = width
+				this.height = height
+			}
+
+			area() {
+				return this.width * this.height
+			}
+
+			perimeter() {
+				return 2 * (this.width + this.height)
+			}
+
+			draw(ctx) {
+				ctx.fillStyle = this.color
+				ctx.fillRect(this.x, this.y, this.width, this.height)
+			}
+		}
+
+		// Circle subclass
+		class Circle extends Shape {
+			constructor(x, y, radius, color) {
+				super(x, y, color)
+				this.radius = radius
+			}
+
+			area() {
+				return Math.PI * this.radius * this.radius
+			}
+
+			perimeter() {
+				return 2 * Math.PI * this.radius
+			}
+
+			draw(ctx) {
+				ctx.fillStyle = this.color
+				ctx.beginPath()
+				ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2)
+				ctx.fill()
+			}
+		}
+
+		function redraw() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height)
+			shapes.forEach((shape) => shape.draw(ctx))
+			updateInfo()
+		}
+
+		function updateInfo() {
+			const info = document.getElementById('info')
+
+			if (shapes.length === 0) {
+				info.innerHTML = '<strong>No shapes added yet.</strong>'
+				return
+			}
+
+			info.innerHTML = shapes.map((shape, index) => {
+				const type = shape.constructor.name
+				return `
+					<div>
+						<strong>Tvar ${index + 1}</strong> (${type})<br />
+						Obsah: ${shape.area().toFixed(2)}<br />
+						Obvod: ${shape.perimeter().toFixed(2)}
+					</div>
+					<hr />
+				`
+			}).join('')
+		}
+
+		document.getElementById('addShapeBtn').addEventListener('click', () => {
+			const type = document.getElementById('shapeType').value
+			const size1 = Number(document.getElementById('size1').value)
+			const size2 = Number(document.getElementById('size2').value)
+			const color = document.getElementById('color').value
+
+			const x = 50 + shapes.length * 120
+			const y = 150
+
+			let shape
+
+			if (type === 'rectangle') {
+				shape = new Rectangle(x, y, size1, size2, color)
+			} else if (type === 'circle') {
+				shape = new Circle(x, y, size1, color)
+			}
+
+			shapes.push(shape)
+			redraw()
+		})
+
+		updateInfo()
+	</script>
+</body>
+
+</html>

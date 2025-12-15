@@ -438,7 +438,8 @@ button {
 <body>
 	<header id="topbar">
 		<div id="tools" role="toolbar" aria-label="Tools">
-			<button class="tool-btn" id="send-btn">✉️ Send</button> |
+			<button class="tool-btn" id="send-btn">✉️ Send</button>
+			<button class="tool-btn" id="list-btn" onclick="window.open(`https:/`+`/purchart.cloud/images`, `_blank`)">🔎 List</button> |
 			<button class="tool-btn" data-tool="pencil" id="toolPencil" title="Hotkey: P">✎ Pencil</button>
 			<button class="tool-btn" data-tool="fill" id="toolPicker" title="Hotkey: I">👆 Picker</button>
 			<button class="tool-btn" data-tool="fill" id="toolFill" title="Hotkey: B">🪣 Fill</button>
@@ -738,8 +739,8 @@ function applyEditorData(data) {
 		layers = loadedLayers
 	}
 
-	resizeCanvases()
 	renderLayersUI()
+	resizeCanvases()
 	// saveToLocalStorage()
 	renderAll()
 }
@@ -2560,6 +2561,7 @@ if (location.search) {
 		}
 	} catch (err) {
 		showNotification.error("Error loading file. " + err.message)
+		console.error(err)
 	}
 }
 
