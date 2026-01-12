@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>Tic-tac-toe</title>
+	<style>
+		body {
+			margin: 0;
+			display: flex;
+			flex-direction: column;
+			height: 100vh;
+			background: #1d1d1f;
+			color: #eee;
+			font-family: system-ui;
+		}
+
+		#ui {
+			height: 100px;
+			/* width: 100%; */
+			padding-left: 16px;
+			display: flex;
+			flex-direction: row;
+			background: #111;
+			overflow: auto;
+			box-shadow: 2px 0 8px rgba(0, 0, 0, .4)
+		}
+
+		.ui-box {
+			padding: 16px;
+		}
+
+		#canvas-wrap {
+			flex: 1;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			overflow: hidden;
+		}
+
+		canvas {
+			background: rgb(155, 159, 156);
+			border: 1px solid #000;
+			/* image-rendering: pixelated; */
+		}
+
+		label {
+			display: block;
+			/* margin-top: 12px; */
+			font-size: 13px;
+			color: #9aa
+		}
+
+		textarea,
+		input {
+			width: 100%;
+			background: #0a0a0a;
+			color: #dfe;
+			border: 1px solid #222;
+			padding: 6px;
+			/* margin-top: 4px */
+		}
+
+		button {
+			margin-top: 6px;
+			padding: 8px 10px;
+			border: 0;
+			border-radius: 6px;
+			background: #0b84ff;
+			color: #fff;
+			cursor: pointer
+		}
+	</style>
+</head>
+
+<body>
+	<div id="ui">
+		<div class="ui-box">
+			<h2>Piškvorky</h2>
+		</div>
+		<div class="ui-box">
+			<label>Plocha:</label>
+			<input id="boardSize" type="number" min="1" max="30" value="20" />
+		</div>
+		<div class="ui-box">
+			<label>Vítězná délka:</label>
+			<input id="winLength" type="number" min="3" max="5" value="5" />
+		</div>
+		<div class="ui-box">
+			<button id="btnStart">Restart!</button>
+		</div>
+		<div class="ui-box">
+			<div>Hraje: <span id="playing">?</span></div>
+		</div>
+	</div>
+
+	<div id="canvas-wrap"><canvas id="c"></canvas></div>
+
+	<script>
+
+let boardSize = 20
+let winLength = 5
+let winMarks = null
+const SIZE = 25
+
+let marks = {}
+let currentMark = ''
+
+const cursor = {x: null, y: null}
+
+// ==== DOM ====
+const canvas = document.getElementById('c')
+const ctx = canvas.getContext('2d')
+const btnStart = document.getElementById('btnStart')
+
+
+// ==== tic-tac-toe win logic ====
+
+// check for win conditions
+const checkWin = (marks, { BOARD_SIZE, WIN_LENGTH }) => {
+	const isEmpty = (mark) => !mark || mark === " "
+
+	const checkMarkAt = (position, { prevMark, marks, winMarks }) => {
+		const mark = marks[position]
+		if (isEmpty(mark)) return [[], "", false]
+		if (isEmpty(prevMark) || mark === prevMark) winMarks.push(position)
+		else if (prevMark != mark) winMarks = [position]
+		prevMark = mark
+
+		if (winMarks.length === WIN_LENGTH) {
+			return [winMarks, prevMark, true]
+		}
+		return [winMarks, prevMark, false]
+	}
+
+	const checkDirection = (calcPosition) => (marks) => {
+		for (let i = 0; i < BOARD_SIZE*2; i++) {
+			let winMarks = []
+			let prevMark = ""
+			let won = false
+			for (let y = 0; y < BOARD_SIZE; y++) {
+				const [xx, yy] = calcPosition(i, y) //`${i}_${y}`
+				if (xx < 0 || xx >= BOARD_SIZE) continue
+				const position = `${xx}_${yy}`
+        		;[winMarks, prevMark, won] = checkMarkAt(position, {
+					prevMark,
+					marks,
+					winMarks,
+				})
+				if (won) return winMarks
+			}
+		}
+		return null
+	}
+
+	let winMarks = []
+
+	// check cols
+	winMarks = checkDirection((i, y) => [i, y])(marks)
+	if (winMarks) return winMarks
+	// check rows
+	winMarks = checkDirection((i, x) => [x, i])(marks)
+	if (winMarks) return winMarks
+	// check diagonals top to left
+	winMarks = checkDirection((i, y) => [i - y, y])(marks)
+	if (winMarks) return winMarks
+	// check diagonals top to right
+	winMarks = checkDirection((i, y) => [i + y, y])(marks)
+	if (winMarks) return winMarks
+
+	return false
+}
+
+// ==== CANVAS RESIZE ====
+function resize() {
+	// const ratio = window.devicePixelRatio || 1
+	const ratio = 1
+	const wrap = document.getElementById('canvas-wrap')
+	const w = wrap.clientWidth
+	const h = wrap.clientHeight
+	canvas.style.width = w + 'px'
+	canvas.style.height = h + 'px'
+	canvas.width = w * ratio
+	canvas.height = h * ratio
+	// ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
+	draw()
+}
+window.addEventListener('resize', resize)
+
+function draw() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+	ctx.strokeStyle = "black"
+	ctx.lineWidth = 1
+
+	// draw rows
+	for (let i = 0; i < boardSize + 1; i++) {
+		let y = i * SIZE
+		ctx.beginPath()
+		ctx.moveTo(0, y)
+		ctx.lineTo(boardSize * SIZE, y)
+		ctx.stroke()
+	}
+	// draw columns
+	for (let i = 0; i < boardSize + 1; i++) {
+		let x = i * SIZE
+		ctx.beginPath()
+		ctx.moveTo(x, 0)
+		ctx.lineTo(x, boardSize * SIZE)
+		ctx.stroke()
+	}
+
+	// draw win marks
+	for (let i = 0; i < winMarks?.length || 0; i++) {
+		ctx.fillStyle = "yellow"
+		const [x, y] = winMarks[i].split('_')
+		ctx.fillRect(x * SIZE, y * SIZE, SIZE, SIZE)
+	}
+
+	// draw cursor
+	if (cursor.x != null && cursor.y != null) {
+		ctx.strokeStyle = "red"
+		ctx.strokeRect(cursor.x * SIZE, cursor.y * SIZE, SIZE, SIZE)
+	}
+
+	// draw marks
+	Object.keys(marks).forEach((position) => {
+		const mark = marks[position]
+		const [x, y] = position.split('_')
+		const gap = 3
+		if (mark === "X") {
+			ctx.beginPath()
+			ctx.strokeStyle = "blue"
+			ctx.lineWidth = 3
+			const x1 = x * SIZE + gap
+			const y1 = y * SIZE + gap
+			const x2 = x1 + SIZE - gap*2
+			const y2 = y1 + SIZE - gap*2
+			ctx.moveTo(x1, y1)
+			ctx.lineTo(x2, y2)
+			ctx.moveTo(x2, y1)
+			ctx.lineTo(x1, y2)
+			ctx.stroke()
+		}
+		if (mark === "O") {
+			ctx.beginPath()
+			ctx.strokeStyle = "red"
+			ctx.lineWidth = 3
+			const centerX = x * SIZE + SIZE / 2
+			const centerY = y * SIZE + SIZE / 2
+			const radius = SIZE/2 - gap*2
+			ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI)
+			ctx.stroke()
+		}
+	})
+
+	ctx.fillStyle = "black"
+	ctx.font = "10px system-ui"
+	ctx.fillText(Math.round((1000.0 / (performance.now() - lastTime))), document.body.clientWidth - 50, 50)
+	lastTime = performance.now()
+}
+
+// ==== POINTER ====
+function getPos(e) {
+	const r = canvas.getBoundingClientRect()
+	const x = (e.clientX ?? e.touches[0].clientX) - r.left
+	const y = (e.clientY ?? e.touches[0].clientY) - r.top
+	return { x, y }
+}
+
+canvas.addEventListener('pointermove', (e) => {
+	let {x, y} = getPos(e)
+	x = Math.floor(x / SIZE)
+	y = Math.floor(y / SIZE)
+
+	cursor.x = null
+	cursor.y = null
+
+	if (x >=0 && x < SIZE && y >=0 && y <= SIZE) {
+		cursor.x = x
+		cursor.y = y
+	}
+})
+
+canvas.addEventListener('pointerdown', (e) => {
+	let {x, y} = getPos(e)
+	x = Math.floor(x / SIZE)
+	y = Math.floor(y / SIZE)
+
+	cursor.x = x
+	cursor.y = y
+
+	if (!currentMark) {
+		alert("Start the game first!")
+		return
+	}
+
+	const setMark = (position) => {
+		if (marks[position] || winMarks) return
+		marks[position] = currentMark
+		currentMark = currentMark === 'X' ? 'O' : 'X'
+		document.getElementById('playing').innerHTML = currentMark
+		winMarks = checkWin(marks, {BOARD_SIZE: boardSize, WIN_LENGTH: winLength})
+		if (winMarks) {
+			document.getElementById('playing').innerHTML = 'vítěz!!'
+		}
+	}
+
+	setMark(`${x}_${y}`)
+})
+canvas.addEventListener('contextmenu', (e) => e.preventDefault())
+
+// ==== CAMERA KEYS ====
+const keys = {}
+window.addEventListener('keydown', (e) => { keys[e.code] = true })
+window.addEventListener('keyup', (e) => { keys[e.code] = false })
+
+let lastTime = performance.now()
+function camLoop() {
+	draw()
+	requestAnimationFrame(camLoop)
+}
+camLoop()
+
+const startGame = () => {
+	boardSize = parseInt(document.getElementById('boardSize').value, 10)
+	winLength = parseInt(document.getElementById('winLength').value, 10)
+	marks = {}
+	winMarks = null
+	currentMark = 'X'
+	document.getElementById('playing').innerHTML = currentMark
+}
+
+// ==== INPUT ====
+document.getElementById('btnStart').addEventListener('click', (e) => {
+	startGame()
+	draw()
+})
+
+startGame()
+resize()
+
+	</script>
+</body>
+
+</html>
