@@ -257,7 +257,7 @@ function draw() {
 
 	ctx.fillStyle = "black"
 	ctx.font = "10px system-ui"
-	ctx.fillText(Math.round((1000.0 / (performance.now() - lastTime))), document.body.clientWidth - 50, 50)
+	ctx.fillText(Math.round((1000.0 / (performance.now() - lastTime))) + ` [${cursor.x}, ${cursor.y}]`, document.body.clientWidth - 80, 50)
 	lastTime = performance.now()
 }
 
@@ -277,7 +277,7 @@ canvas.addEventListener('pointermove', (e) => {
 	cursor.x = null
 	cursor.y = null
 
-	if (x >=0 && x < SIZE && y >=0 && y <= SIZE) {
+	if (x >=0 && x < boardSize && y >=0 && y < boardSize) {
 		cursor.x = x
 		cursor.y = y
 	}
