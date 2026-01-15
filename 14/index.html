@@ -288,6 +288,10 @@ canvas.addEventListener('pointerdown', (e) => {
 	x = Math.floor(x / SIZE)
 	y = Math.floor(y / SIZE)
 
+	if (!(x >=0 && x < boardSize && y >=0 && y < boardSize)) {
+		return
+	}
+
 	cursor.x = x
 	cursor.y = y
 
