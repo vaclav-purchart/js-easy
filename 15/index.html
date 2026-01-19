@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<style>
+		* {
+			font-family: Intern, Arial, sans-serif;
+			font-size: 16px;
+		}
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+		}
+	</style>
+</head>
+<body>
+
+<audio id="audioJump" controls style="display:none">
+  <source src="https://purchart.cloud/images?file=jump.mp3" type="audio/mpeg">
+</audio>
+
+<audio id="audioGameOver" controls style="display:none">
+  <source src="https://purchart.cloud/images?file=game-over.mp3" type="audio/mpeg">
+</audio>
+
+<audio id="audioLevelUp" controls style="display:none">
+  <source src="https://purchart.cloud/images?file=level-up.mp3" type="audio/mpeg">
+</audio>
+
+<audio id="audioJet" controls style="display:none">
+  <source src="https://purchart.cloud/images?file=jet.mp3" type="audio/mpeg">
+</audio>
+
+
+<canvas id="myCanvas" width="500" height="300"></canvas>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+let grass = 70
+let drawBoundingBoxes = 0
+
+let obstacles = []
+let features = []
+let addons = []
+
+let maxScore = Number(localStorage.getItem("maxScore") || 0)
+
+let dino = {
+	x: 30,
+	y: 0,
+	score: 0,
+	startPlayTime: 0,
+	isJumping: false,
+	speed: 200,
+
+	basicSpeed: 200,
+	speedMultiplier: 50, // Every 100px speedup by 50px/sec
+	jumpBoost: 1.2,
+	additionalScore: 0,
+}
+
+let images = {
+	"dino": {url: "https://purchart.cloud/images?file=2025-12-15--19-37-46---vasek---dino.png"},
+	"cactus": {url: "https://purchart.cloud/images?file=2025-12-15--19-27-36---vasek---cactus.png"},
+	"grass": {url: "https://purchart.cloud/images?file=2025-12-08-grass_1.png"},
+	"cloud": {url: "https://purchart.cloud/images?file=2025-12-16--20-03-27---vasek---cloud.png"},
+	"ptero": {url: "https://purchart.cloud/images?file=2026-01-05--14-54-58---vasek---pterodaktyl.png"},
+	"coin": {url: "https://purchart.cloud/images?file=2026-01-19--13-14-02---vasek---coin.png"},
+}
+
+let allLoaded = false
+let imageCount = Object.keys(images).length
+let loadedImageCount = 0
+let isRunning = false
+let isGameOver = false
+let scoreRecordReached = false
+
+if (maxScore === 0) {
+	scoreRecordReached = true
+}
+
+Object.keys(images).forEach(function(imageId) {
+	let definition = images[imageId]
+	let {url} = definition
+	definition.img = new Image()
+	definition.img.src = url
+	definition.img.onload = function() {
+		loadedImageCount++
+		if (loadedImageCount === imageCount) allLoaded = true
+	}
+})
+
+function initScene() {
+	obstacles = []
+	addObstacle(0, 1.0, {
+		type: "cactus",
+		x: canvas.width - 100,
+	})
+
+	features = []
+	addFeature("grass", {x: Math.floor(Math.random() * canvas.width)})
+	addFeature("cloud", {x: Math.floor(Math.random() * canvas.width)})
+	addAddon()
+}
+
+initScene()
+
+function addAddon() {
+	addons.push({
+		type: "coin",
+		x: canvas.width - 50,
+		y: -150,
+		speedMultiplier: 1.0,
+		onCollide: () => {
+			dino.additionalScore += 100
+			return true // remove item
+		},
+	})
+}
+
+function addObstacle(index, i = Math.random(), override = {}) {
+	let x = canvas.width
+	let speedMultiplier = 1
+
+	if (i < 0.2) {
+		obstacles[index] = {
+			type: "ptero",
+			x,
+			y: -60,
+			speedMultiplier: 2,
+			...override,
+		}
+		document.getElementById('audioJet').play()
+	}
+	else {
+		obstacles[index] = {
+			type: "cactus",
+			x,
+			y: 0,
+			speedMultiplier,
+			...override,
+		}
+	}
+}
+
+function addFeature(type, override = {}) {
+	let speedMultiplier = 1
+	let x = canvas.width
+	if (type === "cloud") {
+		features.push({
+			type,
+			x,
+			y: Math.floor( 75 - Math.random() * 30 + 15 ),
+			speedMultiplier: 0.5,
+			...override,
+		})
+	}
+	if (type === "grass") {
+		features.push({
+			type,
+			x,
+			y: Math.floor( canvas.height - grass ),
+			speedMultiplier,
+			...override,
+		})
+	}
+}
+
+function isRectIntersecting(r1, r2) {
+	return !(
+		r2.x > r1.x + r1.w ||
+		r2.x + r2.w < r1.x ||
+		r2.y > r1.y + r1.h ||
+		r2.y + r2.h < r1.y
+	)
+}
+
+// Pixel-perfect collision detection
+function isPixelPerfectCollision(r1, r2, alphaThreshold = 0) {
+	let {img: imgA, x: xA, y: yA} = r1
+	let {img: imgB, x: xB, y: yB} = r2
+
+	xA = Math.floor(xA)
+	yA = Math.floor(yA)
+	xB = Math.floor(xB)
+	xB = Math.floor(xB)
+
+	// 1. Perform bounding box check first
+	const overlapX = Math.max(0, Math.min(xA + imgA.width, xB + imgB.width) - Math.max(xA, xB))
+	const overlapY = Math.max(0, Math.min(yA + imgA.height, yB + imgB.height) - Math.max(yA, yB))
+
+	if (overlapX <= 0 || overlapY <= 0) {
+		return false // No bounding box overlap
+	}
+
+	// Calculate the top-left corner of the overlapping region
+	const startX = Math.max(xA, xB)
+	const startY = Math.max(yA, yB)
+
+	// 2. Use an off-screen canvas to get pixel data
+	const canvas = document.createElement('canvas')
+	const ctx = canvas.getContext('2d')
+	canvas.width = startX + overlapX
+	canvas.height = startY + overlapY
+
+	// Draw both images onto the canvas to access their pixel data
+	ctx.drawImage(imgA, xA, yA)
+	const dataA = ctx.getImageData(startX, startY, overlapX, overlapY).data
+
+
+	// Clear canvas and draw the second image
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
+	ctx.drawImage(imgB, xB, yB)
+	const dataB = ctx.getImageData(startX, startY, overlapX, overlapY).data
+
+	// 3. Iterate over the pixels in the overlapping region
+	for (let i = 0; i < dataA.length; i += 4) {
+		// data[i+3] is the alpha channel (0-255)
+		const alphaA = dataA[i + 3]
+		const alphaB = dataB[i + 3]
+
+		if (alphaA > alphaThreshold && alphaB > alphaThreshold) {
+			return true // Non-transparent pixels found at the same location
+		}
+	}
+
+	return false // No intersecting opaque pixels found
+}
+
+let lastTime = new Date()
+
+function update(dt) {
+	let time = new Date()
+
+	if (dino.isJumping) {
+		let gravity = 2500
+		let desiredHeight = images["dino"].img.height * 2
+		let jumpVelocity = Math.sqrt(2 * gravity * desiredHeight)
+		let startPosition = 0
+		let flyTime = (time - dino.startTime) / 1000.0
+		dino.y = startPosition + (jumpVelocity * flyTime) - (0.5 * gravity * flyTime*flyTime)
+		if (dino.y <= 0) {
+			dino.y = 0
+			dino.isJumping = false
+		}
+	}
+
+	if (isRunning) {
+		dino.score = dino.additionalScore + Math.floor((time - dino.startPlayTime) / 100)
+		if (maxScore < dino.score) {
+			maxScore = dino.score
+			if (!scoreRecordReached) document.getElementById('audioLevelUp').play()
+			scoreRecordReached = true
+		}
+		localStorage.setItem("maxScore", maxScore)
+
+		// Update scene - obstacles
+		for (let i = 0; i < obstacles.length; i++) {
+			let obstacle = obstacles[i]
+			obstacle.x -= (dt / 1000.0) * dino.speed * obstacle.speedMultiplier
+
+			if (obstacle.x < -100) {
+				addObstacle(i)
+			}
+		}
+
+		// Update scene - addons
+		for (let i = 0; i < addons.length; i++) {
+			let addon = addons[i]
+			addon.x -= (dt / 1000.0) * dino.speed * addon.speedMultiplier
+		}
+
+		// Update scene - features (non-blocking)
+		for (let i = 0; i < features.length; i++) {
+			let feature = features[i]
+			feature.x -= (dt / 1000.0) * dino.speed * feature.speedMultiplier
+			if (feature.x < -100) feature[i] = null
+		}
+		features = features.filter(Boolean)
+
+		if (Math.random() < 0.005) {
+			addFeature("grass")
+		}
+		if (Math.random() < 0.02) {
+			addFeature("snow")
+		}
+
+		if (Math.random() < 0.01) {
+			addFeature("cloud")
+		}
+
+
+		// Change dino speed
+		let speedup = dino.score / 100
+		let jumpBoost = 1
+		if (dino.isJumping) jumpBoost = dino.jumpBoost
+		dino.speed = Math.floor(dino.basicSpeed + speedup * dino.speedMultiplier) * jumpBoost
+
+		// Check intersection
+		let r1 = {
+			x: dino.x,
+			y: canvas.height - grass - images["dino"].img.height - dino.y,
+			w: images["dino"].img.width,
+			h: images["dino"].img.height,
+			img: images["dino"].img,
+		}
+
+		// Obstacles
+		for (let i = 0; i < obstacles.length; i++) {
+			let obstacle = obstacles[i]
+			let {img} = images[obstacle.type]
+
+			let r2 = {
+				x: obstacle.x,
+				y: canvas.height - grass - img.height + obstacle.y,
+				w: img.width,
+				h: img.height,
+				img,
+			}
+
+			if (isPixelPerfectCollision(r1, r2)) {
+			// if (isRectIntersecting(r1, r2)) {
+				isRunning = false
+				isGameOver = true
+				document.getElementById('audioGameOver').play()
+			}
+		}
+
+		// Addons
+		for (let i = 0; i < addons.length; i++) {
+			let addon = addons[i]
+			let {img} = images[addon.type]
+
+			let r2 = {
+				x: addon.x,
+				y: canvas.height - grass - img.height + addon.y,
+				w: img.width,
+				h: img.height,
+				img,
+			}
+
+			if (isPixelPerfectCollision(r1, r2)) {
+				if (addon.onCollide()) {
+					addon.isDeleted = true
+				}
+			}
+		}
+
+		addons = addons.filter((addon) => !addon.isDeleted)
+	}
+}
+
+function draw() {
+	let time = new Date()
+	let dt = time - lastTime
+	lastTime = time
+
+	if (!allLoaded) {
+		requestAnimationFrame(draw)
+		return
+	}
+
+	if (isRunning) update(dt)
+
+	// Clear canvas
+	ctx.fillStyle = "#e4feffff"
+	ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+	// Grass
+	ctx.fillStyle = "#6ec555ff"
+	ctx.fillRect(0, canvas.height - grass, canvas.width, canvas.height)
+
+	// Dino
+	let x = dino.x
+	let y = canvas.height - grass - images["dino"].img.height - dino.y
+	let {img} = images["dino"]
+	ctx.drawImage(img, x, y)
+	if (drawBoundingBoxes) {
+		ctx.strokeRect(x, y, img.width, img.height)
+	}
+
+	// Obstacles
+	for (let i = 0; i < obstacles.length; i++) {
+		let obstacle = obstacles[i]
+		let {type, x, y = 0} = obstacle
+		let {img} = images[type]
+
+		let drawY = canvas.height - grass - img.height + y
+		ctx.drawImage(img, x, drawY)
+		if (drawBoundingBoxes) {
+			ctx.strokeRect(x, drawY, img.width, img.height)
+		}
+	}
+
+	// Features
+	for (let i = 0; i < features.length; i++) {
+		let feature = features[i]
+		let {type, x, y} = feature
+		let {img} = images[type]
+
+		ctx.drawImage(img, x, y)
+	}
+
+	// Addons
+	for (let i = 0; i < addons.length; i++) {
+		let addon = addons[i]
+		let {type, x, y = 0} = addon
+		let {img} = images[type]
+
+		let drawY = canvas.height - grass - img.height + y
+		ctx.drawImage(img, x, drawY)
+	}
+
+	// Texts
+	ctx.fillStyle = "black"
+	ctx.font = "30px Arial"
+
+	if (isRunning) {
+		ctx.fillText("SCORE: " + dino.score, 10, 50)
+	}
+	if (maxScore) {
+		let text = "HI: " + maxScore
+		let textInfo = ctx.measureText(text)
+		ctx.fillStyle = "gray"
+		ctx.fillText(text, canvas.width - textInfo.width - 10, 50)
+	}
+
+	if (!isRunning) {
+		let text = "Press SPACE key to start"
+		if (isGameOver) {
+			text = "GAME OVER: " + dino.score
+		}
+		let textInfo = ctx.measureText(text)
+		ctx.fillStyle = "black"
+		ctx.fillText(text, canvas.width/2 - textInfo.width/2, canvas.height / 2)
+	}
+
+	requestAnimationFrame(draw)
+}
+
+requestAnimationFrame(draw)
+
+function handleInput() {
+	// Jump controls
+	if (!dino.isJumping) {
+		document.getElementById('audioJump').cloneNode(true).play()
+		dino.isJumping = true
+		dino.startTime = new Date()
+	}
+	// Game controls
+	if (!isRunning) {
+		isRunning = true
+		dino.startPlayTime = new Date()
+
+		if (isGameOver) {
+			isGameOver = false
+			dino.y = 0
+			dino.score = 0
+			dino.additionalScore = 0
+			initScene()
+			dino.isJumping = false
+			scoreRecordReached = false
+		}
+	}
+}
+
+let down = false
+document.addEventListener("keydown", function(e) {
+	if (e.code === "Space" && !down) {
+		handleInput()
+	}
+
+	if (e.code === "Space") {
+		down = true
+	}
+}, false)
+
+document.addEventListener("keyup", function(e) {
+	if (e.code === "Space") down = false
+})
+
+document.addEventListener("pointerdown", function(e) {
+	handleInput()
+})
+
+
+</script>
+</body>
+</html>
