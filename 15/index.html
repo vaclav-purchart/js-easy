@@ -104,6 +104,8 @@ function initScene() {
 	features = []
 	addFeature("grass", {x: Math.floor(Math.random() * canvas.width)})
 	addFeature("cloud", {x: Math.floor(Math.random() * canvas.width)})
+
+	addons = []
 	addAddon()
 }
 
@@ -112,8 +114,8 @@ initScene()
 function addAddon() {
 	addons.push({
 		type: "coin",
-		x: canvas.width - 50,
-		y: -150,
+		x: canvas.width + 50,
+		y: -130,
 		speedMultiplier: 1.0,
 		onCollide: () => {
 			dino.additionalScore += 100
