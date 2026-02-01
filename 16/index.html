@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width,
+               height=device-height,
+               initial-scale=1,
+               maximum-scale=1,
+               user-scalable=no">
+
+<title>Pac-Man Canvas</title>
+<style>
+	body { margin:0; background:black; color:white; font-family:monospace, Arial, sans-serif }
+	canvas { display:block; margin:auto; background:black; touch-action:none }
+	html, body { overscroll-behavior: none; touch-action: none; }
+</style>
+</head>
+<body>
+
+<canvas id="game" width="480" height="560"></canvas>
+
+<script>
+/* ================= CONFIG ================= */
+const TILE = 24
+const PLAYER_SPEED = 2.2 / TILE
+const GHOST_SPEED = 1.6 / TILE
+const GHOST_SCARED_SPEED = 1.0 / TILE
+const TURN_TOLERANCE = 6 / TILE
+const INVINCIBLE_TIME = 5000
+const RESPAWN_DELAY = 1500 // ms
+
+/* ================= LEVEL ================= */
+// # -> wall
+// P -> player
+// E -> ghnost
+// o -> boost food
+// S -> spawner
+const level = [
+	"###########################",
+	"#P.......##.......o.......#",
+	"#.####.###.##.###.#.####.##",
+	"#o#  #......E....#......#o#",
+	"#.####.##.####.##.#.####.##",
+	"#.........................#",
+	"###.##.########.##.######.#",
+	"#......#S.......#.......#.#",
+	"#.####.##.####.##.#.####..#",
+	"#E........................#",
+	"#.##.####.##.####.######.##",
+	"#.........................#",
+	"#.####.##.####.##.#.####.##",
+	"#o....E...........o......o#",
+	"#.##.####.##.####.######.##",
+	"#.........................#",
+	"#.####.##.####.##.#.####.##",
+	"#.......##.......#........#",
+	"###########################",
+]
+
+const ROWS = level.length
+const COLS = level[0].length
+
+/* ================= IMAGES ================= */
+let images = {
+	"pacman": {url: "https://purchart.cloud/images?file=2026-01-19--13-14-02---vasek---coin.png"},
+}
+
+let allLoaded = false
+let imageCount = Object.keys(images).length
+let loadedImageCount = 0
+
+Object.keys(images).forEach(function(imageId) {
+	let definition = images[imageId]
+	let {url} = definition
+	definition.img = new Image()
+	definition.img.src = url
+	definition.img.onload = function() {
+		loadedImageCount++
+		if (loadedImageCount === imageCount) allLoaded = true
+	}
+})
+
+/* ================= CANVAS ================= */
+const canvas = document.getElementById("game")
+const ctx = canvas.getContext("2d")
+
+/* ================= STATE ================= */
+let grid, player, ghosts, spawners
+let score, lives, invincibleUntil
+let highScore = Number(localStorage.getItem("pacmanHighScore") || 0)
+let gameOver = false
+let debug = {}
+
+/* ================= HELPERS ================= */
+const now = () => performance.now()
+const isWall = (x, y) => x !== null && y !== null && grid[y]?.[x] === "#"
+const getGrid = (x, y) => {
+	if (x === null) return null
+	if (y === null) return null
+	if (x < 0) return null
+	if (y < 0) return null
+	if (x >= COLS) return null
+	if (y >= ROWS) return null
+	return grid[y][x]
+}
+
+function nearCenter(px) {
+	const c = Math.floor(px) + 0.5
+	return Math.abs(px + 0.5 - c) < TURN_TOLERANCE
+}
+
+/* ================= INIT ================= */
+function init() {
+	grid = level.map((r) => r.split(""))
+	ghosts = []
+	spawners = []
+	score = 0
+	lives = 3
+	invincibleUntil = 0
+
+	for (let y = 0; y < ROWS; y++) {
+		for (let x = 0; x < COLS; x++) {
+			if (getGrid(x, y) === "P") {
+				player = { x: x, y: y, dx: 1, dy: 0, wantDx: 0, wantDy: 0, mouth: 0 }
+				grid[y][x] = " "
+			}
+			if (getGrid(x, y) === "E") {
+				ghosts.push(createGhost(x, y))
+				grid[y][x] = " "
+			}
+			if (getGrid(x, y) === "S") {
+				spawners.push({x, y})
+				grid[y][x] = " "
+			}
+		}
+	}
+}
+
+function createGhost(tx, ty) {
+	const d = randomDir(tx, ty)
+	return { x: tx, y: ty, dx: d.x, dy: d.y, dead: false }
+}
+
+/* ================= AI ================= */
+function randomDir(x, y, forbid = null) {
+	const dirs = []
+	if (!isWall(x + 1, y)) dirs.push({x:1, y:0})
+	if (!isWall(x - 1, y)) dirs.push({x:-1, y:0})
+	if (!isWall(x, y + 1)) dirs.push({x:0, y:1})
+	if (!isWall(x, y - 1)) dirs.push({x:0, y:-1})
+	if (forbid) {
+		const possibleDirs = dirs.filter((d) => {
+			if (d.x && d.x !== forbid.x) return true
+			if (d.y && d.y !== forbid.y) return true
+			return false
+			// d.x !== -forbid.x && d.y !== -forbid.y
+		})
+		return possibleDirs[Math.floor(Math.random() * possibleDirs.length)]
+	}
+	return dirs[Math.floor(Math.random() * dirs.length)]
+}
+
+/* ================= INPUT ================= */
+const keys = {}
+window.addEventListener("keydown", (e) => keys[e.key] = true)
+window.addEventListener("keyup", (e) => keys[e.key] = false)
+
+/* Touch swipe */
+let touchStart = null
+window.addEventListener("touchstart", (e) => touchStart = e.touches[0])
+window.addEventListener("touchend", (e) => {
+	if (!touchStart) return
+	const t = e.changedTouches[0]
+	const dx = t.clientX - touchStart.clientX
+	const dy = t.clientY - touchStart.clientY
+	if (Math.abs(dx) > Math.abs(dy)) {
+		player.wantDx = Math.sign(dx)
+		player.wantDy = 0
+	}
+	else {
+		player.wantDx = 0
+		player.wantDy = Math.sign(dy)
+	}
+	touchStart = null
+})
+
+/* ================= UPDATE ================= */
+const isInteger = (num) => Math.floor(num) === num
+
+function canMove(position, direction) {
+	const {x, y} = position
+	const {dx, dy} = direction
+
+	if (dx) {
+		// moving horizontally - y must be integer
+		if (!isInteger(y)) return false
+		if (dx > 0) return !isWall(Math.ceil(x + 0.01), y) // right
+		if (dx < 0) return !isWall(Math.floor(x - 0.01), y) // left
+	}
+
+	if (dy) {
+		// moving vertically - x must be integer
+		if (!isInteger(x)) return false
+		if (dy > 0) return !isWall(x, Math.ceil(y + 0.01)) // down
+		if (dy < 0) return !isWall(x, Math.floor(y - 0.01)) // up
+	}
+
+	return false
+}
+
+let lastX, lastY
+
+function update() {
+	if (gameOver) return
+
+	/* Player input */
+	if (keys.ArrowUp || keys.w) {player.wantDx = 0; player.wantDy = -1}
+	if (keys.ArrowDown || keys.s) {player.wantDx = 0; player.wantDy = 1}
+	if (keys.ArrowLeft || keys.a) {player.wantDx = -1; player.wantDy = 0}
+	if (keys.ArrowRight || keys.d) {player.wantDx = 1; player.wantDy = 0}
+
+	if (player.x !== lastX && player.y !== lastY) {
+		console.log('> player', player)
+	}
+
+	lastX = player.x
+	lastY = player.y
+
+	const nx = player.x + player.dx * PLAYER_SPEED
+	const ny = player.y + player.dy * PLAYER_SPEED
+
+	const changingTile = Math.floor(player.x) !== Math.floor(nx) || Math.floor(player.y) !== Math.floor(ny)
+
+	/* Direction buffering */
+	if (player.wantDx || player.wantDy) {
+		let x = player.x
+		let y = player.y
+
+		if (changingTile) {
+			x = Math.round(player.x)
+			y = Math.round(player.y)
+		}
+		if (canMove({x, y}, {dx: player.wantDx, dy: player.wantDy})) {
+			canMove({x, y}, {dx: player.wantDx, dy: player.wantDy})
+
+			player.dx = player.wantDx
+			player.dy = player.wantDy
+
+			player.wantDx = 0
+			player.wantDy = 0
+
+			player.x = x
+			player.y = y
+		}
+	}
+
+	if (canMove({x: player.x, y: player.y}, {dx: player.dx, dy: player.dy})) {
+		player.x = nx
+		player.y = ny
+	}
+	else {
+		player.x = Math.round(player.x)
+		player.y = Math.round(player.y)
+	}
+
+	/* Eat */
+	const tx = Math.floor((player.x + 0.5))
+	const ty = Math.floor((player.y + 0.5))
+	if (getGrid(tx, ty) === ".") grid[ty][tx] = " ", score++
+	if (getGrid(tx, ty) === "o") {
+		grid[ty][tx] = " "; score += 10
+		invincibleUntil = now() + INVINCIBLE_TIME
+	}
+
+	/* Ghosts */
+	ghosts.forEach((g)=>{
+		if (g.dead) return
+		const scared = now() < invincibleUntil
+		const speed = scared ? GHOST_SCARED_SPEED : GHOST_SPEED
+
+		if (canMove({x: g.x, y: g.y}, {dx: g.dx, dy: g.dy})) {
+			g.x = g.x + g.dx * speed
+			g.y = g.y + g.dy * speed
+		}
+		else {
+			g.x = Math.round(g.x)
+			g.y = Math.round(g.y)
+
+			const {x, y} = randomDir(g.x, g.y, {x:g.dx, y:g.dy})
+
+			g.dx = x
+			g.dy = y
+		}
+
+		if (Math.hypot(player.x - g.x, player.y - g.y) < 1 * 0.6) {
+			if (scared) {
+				g.dead = true
+				setTimeout(() => spawnGhost(), RESPAWN_DELAY)
+			} else {
+				lives--
+				player.x = player.y = 1
+				if (lives <= 0) gameOver = true
+			}
+		}
+	})
+
+	if (score > highScore) {
+		highScore = score
+		localStorage.setItem("pacmanHighScore", highScore)
+	}
+}
+
+function spawnGhost() {
+	const s = spawners[Math.floor(Math.random() * spawners.length)]
+	ghosts.push(createGhost(s.x, s.y))
+}
+
+/* ================= CAMERA ================= */
+function camera() {
+	const worldW = COLS * TILE
+	const worldH = ROWS * TILE
+	return {
+		x: Math.min(Math.max((player.x + 0.5) * TILE - canvas.width / 2, 0), worldW - canvas.width),
+		y: Math.min(Math.max((player.y + 0.5) * TILE - canvas.height / 2, 0), worldH - canvas.height),
+	}
+}
+
+/* ================= DRAW ================= */
+function drawGhost(ghost) {
+	const x = ghost.x * TILE
+	const y = ghost.y * TILE
+	const scared = now() < invincibleUntil
+	ctx.fillStyle = scared ? "#88a" : "#f00"
+	ctx.beginPath()
+	ctx.arc(x + 12, y + 12, 12, Math.PI, 0)
+	ctx.rect(x, y + 12, 24, 12)
+	ctx.fill()
+
+	ctx.fillStyle = "#fff"
+	ctx.beginPath()
+	ctx.arc(x + 8, y + 10, 3, 0, Math.PI * 2)
+	ctx.arc(x + 16, y + 10, 3, 0, Math.PI * 2)
+	ctx.fill()
+
+	ctx.fillStyle = "#00f"
+	ctx.beginPath()
+	ctx.arc(x + 8 + ghost.dx * 2, y + 10 + ghost.dy * 2, 1.5, 0, Math.PI * 2)
+	ctx.arc(x + 16 + ghost.dx * 2, y + 10 + ghost.dy * 2, 1.5, 0, Math.PI * 2)
+	ctx.fill()
+}
+
+function drawBlock(x, y) {
+	const block = getGrid(x, y)
+	if (block === "#") {ctx.fillStyle = "#0033ff"; ctx.fillRect(x * TILE, y * TILE, TILE, TILE)}
+	if (block === ".") {ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 3, 0, Math.PI * 2); ctx.fill()}
+	if (block === "o") {ctx.fillStyle = "#0f0"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 6, 0, Math.PI * 2); ctx.fill()}
+}
+
+function drawPlayer() {
+	const dir = Math.atan2(player.dy, player.dx)
+	const x = player.x * TILE
+	const y = player.y * TILE
+
+	const m = Math.abs(Math.sin(player.mouth += 0.15)) * 0.5
+	ctx.fillStyle = "#FFD800"
+	ctx.beginPath()
+	ctx.moveTo(x + 12, y + 12)
+	ctx.arc(x + 12, y + 12, 12, dir + m, dir - m + Math.PI * 2)
+	ctx.fill()
+
+	// ctx.drawImage(images.pacman.img, x, y, TILE, TILE)
+}
+
+function draw() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
+	const cam = camera()
+	ctx.save(); ctx.translate(-cam.x, -cam.y)
+
+	for (let y = 0; y < ROWS; y++) {
+		for (let x = 0; x < COLS; x++) {
+			drawBlock(x, y)
+		}
+	}
+
+	Object.keys(debug).forEach((p) => {
+		const [y, x] = p.split('_')
+		ctx.fillStyle = debug[p]; ctx.fillRect(x * TILE, y * TILE, TILE / 5, TILE / 5)
+	})
+
+	// draw spawner
+	spawners.forEach((s)=>{
+		ctx.strokeStyle = "#a0f"
+		ctx.strokeRect(s.x * TILE + 4, s.y * TILE + 4, TILE - 8, TILE - 8)
+	})
+
+	// draw ghosts
+	ghosts.forEach((ghost) => {
+		if (ghost.dead) return
+		drawGhost(ghost)
+	})
+
+	// draw player
+	drawPlayer()
+
+	ctx.restore()
+	ctx.fillStyle = "white"
+	ctx.font = "24px monospace"
+	ctx.fillText(`Score:${score}`, 10, 16)
+	ctx.fillText(`Lives:${lives}`, 150, 16)
+	ctx.fillText(`High:${highScore}`, 300, 16)
+
+	ctx.fillStyle = "white"
+	ctx.font = "24px monospace"
+	ctx.fillText(`Player:[${player.x.toFixed(1)},${player.y.toFixed(1)}] dir:[${player.dx},${player.dy}]`, 10, 50)
+	ctx.fillText(`Want:[${player.wantDx},${player.wantDy}]`, 10, 50 + 45)
+
+	if (gameOver) {
+		ctx.fillStyle = "#fff"
+		ctx.font = "24px monospace"
+		ctx.fillText("GAME OVER", 150, 260)
+		ctx.font = "14px monospace"
+		ctx.fillText("Refresh to restart", 160, 290)
+	}
+}
+
+// Keep it same on phone
+function resizeCanvas() {
+	const scale = Math.min(
+		window.innerWidth / canvas.width,
+		window.innerHeight / canvas.height,
+	)
+
+	canvas.style.width = canvas.width * scale + "px"
+	canvas.style.height = canvas.height * scale + "px"
+}
+
+window.addEventListener("resize", resizeCanvas)
+resizeCanvas()
+document.addEventListener("touchmove", (e) => {
+	e.preventDefault()
+}, { passive: false })
+
+function loop() {
+	if (!allLoaded) {
+		requestAnimationFrame(loop)
+		return
+	}
+
+	update()
+	draw()
+	requestAnimationFrame(loop)
+}
+init()
+loop()
+
+// init()
+// setInterval(() => {
+// 	update()
+// 	draw()
+// }, 30)
+</script>
+</body>
+</html>
