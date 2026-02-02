@@ -695,6 +695,19 @@
 				}
 			}
 
+			isOvertypeMode = false
+
+			toggleOvertype() {
+				this.isOvertypeMode = !this.isOvertypeMode
+
+				// Optional: visual feedback
+				this.editor.updateOptions({
+					cursorStyle: this.isOvertypeMode ? 'block' : 'line',
+					// You can also set cursorBlinking: 'solid' for stronger block feel
+				})
+			}
+
+
 			setupEventListeners() {
 				// Toolbar buttons
 				document.getElementById('send-btn').addEventListener('click', () => this.showSendDialog())
@@ -712,6 +725,70 @@
 				document.getElementById('paste-btn').addEventListener('click', () => this.paste())
 				document.getElementById('clear-storage-btn').addEventListener('click', () => this.clearStorage())
 				document.getElementById('image-upload-btn').addEventListener('click', () => this.uploadImage())
+
+				// Handle Insert key
+				this.editor.onKeyDown((e) => {
+					if (e.code === 'Insert' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+						e.preventDefault()
+						this.toggleOvertype()
+					}
+				})
+
+				// The actual overtype behavior
+				this.editor.onKeyDown((e) => {
+					// Only act when typing printable characters in overtype mode
+					if (!this.isOvertypeMode) return
+					if (e.ctrlKey || e.metaKey || e.altKey) return
+					if (e.code === 'Insert') return           // already handled above
+					if (e.code.startsWith('Arrow') ||
+						e.code === 'Backspace' ||
+						e.code === 'Delete' ||
+						e.code === 'Tab' ||
+						e.code === 'Enter') return
+
+					// Most printable characters
+					if (e.browserEvent.key.length === 1) {     // a-z, 0-9, symbols, space, etc.
+						e.preventDefault()
+
+						const selection = this.editor.getSelection()
+						if (selection.isEmpty()) {
+							const pos = selection.getStartPosition()
+							const model = this.editor.getModel()
+
+							// Only overwrite if there's actually a character ahead
+							const nextCharRange = {
+								startLineNumber: pos.lineNumber,
+								startColumn:     pos.column,
+								endLineNumber:   pos.lineNumber,
+								endColumn:       pos.column + 1,
+							}
+							const textAhead = model.getValueInRange(nextCharRange)
+
+							if (textAhead !== '') {
+								// Replace next character with typed one
+								model.pushEditOperations(
+									selection,
+									[{
+										range: nextCharRange,
+										text: e.browserEvent.key,
+										forceMoveMarkers: true,
+									}],
+									() => [selection],   // preserve selection
+								)
+							} else {
+								// At end of line → just insert normally
+								this.editor.trigger('keyboard', 'type', { text: e.browserEvent.key })
+							}
+
+							// Move cursor right
+							this.editor.setPosition({
+								lineNumber: pos.lineNumber,
+								column: pos.column + 1,
+							})
+						}
+						// (if there's selection → normal replace behavior is fine)
+					}
+				})
 
 				// Setup GitHub example select (assumes <select id="github-example-select"> is in the toolbar in HTML)
 				const githubSelect = document.getElementById('github-example-select')

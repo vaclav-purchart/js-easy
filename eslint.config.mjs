@@ -15,6 +15,8 @@ export default defineConfig([
 		},
 		rules: {
 			// "@stylistic/semi": ["error", "never"] ,
+			"space-infix-ops": ["error", { "int32Hint": false }],
+			"comma-spacing": ["error", { "before": false, "after": true }],
 			"comma-dangle": ["warn", "always-multiline"],
 			"consistent-return": "warn",
 			"indent": ["warn", "tab", {"SwitchCase": 1}],
