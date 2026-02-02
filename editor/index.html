@@ -695,18 +695,8 @@
 				}
 			}
 
-			isOvertypeMode = false
-
-			toggleOvertype() {
-				this.isOvertypeMode = !this.isOvertypeMode
-
-				// Optional: visual feedback
-				this.editor.updateOptions({
-					cursorStyle: this.isOvertypeMode ? 'block' : 'line',
-					// You can also set cursorBlinking: 'solid' for stronger block feel
-				})
-			}
-
+			isOverwriteMode = false
+			commandDisposables = []
 
 			setupEventListeners() {
 				// Toolbar buttons
@@ -726,67 +716,65 @@
 				document.getElementById('clear-storage-btn').addEventListener('click', () => this.clearStorage())
 				document.getElementById('image-upload-btn').addEventListener('click', () => this.uploadImage())
 
-				// Handle Insert key
-				this.editor.onKeyDown((e) => {
-					if (e.code === 'Insert' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-						e.preventDefault()
-						this.toggleOvertype()
-					}
-				})
-
 				// The actual overtype behavior
 				this.editor.onKeyDown((e) => {
-					// Only act when typing printable characters in overtype mode
-					if (!this.isOvertypeMode) return
-					if (e.ctrlKey || e.metaKey || e.altKey) return
-					if (e.code === 'Insert') return           // already handled above
-					if (e.code.startsWith('Arrow') ||
-						e.code === 'Backspace' ||
-						e.code === 'Delete' ||
-						e.code === 'Tab' ||
-						e.code === 'Enter') return
+					if (e.keyCode !== monaco.KeyCode.Insert) return
+					e.preventDefault()
+					e.stopPropagation()
 
-					// Most printable characters
-					if (e.browserEvent.key.length === 1) {     // a-z, 0-9, symbols, space, etc.
-						e.preventDefault()
+					this.isOverwriteMode = !this.isOverwriteMode
 
-						const selection = this.editor.getSelection()
-						if (selection.isEmpty()) {
-							const pos = selection.getStartPosition()
-							const model = this.editor.getModel()
+					// Dispose previous command handlers
+					this.commandDisposables.forEach((d) => d.dispose())
+					this.commandDisposables = []
 
-							// Only overwrite if there's actually a character ahead
-							const nextCharRange = {
-								startLineNumber: pos.lineNumber,
-								startColumn:     pos.column,
-								endLineNumber:   pos.lineNumber,
-								endColumn:       pos.column + 1,
+					if (this.isOverwriteMode) {
+						this.editor.updateOptions({ cursorStyle: 'block' })
+
+						// Intercept typing command
+						const disposable = this.editor.onKeyDown((keyEvent) => {
+							// Check if it's a regular character key (not modifier, arrow, etc.)
+							const key = keyEvent.browserEvent.key
+
+							if (key.length === 1 && !keyEvent.ctrlKey && !keyEvent.altKey && !keyEvent.metaKey) {
+								keyEvent.preventDefault()
+								keyEvent.stopPropagation()
+
+								const selection = this.editor.getSelection()
+								const model = this.editor.getModel()
+								const position = this.editor.getPosition()
+								const lineContent = model.getLineContent(position.lineNumber)
+
+								// Calculate range to replace
+								let endColumn = position.column + 1
+
+								// Don't delete past end of line
+								if (position.column > lineContent.length) {
+									endColumn = position.column
+								}
+
+								// Execute the overwrite operation
+								this.editor.executeEdits('overwrite-mode', [{
+									range: new monaco.Range(
+										position.lineNumber,
+										position.column,
+										position.lineNumber,
+										endColumn,
+									),
+									text: key,
+								}])
+
+								// Move cursor to the next position
+								this.editor.setPosition({
+									lineNumber: position.lineNumber,
+									column: position.column + 1,
+								})
 							}
-							const textAhead = model.getValueInRange(nextCharRange)
+						})
 
-							if (textAhead !== '') {
-								// Replace next character with typed one
-								model.pushEditOperations(
-									selection,
-									[{
-										range: nextCharRange,
-										text: e.browserEvent.key,
-										forceMoveMarkers: true,
-									}],
-									() => [selection],   // preserve selection
-								)
-							} else {
-								// At end of line → just insert normally
-								this.editor.trigger('keyboard', 'type', { text: e.browserEvent.key })
-							}
-
-							// Move cursor right
-							this.editor.setPosition({
-								lineNumber: pos.lineNumber,
-								column: pos.column + 1,
-							})
-						}
-						// (if there's selection → normal replace behavior is fine)
+						this.commandDisposables.push(disposable)
+					} else {
+						this.editor.updateOptions({ cursorStyle: 'line' })
 					}
 				})
 
