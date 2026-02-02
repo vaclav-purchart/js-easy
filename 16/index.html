@@ -38,25 +38,25 @@ const RESPAWN_DELAY = 1500 // ms
 // . -> food
 // o -> boost food
 const level = [
-	"###########################",
-	"#P.......##.......o.......#",
-	"#.####.###.##.###.#.####.##",
-	"#o#  #......E....#......#o#",
-	"#.####.##.####.##.#.####.##",
-	"#.........................#",
-	"###.##.########.##.######.#",
-	"#......#S.......#.......#.#",
-	"#.####.##.####.##.#.####..#",
-	"#E........................#",
-	"#.##.####.##.####.######.##",
-	"#.........................#",
-	"#.####.##.####.##.#.####.##",
-	"#o....E...........o......o#",
-	"#.##.####.##.####.######.##",
-	"#.........................#",
-	"#.####.##.####.##.#.####.##",
-	"#.......##.......#........#",
-	"###########################",
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+	"XP.......XX.......o.......X",
+	"X.XXXX.XXX.XX.XXX.X.XXXX.XX",
+	"XoX  X......E....X......XoX",
+	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
+	"X.........................X",
+	"XXX.XX.XXXXXXXX.XX.XXXXXX.X",
+	"X......XS.......X.......X.X",
+	"X.XXXX.XX.XXXX.XX.X.XXXX..X",
+	"XE........................X",
+	"X.XX.XXXX.XX.XXXX.XXXXXX.XX",
+	"X.........................X",
+	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
+	"Xo....E...........o......oX",
+	"X.XX.XXXX.XX.XXXX.XXXXXX.XX",
+	"X.........................X",
+	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
+	"X.......XX.......X........X",
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
 ]
 
 const ROWS = level.length
@@ -95,7 +95,7 @@ let debug = {}
 
 /* ================= HELPERS ================= */
 const now = () => performance.now()
-const isWall = (x, y) => x !== null && y !== null && grid[y]?.[x] === "#"
+const isWall = (x, y) => x !== null && y !== null && (grid[y]?.[x] === "#" || grid[y]?.[x] === "X")
 const getGrid = (x, y) => {
 	if (x === null) return null
 	if (y === null) return null
@@ -353,7 +353,7 @@ function drawGhost(ghost) {
 
 function drawBlock(x, y) {
 	const block = getGrid(x, y)
-	if (block === "#") {ctx.fillStyle = "#0033ff"; ctx.fillRect(x * TILE, y * TILE, TILE, TILE)}
+	if (block === "#" || block === "X") {ctx.fillStyle = "#0033ff"; ctx.fillRect(x * TILE, y * TILE, TILE, TILE)}
 	if (block === ".") {ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 3, 0, Math.PI * 2); ctx.fill()}
 	if (block === "o") {ctx.fillStyle = "#0f0"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 6, 0, Math.PI * 2); ctx.fill()}
 }
