@@ -47,7 +47,29 @@ const level = [
 	"XXX.XX.XXXXXXXX.XX.XXXXXX.X",
 	"X......XS.......X.......X.X",
 	"X.XXXX.XX.XXXX.XX.X.XXXX..X",
+	"XW........................X",
+	"X.XX.XXXX.XX.XXXX.XXXXXX.XX",
+	"X.........................X",
+	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
+	"Xo....E...........o......oX",
+	"X.XX.XXXX.XX.XXXX.XXXXXX.XX",
+	"X.........................X",
+	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
+	"X.......XX.......X........X",
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+]
+
+const level2 = [
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+	"XP........................X",
+	"Xo.......................oX",
+	"X.........................X",
+	"X.........................X",
+	"XXX.XX.XXXXXXXX.XX.XXXXXX.X",
+	"X......XS.......X.......X.X",
+	"X.........................X",
 	"XE........................X",
+	"X....EEEEEEEEEEEEEEEEEEE.XX",
 	"X.XX.XXXX.XX.XXXX.XXXXXX.XX",
 	"X.........................X",
 	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
@@ -65,6 +87,7 @@ const COLS = level[0].length
 /* ================= IMAGES ================= */
 let images = {
 	"pacman": {url: "https://purchart.cloud/images?file=2026-01-19--13-14-02---vasek---coin.png"},
+	"cherry": {url: "https://purchart.cloud/images?file=2026-02-09--14-53-35---krystof---cherry.png"},
 }
 
 let allLoaded = false
@@ -112,8 +135,8 @@ function nearCenter(px) {
 }
 
 /* ================= INIT ================= */
-function init() {
-	grid = level.map((r) => r.split(""))
+function init(lvl = level) {
+	grid = lvl.map((r) => r.split(""))
 	ghosts = []
 	spawners = []
 	score = 0
@@ -274,6 +297,13 @@ function update() {
 		invincibleUntil = now() + INVINCIBLE_TIME
 	}
 
+	/* Level change */
+	if (getGrid(tx, ty) === "W") {
+		if (score >= 100) {
+		    init(level2)
+		}
+	}
+
 	/* Ghosts */
 	ghosts.forEach((g)=>{
 		if (g.dead) return
@@ -355,7 +385,9 @@ function drawBlock(x, y) {
 	const block = getGrid(x, y)
 	if (block === "#" || block === "X") {ctx.fillStyle = "#0033ff"; ctx.fillRect(x * TILE, y * TILE, TILE, TILE)}
 	if (block === ".") {ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 3, 0, Math.PI * 2); ctx.fill()}
-	if (block === "o") {ctx.fillStyle = "#0f0"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 6, 0, Math.PI * 2); ctx.fill()}
+	// if (block === "o") {ctx.fillStyle = "#0f0"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 6, 0, Math.PI * 2); ctx.fill()}
+	if (block === "o") 	ctx.drawImage(images.cherry.img, x * TILE, y * TILE, TILE, TILE)
+	if (block === "W") {ctx.fillStyle = "rgba(255, 0, 0, 1)"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 6, 0, Math.PI * 2); ctx.fill()}
 }
 
 function drawPlayer() {
