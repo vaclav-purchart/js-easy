@@ -29,15 +29,17 @@ const GHOST_SCARED_SPEED = 1.0 / TILE
 const TURN_TOLERANCE = 6 / TILE
 const INVINCIBLE_TIME = 5000
 const RESPAWN_DELAY = 1500 // ms
+let levelNumber = 0
 
 /* ================= LEVEL ================= */
-// # -> wall
+// #,X -> wall
 // P -> player
 // E -> ghnost
 // S -> spawner
 // . -> food
 // o -> boost food
-const level = [
+const levels = []
+levels[0] = [
 	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
 	"XP.......XX.......o.......X",
 	"X.XXXX.XXX.XX.XXX.X.XXXX.XX",
@@ -49,24 +51,24 @@ const level = [
 	"X.XXXX.XX.XXXX.XX.X.XXXX..X",
 	"XW........................X",
 	"X.XX.XXXX.XX.XXXX.XXXXXX.XX",
-	"X.........................X",
+	"X....................b....X",
 	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
 	"Xo....E...........o......oX",
 	"X.XX.XXXX.XX.XXXX.XXXXXX.XX",
 	"X.........................X",
 	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
-	"X.......XX.......X........X",
+	"X.......XX......bX........X",
 	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
 ]
 
-const level2 = [
+levels[1] = [
 	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
 	"XP........................X",
 	"Xo.......................oX",
 	"X.........................X",
 	"X.........................X",
 	"XXX.XX.XXXXXXXX.XX.XXXXXX.X",
-	"X......XS.......X.......X.X",
+	"XW.....XS.......X.......X.X",
 	"X.........................X",
 	"XE........................X",
 	"X....EEEEEEEEEEEEEEEEEEE.XX",
@@ -80,30 +82,93 @@ const level2 = [
 	"X.......XX.......X........X",
 	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
 ]
+levels[2] = [
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+	"XP........................X",
+	"Xo.........X.............oX",
+	"X...ooo...................X",
+	"X...................XX....X",
+	"XXX.XX.XXXXXXXX.XX.XXXXXX.X",
+	"X......XS.......X.......X.X",
+	"X.......XXXXX.............X",
+	"XE........................X",
+	"X....EEEEEEEE.....EEEEEE.XX",
+	"X.XX.XXXX.XX.XXXX.XoXXXX.XX",
+	"X............X............X",
+	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
+	"Xo....E...........o......oX",
+	"X.XX.XXXX.XX.XXXX.XX...X.XX",
+	"X.........................X",
+	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
+	"X.......XX.......X.X......X",
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+]
 
-const ROWS = level.length
-const COLS = level[0].length
+const ROWS = levels[0].length
+const COLS = levels[0][0].length
 
 /* ================= IMAGES ================= */
-let images = {
-	"pacman": {url: "https://purchart.cloud/images?file=2026-01-19--13-14-02---vasek---coin.png"},
-	"cherry": {url: "https://purchart.cloud/images?file=2026-02-09--14-53-35---krystof---cherry.png"},
-}
+let images = {}
 
 let allLoaded = false
-let imageCount = Object.keys(images).length
-let loadedImageCount = 0
+let themes = ["default", "misa", "biza"]
+let currentTheme = "default"
 
-Object.keys(images).forEach(function(imageId) {
-	let definition = images[imageId]
-	let {url} = definition
-	definition.img = new Image()
-	definition.img.src = url
-	definition.img.onload = function() {
-		loadedImageCount++
-		if (loadedImageCount === imageCount) allLoaded = true
-	}
-})
+const themeData = {}
+
+themeData["default"] = {
+	// "pacman": {url: "https://purchart.cloud/images?file=2026-01-19--13-14-02---vasek---coin.png"},
+	"cherry": {
+		block: "o",
+		url: "https://purchart.cloud/images?file=2026-02-09--14-53-35---krystof---cherry.png",
+	},
+}
+
+themeData["misa"] = {
+	"cherry": {
+		block: "o",
+		url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAZCAYAAADE6YVjAAABKklEQVR4AeySOY4CMRBFPZP1PSabC8EJ4UJk3KND8LN4qPDSbhIiEN+u5S+S1b/pA79vyFuPvPu5DoflVmNv0jRE457h1i7yhyHR4Hxe0wiYRS59jW4IIogaU9/yUSOPnuHU6qgjmhCJBEDUmLpG3MlXH7lNCEsFmNCD47KkGsyBPHXMIrohEBRSY859Tf9J0Dunjnz6iGGIJI0wd8Zt757ZCNOQkfCd+TTktK7F7y9dyu1h79557x6G/AS2RhgL1s6pI58+ohuSP8PCiUIMaxRSPuSpy6OXfxOSP8OiUUADXlSPhjmgla+emWhCWEhECJhhVoM5e0CtjjqiGwIBAaDGZAT28AB1D8MQyYiBfbyZgzjr1dMQRZjVcDe7d4fMjLb235Ct12l2dwAAAP//XYordQAAAAZJREFUAwC8QqMzqCJN3gAAAABJRU5ErkJggg==",
+	},
+	"wall": {
+		block: "X",
+		url: "https://purchart.cloud/images?file=2026-02-16--14-54-47---pacman-blockkkkkkkkk---Lachim.png",
+	},
+	"block": {
+		block: "c",
+		url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAZCAYAAADE6YVjAAABOklEQVR4AeyUOVIDMRBFZSKfElJiDkJMCqd0ZvrN8LC2HkQVRWSX/rTU/ZdZqvxQ/uF3D/nVS156XddSrhlW0n4MwRyjU1x6RKs4Z58hDUEMEGJOfTyfi+BsHx6gN8M0pBZohHlt4Nk5s1rHWUxDHGqgoX2rfXn2+zqEeDcKNVL4/vbidqvO5avfhl+XIYS+Ag3oAQOs9IA8dfRqTEMgKGQPeuP+3PPRiDREwl/UNOTjcmn8n55fD889vyZPQ+LjbZxeaJB1I8VFnrpoNWsIiY8XK/5HGtrt0AfcJvsuxLH2vdchxIGVuwSe60of0Muegtk0JG4lVvs0miEC9dmAEMVi2mIaAiXYsfYgTTAWcOgD9kGOxW5EGgI1VCfAHrMe9JkD9hkOQxRhkkHOUV0KOTJYmd1DVt7SN+cTAAD//zk90ucAAAAGSURBVAMAukpnMyzMUfAAAAAASUVORK5CYII=",
+	},
+	"bad-orb": {
+		block: "b",
+		url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAZCAYAAADE6YVjAAABpUlEQVRIS72VsVHEMBBF5fAKoAMCCnByM2QEJJRABxRAcAG6gIAC6OBKICVj5hIXQEAHFHCh2b/2F+u1zrrz3FgzHlmWtU+7f1eqwgKtWoARToLUq7o9tpnm0BRtFH8g4OG5Uc46PoZ93On7x1utfQmkkBhj2qm8J7AF0PhVDOFXHo5zIG9PDQqh3UZZ2TeALABT7/DiLoT953//pBscemQBLzIpgCpBYB8g+UlRAgkIkfXgS77fysPeeyRh07WwAQBagtAbKxAgWJTzIOcR/2c0EH8AFIRQcdBFrvMCjRDvgR8jbHZND0pRGonMnSBUx7QoaUMbzLokMCasBlNaTGnjs07DhSyyNfATdqMs8jsvja/DsJYU8nq4CTB+6QbYZvW9oCdWbMYU/b14hxQuZZetl6wmBPhD8KLZZXWQGm3lSRk3s04q2qHtVCeYwEdA+oJsZ1R8d+A6WwMIAYTMOLuy9iY9YYGecwpPesJJ740/CU66T3ptR5rkdsCwEYS+dDN6PbBmdP36zLAgm4l891dvbv0AkttFzvDUt6InuV2cC8lp+wfs0ntX0ITB7wAAAABJRU5ErkJggg==",
+	},
+}
+
+themeData["biza"] = {
+	"wall": {
+		block: "X",
+		url: "https://purchart.cloud/images?file=2026-02-16--15-06-51---block---block.png",
+	},
+}
+
+function loadImages(imageDefinitions) {
+	images = {}
+	allLoaded = false
+	let loadedImageCount = 0
+	let imageCount = Object.keys(imageDefinitions).length
+
+	Object.keys(imageDefinitions).forEach(function(imageId) {
+		const {url} = imageDefinitions[imageId]
+		const data = {}
+		data.img = new Image()
+		data.img.src = url
+		images[imageId] = data
+		data.img.onload = function() {
+			loadedImageCount++
+			if (loadedImageCount === imageCount) allLoaded = true
+		}
+	})
+}
+loadImages(themeData[currentTheme])
 
 /* ================= CANVAS ================= */
 const canvas = document.getElementById("game")
@@ -135,13 +200,17 @@ function nearCenter(px) {
 }
 
 /* ================= INIT ================= */
-function init(lvl = level) {
+function init(levelNumber = 0) {
+	const lvl = levels[levelNumber]
 	grid = lvl.map((r) => r.split(""))
 	ghosts = []
 	spawners = []
-	score = 0
-	lives = 3
 	invincibleUntil = 0
+
+	if (levelNumber === 0) {
+		score = 0
+		lives = 3
+	}
 
 	for (let y = 0; y < ROWS; y++) {
 		for (let x = 0; x < COLS; x++) {
@@ -189,6 +258,15 @@ function randomDir(x, y, forbid = null) {
 const keys = {}
 window.addEventListener("keydown", (e) => keys[e.key] = true)
 window.addEventListener("keyup", (e) => keys[e.key] = false)
+
+window.addEventListener("keydown", (e) => {
+	if (e.code == "Space") spawnGhost()
+	if (e.code == "Enter") {
+		currentTheme = themes[(themes.indexOf(currentTheme) + 1) % themes.length] // cycle themes
+		const imageDefinitions = themeData[currentTheme]
+		loadImages(imageDefinitions)
+	}
+})
 
 /* Touch swipe */
 let touchStart = null
@@ -291,16 +369,20 @@ function update() {
 	/* Eat */
 	const tx = Math.floor((player.x + 0.5))
 	const ty = Math.floor((player.y + 0.5))
-	if (getGrid(tx, ty) === ".") grid[ty][tx] = " ", score++
+	if (getGrid(tx, ty) === ".") {
+		grid[ty][tx] = " "
+		score++
+	}
 	if (getGrid(tx, ty) === "o") {
-		grid[ty][tx] = " "; score += 10
+		grid[ty][tx] = " "
+		score += 10
 		invincibleUntil = now() + INVINCIBLE_TIME
 	}
 
 	/* Level change */
-	if (getGrid(tx, ty) === "W") {
-		if (score >= 100) {
-		    init(level2)
+	if (getGrid(tx, ty) === "W" && score >= (levelNumber + 1) * 100) {
+		if (levels[levelNumber + 1]) {
+			init(++levelNumber)
 		}
 	}
 
@@ -310,6 +392,7 @@ function update() {
 		const scared = now() < invincibleUntil
 		const speed = scared ? GHOST_SCARED_SPEED : GHOST_SPEED
 
+		// Move
 		if (canMove({x: g.x, y: g.y}, {dx: g.dx, dy: g.dy})) {
 			g.x = g.x + g.dx * speed
 			g.y = g.y + g.dy * speed
@@ -324,10 +407,12 @@ function update() {
 			g.dy = y
 		}
 
+		// Collision with player
 		if (Math.hypot(player.x - g.x, player.y - g.y) < 1 * 0.6) {
 			if (scared) {
 				g.dead = true
 				setTimeout(() => spawnGhost(), RESPAWN_DELAY)
+				score += 20
 			} else {
 				lives--
 				player.x = player.y = 1
@@ -381,13 +466,35 @@ function drawGhost(ghost) {
 	ctx.fill()
 }
 
-function drawBlock(x, y) {
-	const block = getGrid(x, y)
-	if (block === "#" || block === "X") {ctx.fillStyle = "#0033ff"; ctx.fillRect(x * TILE, y * TILE, TILE, TILE)}
-	if (block === ".") {ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 3, 0, Math.PI * 2); ctx.fill()}
-	// if (block === "o") {ctx.fillStyle = "#0f0"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 6, 0, Math.PI * 2); ctx.fill()}
-	if (block === "o") 	ctx.drawImage(images.cherry.img, x * TILE, y * TILE, TILE, TILE)
-	if (block === "W") {ctx.fillStyle = "rgba(255, 0, 0, 1)"; ctx.beginPath(); ctx.arc(x * TILE + 12, y * TILE + 12, 6, 0, Math.PI * 2); ctx.fill()}
+function drawBlock(xGrid, yGrid) {
+	const block = getGrid(xGrid, yGrid)
+	const x = xGrid * TILE
+	const y = yGrid * TILE
+	const itemId = Object.keys(themeData[currentTheme]).find((itemId) => {
+		const item = themeData[currentTheme][itemId]
+		return item.block === block
+	})
+	if (itemId) {
+		ctx.drawImage(images[itemId].img, x, y, TILE, TILE)
+		return
+	}
+
+	if (block === "#" || block === "X") {
+		if (images["wall"])	ctx.drawImage(images.wall.img, x, y, TILE, TILE)
+		else ctx.fillStyle = "#0033ff"; ctx.fillRect(x, y, TILE, TILE)
+	}
+	if (block === ".") {
+		if (images["food"]) ctx.drawImage(images.food.img, x, y, TILE, TILE)
+		else ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(x + 12, y + 12, 3, 0, Math.PI * 2); ctx.fill()
+	}
+	if (block === "o") {
+		if (images["cherry"]) ctx.drawImage(images.cherry.img, x, y, TILE, TILE)
+		else {ctx.fillStyle = "#0f0"; ctx.beginPath(); ctx.arc(x + 12, y + 12, 6, 0, Math.PI * 2); ctx.fill()}
+	}
+	if (block === "W") {
+		if (images["level"]) ctx.drawImage(images.level.img, x, y, TILE, TILE)
+		else { ctx.fillStyle = "rgba(255, 0, 0, 1)"; ctx.beginPath(); ctx.arc(x + 12, y + 12, 6, 0, Math.PI * 2); ctx.fill()}
+	}
 }
 
 function drawPlayer() {
@@ -395,14 +502,16 @@ function drawPlayer() {
 	const x = player.x * TILE
 	const y = player.y * TILE
 
+	if (images["pacman"]) {
+		ctx.drawImage(images.pacman.img, x, y, TILE, TILE)
+		return
+	}
 	const m = Math.abs(Math.sin(player.mouth += 0.15)) * 0.5
 	ctx.fillStyle = "#FFD800"
 	ctx.beginPath()
 	ctx.moveTo(x + 12, y + 12)
 	ctx.arc(x + 12, y + 12, 12, dir + m, dir - m + Math.PI * 2)
 	ctx.fill()
-
-	// ctx.drawImage(images.pacman.img, x, y, TILE, TILE)
 }
 
 function draw() {
@@ -446,7 +555,9 @@ function draw() {
 	ctx.fillStyle = "white"
 	ctx.font = "24px monospace"
 	ctx.fillText(`Player:[${player.x.toFixed(1)},${player.y.toFixed(1)}] dir:[${player.dx},${player.dy}]`, 10, 50)
-	ctx.fillText(`Want:[${player.wantDx},${player.wantDy}]`, 10, 50 + 45)
+	// ctx.fillText(`Want:[${player.wantDx},${player.wantDy}]`, 10, 50 + 45)
+	ctx.fillText(`Theme:[${currentTheme}]`, 10, 50 + 45)
+
 
 	if (gameOver) {
 		ctx.fillStyle = "#fff"
