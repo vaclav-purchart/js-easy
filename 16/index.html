@@ -113,7 +113,6 @@ const COLS = levels[0][0].length
 let images = {}
 
 let allLoaded = false
-let themes = ["default", "misa", "biza"]
 let currentTheme = "default"
 
 const themeData = {}
@@ -123,11 +122,7 @@ themeData["default"] = {
 	"cherry": {
 		block: "o",
 		url: "https://purchart.cloud/images?file=2026-02-09--14-53-35---krystof---cherry.png",
-		collision: (x, y) => {
-			grid[y][x] = " "
-			score += 50
-			invincibleUntil = now() + INVINCIBLE_TIME
-		},
+		collision: eatBoostFood,
 	},
 }
 
@@ -135,6 +130,7 @@ themeData["misa"] = {
 	"cherry": {
 		block: "o",
 		url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAZCAYAAADE6YVjAAABKklEQVR4AeySOY4CMRBFPZP1PSabC8EJ4UJk3KND8LN4qPDSbhIiEN+u5S+S1b/pA79vyFuPvPu5DoflVmNv0jRE457h1i7yhyHR4Hxe0wiYRS59jW4IIogaU9/yUSOPnuHU6qgjmhCJBEDUmLpG3MlXH7lNCEsFmNCD47KkGsyBPHXMIrohEBRSY859Tf9J0Dunjnz6iGGIJI0wd8Zt757ZCNOQkfCd+TTktK7F7y9dyu1h79557x6G/AS2RhgL1s6pI58+ohuSP8PCiUIMaxRSPuSpy6OXfxOSP8OiUUADXlSPhjmgla+emWhCWEhECJhhVoM5e0CtjjqiGwIBAaDGZAT28AB1D8MQyYiBfbyZgzjr1dMQRZjVcDe7d4fMjLb235Ct12l2dwAAAP//XYordQAAAAZJREFUAwC8QqMzqCJN3gAAAABJRU5ErkJggg==",
+		collision: eatBoostFood,
 	},
 	"wall": {
 		block: "X",
@@ -155,6 +151,21 @@ themeData["biza"] = {
 		block: "X",
 		url: "https://purchart.cloud/images?file=2026-02-16--15-06-51---block---block.png",
 	},
+}
+
+themeData["luky"] = {
+	"wall": {
+		block: "X",
+		url: "https://purchart.cloud/images?file=2026-02-16--14-48-36---luky4---smajlik-block.png",
+	},
+}
+
+let themes = Object.keys(themeData)
+
+function eatBoostFood(x, y) {
+	grid[y][x] = " "
+	score += 20
+	invincibleUntil = now() + INVINCIBLE_TIME
 }
 
 function loadImages(imageDefinitions) {
@@ -204,6 +215,15 @@ const getGrid = (x, y) => {
 function nearCenter(px) {
 	const c = Math.floor(px) + 0.5
 	return Math.abs(px + 0.5 - c) < TURN_TOLERANCE
+}
+
+function findBlockDefinition(blockId) {
+	const itemId = Object.keys(themeData[currentTheme]).find((itemId) => {
+		const item = themeData[currentTheme][itemId]
+		return item.block === blockId
+	})
+
+	return themeData[currentTheme][itemId]
 }
 
 /* ================= INIT ================= */
@@ -378,6 +398,16 @@ function update() {
 	/* Eat */
 	const tx = Math.floor((player.x + 0.5))
 	const ty = Math.floor((player.y + 0.5))
+
+	/* Custom block collision */
+	const definition = findBlockDefinition(getGrid(tx, ty))
+	if (definition?.collision) {
+		if (Math.hypot(player.x - tx, player.y - ty) < 1 * 0.6) {
+			definition.collision(tx, ty)
+			return
+		}
+	}
+
 	if (getGrid(tx, ty) === ".") {
 		grid[ty][tx] = " "
 		score++
@@ -566,7 +596,7 @@ function draw() {
 	ctx.fillText(`Player:[${player.x.toFixed(1)},${player.y.toFixed(1)}] dir:[${player.dx},${player.dy}]`, 10, 50)
 	// ctx.fillText(`Want:[${player.wantDx},${player.wantDy}]`, 10, 50 + 45)
 	ctx.fillText(`Theme:[${currentTheme}]`, 10, 50 + 45)
-
+	ctx.fillText(`Level:[${levelNumber}]`, 300, 50 + 45)
 
 	if (gameOver) {
 		ctx.fillStyle = "#fff"
