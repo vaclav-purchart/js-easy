@@ -17,7 +17,9 @@
 </style>
 </head>
 <body>
-
+<button onclick="window.location.reload()">Restart</button>
+<button onclick="changeTheme()">Theme</button>
+<button onclick="spawnGhost()">Spawn</button>
 <canvas id="game" width="480" height="560"></canvas>
 
 <script>
@@ -121,6 +123,11 @@ themeData["default"] = {
 	"cherry": {
 		block: "o",
 		url: "https://purchart.cloud/images?file=2026-02-09--14-53-35---krystof---cherry.png",
+		collision: (x, y) => {
+			grid[y][x] = " "
+			score += 50
+			invincibleUntil = now() + INVINCIBLE_TIME
+		},
 	},
 }
 
@@ -261,12 +268,14 @@ window.addEventListener("keyup", (e) => keys[e.key] = false)
 
 window.addEventListener("keydown", (e) => {
 	if (e.code == "Space") spawnGhost()
-	if (e.code == "Enter") {
-		currentTheme = themes[(themes.indexOf(currentTheme) + 1) % themes.length] // cycle themes
-		const imageDefinitions = themeData[currentTheme]
-		loadImages(imageDefinitions)
-	}
+	if (e.code == "Enter") changeTheme()
 })
+
+function changeTheme() {
+	currentTheme = themes[(themes.indexOf(currentTheme) + 1) % themes.length] // cycle themes
+	const imageDefinitions = themeData[currentTheme]
+	loadImages(imageDefinitions)
+}
 
 /* Touch swipe */
 let touchStart = null
