@@ -24,13 +24,13 @@
 
 <script>
 /* ================= CONFIG ================= */
-const TILE = 24
-const PLAYER_SPEED = 2.2 / TILE
-const GHOST_SPEED = 1.6 / TILE
-const GHOST_SCARED_SPEED = 1.0 / TILE
-const TURN_TOLERANCE = 6 / TILE
-const INVINCIBLE_TIME = 5000
-const RESPAWN_DELAY = 1500 // ms
+let TILE = 24
+let PLAYER_SPEED = 2.2 / TILE
+let GHOST_SPEED = 1.6 / TILE
+let GHOST_SCARED_SPEED = 1.0 / TILE
+let TURN_TOLERANCE = 6 / TILE
+let INVINCIBLE_TIME = 5000
+let RESPAWN_DELAY = 1500 // ms
 let levelNumber = 0
 
 /* ================= LEVEL ================= */
@@ -40,6 +40,10 @@ let levelNumber = 0
 // S -> spawner
 // . -> food
 // o -> boost food
+// W -> portal to next level
+// b -> Misovo bad-orb
+// i -> krysfof - bonus level fruit
+// B -> krystof - back from bonus level
 const levels = []
 levels[0] = [
 	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -50,14 +54,14 @@ levels[0] = [
 	"X.........................X",
 	"XXX.XX.XXXXXXXX.XX.XXXXXX.X",
 	"X......XS.......X.......X.X",
-	"X.XXXX.XX.XXXX.XX.X.XXXX..X",
+	"X.XXXX.iX.XXXX.XX.X.XXXX..X",
 	"XW........................X",
 	"X.XX.XXXX.XX.XXXX.XXXXXX.XX",
 	"X....................b....X",
 	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
 	"Xo....E...........o......oX",
-	"X.XX.XXXX.XX.XXXX.XXXXXX.XX",
-	"X.........................X",
+	"X.XX.XXXX.XX.bXXX.XXXXXX.XX",
+	"XL........................X",
 	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
 	"X.......XX......bX........X",
 	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -68,7 +72,7 @@ levels[1] = [
 	"XP........................X",
 	"Xo.......................oX",
 	"X.........................X",
-	"X.........................X",
+	"X.....................L...X",
 	"XXX.XX.XXXXXXXX.XX.XXXXXX.X",
 	"XW.....XS.......X.......X.X",
 	"X.........................X",
@@ -93,8 +97,8 @@ levels[2] = [
 	"XXX.XX.XXXXXXXX.XX.XXXXXX.X",
 	"X......XS.......X.......X.X",
 	"X.......XXXXX.............X",
-	"XE........................X",
-	"X....EEEEEEEE.....EEEEEE.XX",
+	"XE....................L...X",
+	"X....EEEEEEEE.XX..EEEEEE.XX",
 	"X.XX.XXXX.XX.XXXX.XoXXXX.XX",
 	"X............X............X",
 	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
@@ -102,12 +106,72 @@ levels[2] = [
 	"X.XX.XXXX.XX.XXXX.XX...X.XX",
 	"X.........................X",
 	"X.XXXX.XX.XXXX.XX.X.XXXX.XX",
-	"X.......XX.......X.X......X",
+	"X.......XX.......X.X.....WX",
 	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
 ]
 
-const ROWS = levels[0].length
-const COLS = levels[0][0].length
+// luky - levely
+levels[3] = [
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+	"XP........................X",
+	"XXXXXXXXXXXXXXXXXXXXXXXXXoX",
+	"X..................E......X",
+	"X.XXXXXXXXXXXXXXXXXXXXXXXXX",
+	"X.........................X",
+	"XXXXXXXXXXXXXXXXXXXXXXX.XXX",
+	"X.................E......oX",
+	"XXXXXXXXXXXXXXXXX.XXXXXXXXX",
+	"X.........................X",
+	"XX.XXXXXXXXXXXXXXXXXXXXXXXX",
+	"X......................o..X",
+	"XXXXXXXXXXXXXXXXXXX.XXXXXXX",
+	"Xo................E.......X",
+	"XXXXXXXXXXXXXXXXXXXX.XXXXXX",
+	"X.........................X",
+	"XXXXXXX.XXXXXXXXXXXXXXXXXXX",
+	"Xo.......................WX",
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+]
+levels[4] = [
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+	"XP........................X",
+	"X.........................X",
+	"X....X.X...XXXXX....X...X.X",
+	"X....X.X..X.....X...X...X.X",
+	"X.....X...X.....X...X...X.X",
+	"X.....X...X.....X...X...X.X",
+	"X.....X....XXXXX.....XXX..X",
+	"X.........................X",
+	"X.........................X",
+	"X...X...X.X...X....XX.....X",
+	"X....X...X...X.....XX.....X",
+	"X.....X.X.X.X......XX.....X",
+	"X......X...X.......XX.....X",
+	"X...........XX..X.........X",
+	"X...........X.X.X.........X",
+	"X...........X..XX.........X",
+	"X.........................X",
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+]
+
+// krystof - bonus level
+levels[10] = [
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+	"X.........................X",
+	"X.........................X",
+	"X.........................X",
+	"X......XXXXXXX............X",
+	"X......XB.................X",
+	"X......XXXXXXX............X",
+	"X.........................X",
+	"X.........................X",
+	"X.........................X",
+	"XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+
+]
+
+let ROWS = levels[0].length
+let COLS = levels[0][0].length
 
 /* ================= IMAGES ================= */
 let images = {}
@@ -124,6 +188,41 @@ themeData["default"] = {
 		url: "https://purchart.cloud/images?file=2026-02-09--14-53-35---krystof---cherry.png",
 		collision: eatBoostFood,
 	},
+	"life": {
+		block: "L",
+		url: "https://purchart.cloud/images?file=2026-02-23--14-52-23---sari---life.png",
+		collision: function addLife(x, y) {
+			grid[y][x] = " "
+			lives++
+		},
+	},
+	"ifruit": {
+		block: "i",
+		url: "https://purchart.cloud/images?file=2026-02-16--15-08-19---krystof---eye-fruit.png",
+		collision: function(x, y) {
+			grid[y][x] = " "
+			init(10)
+		},
+	},
+	"ifruit-back": {
+		block: "B",
+		url: "https://purchart.cloud/images?file=2026-02-23--14-56-42---krystof---bigfruit.png",
+		collision: function(x, y) {
+			score = score + 1000
+			grid[y][x] = " "
+			init(0)
+		},
+	},
+	"bad-orb": {
+		block: "b",
+		url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAZCAYAAADE6YVjAAABpUlEQVRIS72VsVHEMBBF5fAKoAMCCnByM2QEJJRABxRAcAG6gIAC6OBKICVj5hIXQEAHFHCh2b/2F+u1zrrz3FgzHlmWtU+7f1eqwgKtWoARToLUq7o9tpnm0BRtFH8g4OG5Uc46PoZ93On7x1utfQmkkBhj2qm8J7AF0PhVDOFXHo5zIG9PDQqh3UZZ2TeALABT7/DiLoT953//pBscemQBLzIpgCpBYB8g+UlRAgkIkfXgS77fysPeeyRh07WwAQBagtAbKxAgWJTzIOcR/2c0EH8AFIRQcdBFrvMCjRDvgR8jbHZND0pRGonMnSBUx7QoaUMbzLokMCasBlNaTGnjs07DhSyyNfATdqMs8jsvja/DsJYU8nq4CTB+6QbYZvW9oCdWbMYU/b14hxQuZZetl6wmBPhD8KLZZXWQGm3lSRk3s04q2qHtVCeYwEdA+oJsZ1R8d+A6WwMIAYTMOLuy9iY9YYGecwpPesJJ740/CU66T3ptR5rkdsCwEYS+dDN6PbBmdP36zLAgm4l891dvbv0AkttFzvDUt6InuV2cC8lp+wfs0ntX0ITB7wAAAABJRU5ErkJggg==",
+		collision: function eatBoostFood(x, y) {
+			grid[y][x] = " "
+			score -= 100
+			setTimeout(() => { GHOST_SPEED = 1.6 / TILE }, 5000) // na 5 vterin rychlejsi ghost
+			GHOST_SPEED = 5.0 / TILE
+		},
+	},
 }
 
 themeData["misa"] = {
@@ -131,6 +230,10 @@ themeData["misa"] = {
 		block: "o",
 		url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAZCAYAAADE6YVjAAABKklEQVR4AeySOY4CMRBFPZP1PSabC8EJ4UJk3KND8LN4qPDSbhIiEN+u5S+S1b/pA79vyFuPvPu5DoflVmNv0jRE457h1i7yhyHR4Hxe0wiYRS59jW4IIogaU9/yUSOPnuHU6qgjmhCJBEDUmLpG3MlXH7lNCEsFmNCD47KkGsyBPHXMIrohEBRSY859Tf9J0Dunjnz6iGGIJI0wd8Zt757ZCNOQkfCd+TTktK7F7y9dyu1h79557x6G/AS2RhgL1s6pI58+ohuSP8PCiUIMaxRSPuSpy6OXfxOSP8OiUUADXlSPhjmgla+emWhCWEhECJhhVoM5e0CtjjqiGwIBAaDGZAT28AB1D8MQyYiBfbyZgzjr1dMQRZjVcDe7d4fMjLb235Ct12l2dwAAAP//XYordQAAAAZJREFUAwC8QqMzqCJN3gAAAABJRU5ErkJggg==",
 		collision: eatBoostFood,
+	},
+	"food": {
+		block: ".",
+		url: "https://purchart.cloud/images?file=2026-02-16--15-09-54---pacman-orbbbbbbbbbbb---Lachim.png"
 	},
 	"wall": {
 		block: "X",
@@ -143,6 +246,11 @@ themeData["misa"] = {
 	"bad-orb": {
 		block: "b",
 		url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAZCAYAAADE6YVjAAABpUlEQVRIS72VsVHEMBBF5fAKoAMCCnByM2QEJJRABxRAcAG6gIAC6OBKICVj5hIXQEAHFHCh2b/2F+u1zrrz3FgzHlmWtU+7f1eqwgKtWoARToLUq7o9tpnm0BRtFH8g4OG5Uc46PoZ93On7x1utfQmkkBhj2qm8J7AF0PhVDOFXHo5zIG9PDQqh3UZZ2TeALABT7/DiLoT953//pBscemQBLzIpgCpBYB8g+UlRAgkIkfXgS77fysPeeyRh07WwAQBagtAbKxAgWJTzIOcR/2c0EH8AFIRQcdBFrvMCjRDvgR8jbHZND0pRGonMnSBUx7QoaUMbzLokMCasBlNaTGnjs07DhSyyNfATdqMs8jsvja/DsJYU8nq4CTB+6QbYZvW9oCdWbMYU/b14hxQuZZetl6wmBPhD8KLZZXWQGm3lSRk3s04q2qHtVCeYwEdA+oJsZ1R8d+A6WwMIAYTMOLuy9iY9YYGecwpPesJJ740/CU66T3ptR5rkdsCwEYS+dDN6PbBmdP36zLAgm4l891dvbv0AkttFzvDUt6InuV2cC8lp+wfs0ntX0ITB7wAAAABJRU5ErkJggg==",
+		collision: function eatBoostFood(x, y) {
+			grid[y][x] = " "
+			score -= 100
+			GHOST_SPEED = 5.0 / TILE
+		},
 	},
 }
 
@@ -194,7 +302,7 @@ const ctx = canvas.getContext("2d")
 
 /* ================= STATE ================= */
 let grid, player, ghosts, spawners
-let score, lives, invincibleUntil
+let score = 0, lives = 3, invincibleUntil
 let highScore = Number(localStorage.getItem("pacmanHighScore") || 0)
 let gameOver = false
 let debug = {}
@@ -227,9 +335,14 @@ function findBlockDefinition(blockId) {
 }
 
 /* ================= INIT ================= */
-function init(levelNumber = 0) {
+function init(_levelNumber = 0) {
+	levelNumber = _levelNumber
 	const lvl = levels[levelNumber]
 	grid = lvl.map((r) => r.split(""))
+
+	ROWS = lvl.length
+	COLS = lvl[0].length
+
 	ghosts = []
 	spawners = []
 	invincibleUntil = 0
@@ -634,7 +747,7 @@ function loop() {
 	draw()
 	requestAnimationFrame(loop)
 }
-init()
+init(levelNumber)
 loop()
 
 // init()
