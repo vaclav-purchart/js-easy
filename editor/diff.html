@@ -7,7 +7,7 @@
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs/loader.js"></script>
 
     <style>
-        body { margin: 0; font-family: Arial, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+        body { margin: 0; font-family: Arial, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         .toolbar-row { display: flex; background: #f0f0f0; border-bottom: 1px solid #ccc; }
         .toolbar { flex: 1; padding: 10px; }
         .toolbar label { margin-right: 10px; }
@@ -19,6 +19,10 @@
         <div class="toolbar">
             <label>Left File (GitLab):</label>
             <select id="left-select">
+                <!-- Populate dynamically below -->
+            </select>
+			<br>
+			<select id="left-saved-select">
                 <!-- Populate dynamically below -->
             </select>
         </div>
@@ -94,7 +98,40 @@ require(['vs/editor/editor.main'], function() {
 		})
 	}
 
-	// Right side: Purchart selector
+	// left side (optional) - select from saved work
+	const leftSavedSelect = document.getElementById('left-saved-select')
+	fetch('https://purchart.cloud/list')
+		.then((res) => res.text())
+		.then((html) => {
+			const parser = new DOMParser()
+			const doc = parser.parseFromString(html, 'text/html')
+			const rows = doc.querySelectorAll('table tr')
+			rows.forEach((row) => {
+				const cells = row.querySelectorAll('td')
+				if (cells.length > 1) { // Assume file name in first cell, URL in second
+					const fileName = cells[0].textContent.trim()
+					const fileUrl = cells[0].querySelector('a')?.href || `https://purchart.cloud/list?file=${fileName}`
+					const option = document.createElement('option')
+					option.value = fileUrl
+					option.text = fileName
+					leftSavedSelect.appendChild(option)
+				}
+			})
+		})
+
+	leftSavedSelect.addEventListener('change', () => {
+		const fileUrl = rightSelect.value
+		fetch(fileUrl)
+			.then((res) => res.text())
+			.then((content) => {
+				diffEditor.setModel({
+					original: monaco.editor.createModel(content, 'text/html'),
+					modified: diffEditor.getModel()?.modified || monaco.editor.createModel('', 'text/html'),
+				})
+			})
+	})
+
+	// Right side: select from saved work
 	const rightSelect = document.getElementById('right-select')
 	fetch('https://purchart.cloud/list')
 		.then((res) => res.text())
