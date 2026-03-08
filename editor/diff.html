@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diff Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs/loader.js"></script>
+
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+        .toolbar-row { display: flex; background: #f0f0f0; border-bottom: 1px solid #ccc; }
+        .toolbar { flex: 1; padding: 10px; }
+        .toolbar label { margin-right: 10px; }
+        #diff-editor { flex: 1; }
+    </style>
+</head>
+<body>
+    <div class="toolbar-row">
+        <div class="toolbar">
+            <label>Left File (GitLab):</label>
+            <select id="left-select">
+                <!-- Populate dynamically below -->
+            </select>
+        </div>
+        <div class="toolbar">
+            <label>Right File (Purchart):</label>
+            <select id="right-select">
+                <!-- Populate dynamically below -->
+            </select>
+        </div>
+    </div>
+    <div id="diff-editor"></div> <!-- Monaco diff editor container -->
+
+<script>
+require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs' } })
+require(['vs/editor/editor.main'], function() {
+	const diffEditor = monaco.editor.createDiffEditor(document.getElementById('diff-editor'), {
+		theme: 'vs',
+		readOnly: true,
+		renderSideBySide: true,
+	})
+
+	// Left side: Exact github selector from index.html (assuming it fetches like this; replace with actual code)
+	const githubSelect = document.getElementById('left-select')
+	if (githubSelect) {
+		// Add options 1-10 dynamically
+		const defaultOption = document.createElement('option')
+		defaultOption.value = ''
+		defaultOption.textContent = 'Load'
+		githubSelect.appendChild(defaultOption)
+		for (let i = 3; i <= 20; i++) {
+			const opt = document.createElement('option')
+			const file = `${i.toString().padStart(2, '0')}/index.html`
+			opt.value = file
+			opt.textContent = file
+			githubSelect.appendChild(opt)
+		}
+
+		const customFiles = [
+			'------------------',
+			'01/house-colored.html',
+			'06/index-after.html',
+			'students/vasik-06.html',
+		]
+
+		for (const file of customFiles) {
+			const opt = document.createElement('option')
+			opt.value = file
+			opt.textContent = file
+			githubSelect.appendChild(opt)
+		}
+
+		githubSelect.addEventListener('change', async (e) => {
+			const val = e.target.value
+			if (!val) return
+			const url = `https://raw.githubusercontent.com/vaclav-purchart/js-easy/refs/heads/main/${val}`
+			console.log('fetching', url)
+			try {
+				const resp = await fetch(url)
+				if (!resp.ok) {
+					alert('Failed to fetch example: ' + resp.status)
+					return
+				}
+				const text = await resp.text()
+				diffEditor.setModel({
+					original: monaco.editor.createModel(text, 'text/html'),
+					modified: diffEditor.getModel()?.modified || monaco.editor.createModel('', 'text/html'),
+				})
+			} catch (err) {
+				alert('Error fetching example: ' + err)
+			}
+			// Reset select to default
+			githubSelect.value = ''
+		})
+	}
+
+	// Right side: Purchart selector
+	const rightSelect = document.getElementById('right-select')
+	fetch('https://purchart.cloud/list')
+		.then((res) => res.text())
+		.then((html) => {
+			const parser = new DOMParser()
+			const doc = parser.parseFromString(html, 'text/html')
+			const rows = doc.querySelectorAll('table tr')
+			rows.forEach((row) => {
+				const cells = row.querySelectorAll('td')
+				if (cells.length > 1) { // Assume file name in first cell, URL in second
+					const fileName = cells[0].textContent.trim()
+					const fileUrl = cells[0].querySelector('a')?.href || `https://purchart.cloud/list?file=${fileName}`
+					const option = document.createElement('option')
+					option.value = fileUrl
+					option.text = fileName
+					rightSelect.appendChild(option)
+				}
+			})
+		})
+
+	rightSelect.addEventListener('change', () => {
+		const fileUrl = rightSelect.value
+		fetch(fileUrl)
+			.then((res) => res.text())
+			.then((content) => {
+				diffEditor.setModel({
+					original: diffEditor.getModel()?.original || monaco.editor.createModel('', 'text/html'),
+					modified: monaco.editor.createModel(content, 'text/html'),
+				})
+			})
+	})
+})
+    </script>
+</body>
+</html>
