@@ -120,6 +120,7 @@ const RENDER_DISTANCE = 3
 const SEA_LEVEL = 8
 const BEDROCK_Y = 0
 const SEED = 1337
+const MINING_DISTANCE = 6
 
 const BLOCK = {
 	AIR: 0,
@@ -182,6 +183,19 @@ function terrainHeight(x, z) {
 	BLOCK LOOKUP
 ========================= */
 
+function getBlockMeshes() {
+
+	const meshes = []
+
+	for (const chunk of chunks.values()) {
+		for (const obj of chunk.children) {
+			if (obj.isMesh) meshes.push(obj)
+		}
+	}
+
+	return meshes
+}
+
 const modified = new Map()
 
 function key(x, y, z) {
@@ -190,7 +204,10 @@ function key(x, y, z) {
 
 function getBlock(x, y, z) {
 	const k = key(x, y, z)
-	if (modified.has(k)) return modified.get(k)
+	if (modified.has(k)) {
+		const v = modified.get(k)
+		return v === BLOCK.AIR ? null : v
+	}
 
 	const h = terrainHeight(x, z)
 	if (y === BEDROCK_Y) return BLOCK.BEDROCK
@@ -249,54 +266,49 @@ function addBlock(group, type, x, y, z) {
 }
 
 function generateChunk(cx, cz) {
+	rebuildChunk(cx, cz)
+}
+
+function rebuildChunk(cx, cz) {
+
+	const k = chunkKey(cx, cz)
+	const old = chunks.get(k)
+
+	if (old) {
+		scene.remove(old)
+	}
+
 	const group = new THREE.Group()
 
 	for (let x = 0; x < CHUNK_SIZE; x++)
 		for (let z = 0; z < CHUNK_SIZE; z++) {
+
 			const wx = cx * CHUNK_SIZE + x
 			const wz = cz * CHUNK_SIZE + z
+
 			const h = terrainHeight(wx, wz)
 
 			for (let y = BEDROCK_Y; y <= Math.max(h, SEA_LEVEL); y++) {
+
 				const t = getBlock(wx, y, wz)
 				if (!t) continue
-
-				const above = getBlock(wx, y + 1, wz)
-				if (above === null || t === BLOCK.WATER) {
-					addBlock(group, t, wx, y, wz)
-				}
 
 				const neighbors = [
 					getBlock(wx + 1, y, wz),
 					getBlock(wx - 1, y, wz),
 					getBlock(wx, y, wz + 1),
 					getBlock(wx, y, wz - 1),
+					getBlock(wx, y + 1, wz),
 				]
 
 				if (neighbors.some((n) => n === null)) {
 					addBlock(group, t, wx, y, wz)
 				}
 			}
-
-			// tree
-			if (getBlock(wx, h, wz) === BLOCK.GRASS && hash(wx * 13 + wz * 17) < 0.001) {
-				for (let ty = 1; ty <= 4; ty++) {
-					modified.set(key(wx, h + ty, wz), BLOCK.WOOD)
-					addBlock(group, BLOCK.WOOD, wx, h + ty, wz)
-				}
-				for (let lx = -2; lx <= 2; lx++)
-					for (let ly = 3; ly <= 5; ly++)
-						for (let lz = -2; lz <= 2; lz++) {
-							if (Math.abs(lx) + Math.abs(lz) < 4) {
-								modified.set(key(wx + lx, h + ly, wz + lz), BLOCK.LEAVES)
-								addBlock(group, BLOCK.LEAVES, wx + lx, h + ly, wz + lz)
-							}
-						}
-			}
 		}
 
 	scene.add(group)
-	chunks.set(chunkKey(cx, cz), group)
+	chunks.set(k, group)
 }
 
 /* =========================
@@ -343,6 +355,7 @@ addEventListener('mousemove', (e) => {
 ========================= */
 
 const raycaster = new THREE.Raycaster()
+raycaster.far = MINING_DISTANCE
 let miningTime = 0
 let mining = false
 
@@ -364,7 +377,8 @@ addEventListener('contextmenu', (e) => {
 
 function mineBlock(dt) {
 	raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
-	const hits = raycaster.intersectObjects(scene.children, true)
+	// const hits = raycaster.intersectObjects([...chunks.values()], true)
+	const hits = raycaster.intersectObjects(getBlockMeshes())
 	if (!hits.length) return
 
 	const hit = hits[0]
@@ -381,38 +395,44 @@ function mineBlock(dt) {
 	if (progress >= 1) {
 		const { x, y, z } = block.userData
 		modified.set(`${x}_${y}_${z}`, BLOCK.AIR)
-		// scene.remove(block)
-		block.parent.remove(block)
+		const cx = Math.floor(x / CHUNK_SIZE)
+		const cz = Math.floor(z / CHUNK_SIZE)
+		rebuildChunk(cx, cz)
 		miningTime = 0
-		console.log('mined ', x, y, z)
 	}
 }
 
 function placeBlock() {
+
 	raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
-	const hits = raycaster.intersectObjects(scene.children, true)
+	// const hits = raycaster.intersectObjects([...chunks.values()], true)
+	const hits = raycaster.intersectObjects(getBlockMeshes())
+
 	if (!hits.length) return
 
 	const hit = hits[0]
+	const block = hit.object
 
-	const pos = hit.point.clone()
-		.add(hit.face.normal.clone().multiplyScalar(0.5))
-		.floor()
+	if (!block.userData) return
 
-	const k = `${pos.x}_${pos.y}_${pos.z}`
+	const { x, y, z } = block.userData
 
-	if (getBlock(pos.x, pos.y, pos.z)) return
+	const n = hit.face.normal.clone().round()
 
-	modified.set(k, BLOCK.WOOD)
+	const px = x + n.x
+	const py = y + n.y
+	const pz = z + n.z
 
-	const cx = Math.floor(pos.x / CHUNK_SIZE)
-	const cz = Math.floor(pos.z / CHUNK_SIZE)
+	if (getBlock(px, py, pz)) return
 
-	const group = chunks.get(chunkKey(cx, cz))
-	if (!group) return
+	modified.set(`${px}_${py}_${pz}`, BLOCK.WOOD)
 
-	addBlock(group, BLOCK.WOOD, pos.x, pos.y, pos.z)
+	const cx = Math.floor(px / CHUNK_SIZE)
+	const cz = Math.floor(pz / CHUNK_SIZE)
+
+	rebuildChunk(cx, cz)
 }
+
 /* =========================
 	MAIN LOOP
 ========================= */
