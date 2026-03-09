@@ -131,6 +131,7 @@ const BLOCK = {
 	WOOD: 5,
 	LEAVES: 6,
 	BEDROCK: 7,
+	SAND: 8,
 }
 
 /* =========================
@@ -231,6 +232,7 @@ function grassMaterial(y) {
 const materials = {
 	[BLOCK.DIRT]: new THREE.MeshLambertMaterial({ color: 0x8b5a2b }),
 	[BLOCK.STONE]: new THREE.MeshLambertMaterial({ color: 0x888888 }),
+	[BLOCK.SAND]: new THREE.MeshLambertMaterial({ color: 0xcdb924 }),
 	[BLOCK.WATER]: new THREE.MeshLambertMaterial({
 		color: 0x3366ff,
 		transparent: true,
@@ -449,13 +451,47 @@ function placeBlock() {
 		if (isSolid || isWater) return
 	}
 
-	modified.set(placementKey, BLOCK.WOOD)
+	let building = BLOCK.DIRT
+	if (selectedSlot === 1) building = BLOCK.STONE
+	if (selectedSlot === 2) building = BLOCK.WOOD
+	if (selectedSlot === 3) building = BLOCK.SAND
+
+
+	modified.set(placementKey, building)
 
 	const cx = Math.floor(px / CHUNK_SIZE)
 	const cz = Math.floor(pz / CHUNK_SIZE)
 
 	rebuildChunk(cx, cz)
 }
+
+/* =========================
+	HOTBAR
+========================= */
+
+const hotbar = document.getElementById('hotbar')
+let selectedSlot = 0
+
+for (let i = 0; i < 10; i++) {
+	const d = document.createElement('div')
+	d.className = 'slot'
+	d.textContent = i === 9 ? 0 : i + 1
+	hotbar.appendChild(d)
+}
+
+function updateHotbar() {
+	[...hotbar.children].forEach((s, i) =>
+		s.classList.toggle('active', i === selectedSlot),
+	)
+}
+
+addEventListener('keydown', (e) => {
+	if (e.key >= '1' && e.key <= '9') selectedSlot = e.key - 1
+	if (e.key === '0') selectedSlot = 9
+	updateHotbar()
+})
+
+updateHotbar()
 
 /* =========================
 	MAIN LOOP
@@ -535,13 +571,14 @@ function animate() {
 	if (targetHits.length) {
 		const { x, y, z, type } = targetHits[0].object.userData
 		const n = targetHits[0].face.normal.clone().round()
-		const blockNames = ['AIR','GRASS','DIRT','STONE','WATER','WOOD','LEAVES','BEDROCK']
-		targetInfo = `target: ${blockNames[type]||type} @ ${x},${y},${z}  normal: ${n.x},${n.y},${n.z}  place→ ${x+n.x},${y+n.y},${z+n.z}`
+		const blockNames = ['AIR', 'GRASS', 'DIRT', 'STONE', 'WATER', 'WOOD', 'LEAVES', 'BEDROCK', 'SAND']
+		targetInfo = `target: ${blockNames[type] || type} @ ${x},${y},${z}  normal: ${n.x},${n.y},${n.z}  place→ ${x + n.x},${y + n.y},${z + n.z}`
 	}
 	debug.textContent =
 `pos ${player.pos.x.toFixed(2)} ${player.pos.y.toFixed(2)} ${player.pos.z.toFixed(2)}
 chunks ${chunks.size}  modified ${modified.size}
-${targetInfo}`
+${targetInfo}
+slot: ${selectedSlot}`
 
 	renderer.render(scene, camera)
 }
