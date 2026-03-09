@@ -288,7 +288,16 @@ function rebuildChunk(cx, cz) {
 
 			const h = terrainHeight(wx, wz)
 
-			for (let y = BEDROCK_Y; y <= Math.max(h, SEA_LEVEL); y++) {
+			// Find the highest modified block in this column so placed
+			// blocks above the terrain surface are included in the loop.
+			let maxY = Math.max(h, SEA_LEVEL)
+			for (const [mk, mv] of modified) {
+				if (mv === BLOCK.AIR) continue
+				const [mx, my, mz] = mk.split('_').map(Number)
+				if (mx === wx && mz === wz && my > maxY) maxY = my
+			}
+
+			for (let y = BEDROCK_Y; y <= maxY; y++) {
 
 				const t = getBlock(wx, y, wz)
 				if (!t) continue
@@ -299,6 +308,7 @@ function rebuildChunk(cx, cz) {
 					getBlock(wx, y, wz + 1),
 					getBlock(wx, y, wz - 1),
 					getBlock(wx, y + 1, wz),
+					getBlock(wx, y - 1, wz),
 				]
 
 				if (neighbors.some((n) => n === null)) {
@@ -423,9 +433,23 @@ function placeBlock() {
 	const py = y + n.y
 	const pz = z + n.z
 
-	if (getBlock(px, py, pz)) return
+	// Check if placement position is genuinely empty.
+	// getBlock() falls through to procedural terrain for unmodified positions,
+	// so it wrongly reports solid blocks for positions inside the terrain.
+	// Instead: a position is empty only if it's above the terrain surface
+	// (or was explicitly set to AIR in the modified map).
+	const placementKey = `${px}_${py}_${pz}`
+	const isModified = modified.has(placementKey)
+	if (isModified && modified.get(placementKey) !== BLOCK.AIR) return
 
-	modified.set(`${px}_${py}_${pz}`, BLOCK.WOOD)
+	if (!isModified) {
+		const ph = terrainHeight(px, pz)
+		const isWater = py > ph && py <= SEA_LEVEL
+		const isSolid = py <= ph || py === BEDROCK_Y
+		if (isSolid || isWater) return
+	}
+
+	modified.set(placementKey, BLOCK.WOOD)
 
 	const cx = Math.floor(px / CHUNK_SIZE)
 	const cz = Math.floor(pz / CHUNK_SIZE)
@@ -463,10 +487,20 @@ function animate() {
 	player.vel.y -= 9.8 * dt
 	player.pos.y += player.vel.y * dt
 
-	const ground = terrainHeight(
-		Math.floor(player.pos.x),
-		Math.floor(player.pos.z),
-	)
+	const px = Math.floor(player.pos.x)
+	const pz = Math.floor(player.pos.z)
+	let ground = terrainHeight(px, pz)
+	// Check modified blocks in this column — walk up from terrain to find
+	// the highest solid block (placed blocks extend ground, mined ones lower it).
+	for (let y = ground + 1; ; y++) {
+		const b = getBlock(px, y, pz)
+		if (b === null || b === BLOCK.WATER) break
+		ground = y
+	}
+	// Also check if terrain surface was mined away — walk down to find solid floor.
+	while (ground > BEDROCK_Y && getBlock(px, ground, pz) === null) {
+		ground--
+	}
 
 	if (player.pos.y - player.height <= ground) {
 		player.pos.y = ground + player.height
@@ -495,10 +529,19 @@ function animate() {
 			if (!chunks.has(k)) generateChunk(cx + x, cz + z)
 		}
 
+	raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+	const targetHits = raycaster.intersectObjects(getBlockMeshes())
+	let targetInfo = 'target: none'
+	if (targetHits.length) {
+		const { x, y, z, type } = targetHits[0].object.userData
+		const n = targetHits[0].face.normal.clone().round()
+		const blockNames = ['AIR','GRASS','DIRT','STONE','WATER','WOOD','LEAVES','BEDROCK']
+		targetInfo = `target: ${blockNames[type]||type} @ ${x},${y},${z}  normal: ${n.x},${n.y},${n.z}  place→ ${x+n.x},${y+n.y},${z+n.z}`
+	}
 	debug.textContent =
 `pos ${player.pos.x.toFixed(2)} ${player.pos.y.toFixed(2)} ${player.pos.z.toFixed(2)}
-chunks ${chunks.size}
-blocks ${modified.size}`
+chunks ${chunks.size}  modified ${modified.size}
+${targetInfo}`
 
 	renderer.render(scene, camera)
 }
