@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Voxel World</title>
+<style>
+	body {
+		margin: 0;
+		overflow: hidden;
+		background: #87ceeb;
+		font-family: monospace;
+	}
+	#crosshair {
+		position: fixed;
+		top: 50%;
+		left: 50%;
+		width: 10px;
+		height: 10px;
+		margin-left: -5px;
+		margin-top: -5px;
+		border: 2px solid white;
+		border-radius: 50%;
+		pointer-events: none;
+	}
+	#debug {
+		position: fixed;
+		top: 10px;
+		left: 10px;
+		background: rgba(0,0,0,0.5);
+		color: white;
+		padding: 6px;
+		white-space: pre;
+		font-size: 12px;
+	}
+	#hotbar {
+		position: fixed;
+		bottom: 20px;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		gap: 6px;
+	}
+	.slot {
+		width: 40px;
+		height: 40px;
+		border: 2px solid #999;
+		background: rgba(0,0,0,0.4);
+		color: white;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.slot.active {
+		border-color: white;
+	}
+	#progress {
+		position: fixed;
+		top: 55%;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 100px;
+		height: 8px;
+		background: rgba(0,0,0,0.4);
+		display: none;
+	}
+	#progress div {
+		height: 100%;
+		width: 0%;
+		background: white;
+	}
+</style>
+</head>
+<body>
+<div id="crosshair"></div>
+<div id="debug"></div>
+<div id="progress"><div></div></div>
+<div id="hotbar"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+/* global THREE */
+/* =========================
+	BASIC SETUP
+========================= */
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x87ceeb)
+
+const camera = new THREE.PerspectiveCamera(
+	75,
+	window.innerWidth / window.innerHeight,
+	0.1,
+	800,
+)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(window.innerWidth, window.innerHeight)
+renderer.shadowMap.enabled = true
+document.body.appendChild(renderer.domElement)
+
+addEventListener('resize', () => {
+	camera.aspect = window.innerWidth / window.innerHeight
+	camera.updateProjectionMatrix()
+	renderer.setSize(window.innerWidth, window.innerHeight)
+})
+
+scene.add(new THREE.HemisphereLight(0xbfdfff, 0x444444, 0.8))
+
+const sun = new THREE.DirectionalLight(0xffffff, 1)
+sun.position.set(100, 200, 100)
+sun.castShadow = true
+scene.add(sun)
+
+/* =========================
+	CONSTANTS
+========================= */
+
+const CHUNK_SIZE = 16
+const RENDER_DISTANCE = 3
+const SEA_LEVEL = 8
+const BEDROCK_Y = 0
+const SEED = 1337
+
+const BLOCK = {
+	AIR: 0,
+	GRASS: 1,
+	DIRT: 2,
+	STONE: 3,
+	WATER: 4,
+	WOOD: 5,
+	LEAVES: 6,
+	BEDROCK: 7,
+}
+
+/* =========================
+	NOISE
+========================= */
+
+function hash(n) {
+	return Math.abs(Math.sin(n) * 43758.5453) % 1
+}
+
+function smoothNoise(x, z, scale, offset) {
+	const x0 = Math.floor(x / scale)
+	const z0 = Math.floor(z / scale)
+	const xf = (x / scale) - x0
+	const zf = (z / scale) - z0
+
+	const n00 = hash(x0 * 57.13 + z0 + offset + SEED)
+	const n10 = hash((x0 + 1) * 57.13 + z0 + offset + SEED)
+	const n01 = hash(x0 * 57.13 + z0 + 1 + offset + SEED)
+	const n11 = hash((x0 + 1) * 57.13 + z0 + 1 + offset + SEED)
+
+	const u = xf * xf * (3 - 2 * xf)
+	const v = zf * zf * (3 - 2 * zf)
+
+	return (
+		n00 * (1 - u) * (1 - v) +
+		n10 * u * (1 - v) +
+		n01 * (1 - u) * v +
+		n11 * u * v
+	)
+}
+
+function terrainHeight(x, z) {
+	let h =
+		smoothNoise(x, z, 40, 0) * 8 +
+		smoothNoise(x, z, 120, 100) * 12
+
+	h = Math.floor(SEA_LEVEL + h - 6)
+
+	const lake = smoothNoise(x, z, 60, 200)
+	if (lake < 0.28) h -= 3
+
+	const river = Math.abs(smoothNoise(x, z, 200, 500) - 0.5)
+	if (river < 0.03) h = SEA_LEVEL - 2
+
+	return Math.max(h, BEDROCK_Y + 1)
+}
+
+/* =========================
+	BLOCK LOOKUP
+========================= */
+
+const modified = new Map()
+
+function key(x, y, z) {
+	return `${x}_${y}_${z}`
+}
+
+function getBlock(x, y, z) {
+	const k = key(x, y, z)
+	if (modified.has(k)) return modified.get(k)
+
+	const h = terrainHeight(x, z)
+	if (y === BEDROCK_Y) return BLOCK.BEDROCK
+	if (y > h) return y <= SEA_LEVEL ? BLOCK.WATER : null
+	if (y === h) return BLOCK.GRASS
+	if (y >= h - 3) return BLOCK.DIRT
+	return BLOCK.STONE
+}
+
+/* =========================
+	MATERIALS
+========================= */
+
+function grassMaterial(y) {
+	const g = 0.6 + y * 0.01
+	return new THREE.MeshLambertMaterial({
+		color: new THREE.Color(0.2, g, 0.2),
+	})
+}
+
+const materials = {
+	[BLOCK.DIRT]: new THREE.MeshLambertMaterial({ color: 0x8b5a2b }),
+	[BLOCK.STONE]: new THREE.MeshLambertMaterial({ color: 0x888888 }),
+	[BLOCK.WATER]: new THREE.MeshLambertMaterial({
+		color: 0x3366ff,
+		transparent: true,
+		opacity: 0.6,
+	}),
+	[BLOCK.WOOD]: new THREE.MeshLambertMaterial({ color: 0x7a4a22 }),
+	[BLOCK.LEAVES]: new THREE.MeshLambertMaterial({
+		color: 0x228822,
+		transparent: true,
+		opacity: 0.85,
+	}),
+	[BLOCK.BEDROCK]: new THREE.MeshLambertMaterial({ color: 0x222222 }),
+}
+
+const cube = new THREE.BoxGeometry(1, 1, 1)
+
+/* =========================
+	CHUNKS (TOP + SIDES)
+========================= */
+
+const chunks = new Map()
+
+function chunkKey(x, z) {
+	return `${x}_${z}`
+}
+
+function addBlock(group, type, x, y, z) {
+	const mat = type === BLOCK.GRASS ? grassMaterial(y) : materials[type]
+	const m = new THREE.Mesh(cube, mat)
+	m.position.set(x + 0.5, y + 0.5, z + 0.5)
+	m.userData = { x, y, z, type }
+	group.add(m)
+}
+
+function generateChunk(cx, cz) {
+	const group = new THREE.Group()
+
+	for (let x = 0; x < CHUNK_SIZE; x++)
+		for (let z = 0; z < CHUNK_SIZE; z++) {
+			const wx = cx * CHUNK_SIZE + x
+			const wz = cz * CHUNK_SIZE + z
+			const h = terrainHeight(wx, wz)
+
+			for (let y = BEDROCK_Y; y <= Math.max(h, SEA_LEVEL); y++) {
+				const t = getBlock(wx, y, wz)
+				if (!t) continue
+
+				const above = getBlock(wx, y + 1, wz)
+				if (above === null || t === BLOCK.WATER) {
+					addBlock(group, t, wx, y, wz)
+				}
+
+				const neighbors = [
+					getBlock(wx + 1, y, wz),
+					getBlock(wx - 1, y, wz),
+					getBlock(wx, y, wz + 1),
+					getBlock(wx, y, wz - 1),
+				]
+
+				if (neighbors.some((n) => n === null)) {
+					addBlock(group, t, wx, y, wz)
+				}
+			}
+
+			// tree
+			if (getBlock(wx, h, wz) === BLOCK.GRASS && hash(wx * 13 + wz * 17) < 0.001) {
+				for (let ty = 1; ty <= 4; ty++) {
+					modified.set(key(wx, h + ty, wz), BLOCK.WOOD)
+					addBlock(group, BLOCK.WOOD, wx, h + ty, wz)
+				}
+				for (let lx = -2; lx <= 2; lx++)
+					for (let ly = 3; ly <= 5; ly++)
+						for (let lz = -2; lz <= 2; lz++) {
+							if (Math.abs(lx) + Math.abs(lz) < 4) {
+								modified.set(key(wx + lx, h + ly, wz + lz), BLOCK.LEAVES)
+								addBlock(group, BLOCK.LEAVES, wx + lx, h + ly, wz + lz)
+							}
+						}
+			}
+		}
+
+	scene.add(group)
+	chunks.set(chunkKey(cx, cz), group)
+}
+
+/* =========================
+	PLAYER & CAMERA
+========================= */
+
+const player = {
+	pos: new THREE.Vector3(0, 20, 0),
+	vel: new THREE.Vector3(),
+	height: 1.7,
+	speed: 6,
+	onGround: false,
+}
+
+const yawObject = new THREE.Object3D()
+yawObject.add(camera)
+scene.add(yawObject)
+
+const keys = {}
+let jumpQueued = false
+addEventListener('keydown', (e) => keys[e.code] = true)
+addEventListener('keyup', (e) => keys[e.code] = false)
+
+/* =========================
+	MOUSE LOOK
+========================= */
+
+renderer.domElement.addEventListener('click', () => {
+	renderer.domElement.requestPointerLock()
+})
+
+let pitch = 0
+
+addEventListener('mousemove', (e) => {
+	if (document.pointerLockElement !== renderer.domElement) return
+	yawObject.rotation.y -= e.movementX * 0.002
+	pitch -= e.movementY * 0.002
+	pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch))
+	camera.rotation.x = pitch
+})
+
+/* =========================
+	MINING / BUILDING
+========================= */
+
+const raycaster = new THREE.Raycaster()
+let miningTime = 0
+let mining = false
+
+addEventListener('mousedown', (e) => {
+	console.log('click button=', e.button)
+	if (e.button === 0) mining = true
+	if (e.button === 2) placeBlock()
+})
+
+addEventListener('mouseup', () => {
+	mining = false
+	miningTime = 0
+	document.getElementById('progress').style.display = 'none'
+})
+
+addEventListener('contextmenu', (e) => {
+	e.preventDefault()
+})
+
+function mineBlock(dt) {
+	raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+	const hits = raycaster.intersectObjects(scene.children, true)
+	if (!hits.length) return
+
+	const hit = hits[0]
+	const block = hit.object
+	if (block.userData.type === BLOCK.WATER) return
+
+	miningTime += dt
+	const progress = Math.min(miningTime / 0.6, 1)
+
+	const bar = document.getElementById('progress')
+	bar.style.display = 'block'
+	bar.firstChild.style.width = progress * 100 + '%'
+
+	if (progress >= 1) {
+		const { x, y, z } = block.userData
+		modified.set(`${x}_${y}_${z}`, BLOCK.AIR)
+		// scene.remove(block)
+		block.parent.remove(block)
+		miningTime = 0
+		console.log('mined ', x, y, z)
+	}
+}
+
+function placeBlock() {
+	raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+	const hits = raycaster.intersectObjects(scene.children, true)
+	if (!hits.length) return
+
+	const hit = hits[0]
+
+	const pos = hit.point.clone()
+		.add(hit.face.normal.clone().multiplyScalar(0.5))
+		.floor()
+
+	const k = `${pos.x}_${pos.y}_${pos.z}`
+
+	if (getBlock(pos.x, pos.y, pos.z)) return
+
+	modified.set(k, BLOCK.WOOD)
+
+	const cx = Math.floor(pos.x / CHUNK_SIZE)
+	const cz = Math.floor(pos.z / CHUNK_SIZE)
+
+	const group = chunks.get(chunkKey(cx, cz))
+	if (!group) return
+
+	addBlock(group, BLOCK.WOOD, pos.x, pos.y, pos.z)
+}
+/* =========================
+	MAIN LOOP
+========================= */
+
+const debug = document.getElementById('debug')
+let lastTime = performance.now()
+
+function animate() {
+	requestAnimationFrame(animate)
+
+	const now = performance.now()
+	const dt = Math.min((now - lastTime) / 1000, 0.05)
+	lastTime = now
+
+	const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(yawObject.quaternion)
+	const right = new THREE.Vector3(1, 0, 0).applyQuaternion(yawObject.quaternion)
+
+	if (keys.KeyW) player.pos.addScaledVector(forward, player.speed * dt)
+	if (keys.KeyS) player.pos.addScaledVector(forward, -player.speed * dt)
+	if (keys.KeyD) player.pos.addScaledVector(right, player.speed * dt)
+	if (keys.KeyA) player.pos.addScaledVector(right, -player.speed * dt)
+
+	if (keys.Escape && player.onGround) {
+		player.vel.y = 6
+		player.onGround = false
+	}
+
+	player.vel.y -= 9.8 * dt
+	player.pos.y += player.vel.y * dt
+
+	const ground = terrainHeight(
+		Math.floor(player.pos.x),
+		Math.floor(player.pos.z),
+	)
+
+	if (player.pos.y - player.height <= ground) {
+		player.pos.y = ground + player.height
+		player.vel.y = 0
+		player.onGround = true
+	}
+
+	// Jump (Space)
+	if (keys.Space && player.onGround) {
+		console.log('jump')
+		// v = sqrt(2 * g * h)
+		player.vel.y = Math.sqrt(2 * 9.8 * 1.5)
+		player.onGround = false
+	}
+
+	if (mining) mineBlock(dt)
+
+	yawObject.position.copy(player.pos)
+
+	const cx = Math.floor(player.pos.x / CHUNK_SIZE)
+	const cz = Math.floor(player.pos.z / CHUNK_SIZE)
+
+	for (let x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; x++)
+		for (let z = -RENDER_DISTANCE; z <= RENDER_DISTANCE; z++) {
+			const k = chunkKey(cx + x, cz + z)
+			if (!chunks.has(k)) generateChunk(cx + x, cz + z)
+		}
+
+	debug.textContent =
+`pos ${player.pos.x.toFixed(2)} ${player.pos.y.toFixed(2)} ${player.pos.z.toFixed(2)}
+chunks ${chunks.size}
+blocks ${modified.size}`
+
+	renderer.render(scene, camera)
+}
+
+animate()
+</script>
+</body>
+</html>
