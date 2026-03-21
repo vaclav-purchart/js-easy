@@ -4,83 +4,118 @@
 <meta charset="UTF-8">
 <title>Voxel World</title>
 <style>
-  body {
-    margin: 0;
-    overflow: hidden;
-    background: #87ceeb;
-    font-family: monospace;
-  }
+  body { margin:0; overflow:hidden; background:#87ceeb; font-family:monospace; }
   #crosshair {
-    position: fixed; top: 50%; left: 50%;
-    width: 10px; height: 10px;
-    margin-left: -5px; margin-top: -5px;
-    border: 2px solid white; border-radius: 50%;
-    pointer-events: none;
+    position:fixed; top:50%; left:50%;
+    width:10px; height:10px; margin-left:-5px; margin-top:-5px;
+    border:2px solid white; border-radius:50%; pointer-events:none;
   }
   #debug {
-    position: fixed; top: 10px; left: 10px;
-    background: rgba(0,0,0,.5); color: white;
-    padding: 6px; white-space: pre; font-size: 12px;
+    position:fixed; top:10px; left:10px;
+    background:rgba(0,0,0,.5); color:white;
+    padding:6px; white-space:pre; font-size:12px;
   }
   #hotbar {
-    position: fixed; bottom: 20px; left: 50%;
-    transform: translateX(-50%);
-    display: flex; gap: 6px;
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    display:flex; gap:6px;
+  }
+  @media (pointer: coarse) {
+    #hotbar { bottom: 180px; }
+    #nickname-ui { bottom: 170px; }
+    #debug { font-size:10px; }
   }
   .slot {
-    width: 40px; height: 40px;
-    border: 2px solid #999;
-    background: rgba(0,0,0,.4);
-    color: white;
-    display: flex; align-items: center; justify-content: center;
+    width:48px; height:48px; border:2px solid #999;
+    background:rgba(0,0,0,.4); color:white; font-size:10px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
   }
-  .slot.active { border-color: white; }
+  .slot .icon { width:24px; height:24px; image-rendering:pixelated; }
+  .slot.active { border-color:white; }
   #progress {
-    position: fixed; top: 55%; left: 50%;
-    transform: translateX(-50%);
-    width: 100px; height: 8px;
-    background: rgba(0,0,0,.4); display: none;
+    position:fixed; top:55%; left:50%; transform:translateX(-50%);
+    width:100px; height:8px; background:rgba(0,0,0,.4); display:none;
   }
-  #progress div { height: 100%; width: 0%; background: white; }
-
-  /* ── Multiplayer HUD ── */
+  #progress div { height:100%; width:0%; background:white; }
   #mp-status {
-    position: fixed; top: 10px; right: 10px;
-    background: rgba(0,0,0,.5); color: #0f0;
-    padding: 5px 8px; font-size: 12px; font-family: monospace;
-    border-left: 3px solid #0f0;
-    transition: border-color .3s, color .3s;
+    position:fixed; top:10px; right:10px;
+    background:rgba(0,0,0,.5); color:#0f0;
+    padding:5px 8px; font-size:12px; font-family:monospace;
+    border-left:3px solid #0f0; transition:border-color .3s,color .3s;
   }
-  #mp-status.offline { color: #f80; border-color: #f80; }
-  #mp-status.error   { color: #f44; border-color: #f44; }
-
+  #mp-status.offline { color:#f80; border-color:#f80; }
+  #mp-status.error   { color:#f44; border-color:#f44; }
   #nickname-ui {
-    position: fixed; bottom: 80px; left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,.65); padding: 8px 12px;
-    display: flex; gap: 8px; align-items: center;
+    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,.65); padding:8px 12px;
+    display:flex; gap:8px; align-items:center;
   }
   #nickname-ui input {
-    background: rgba(255,255,255,.15); border: 1px solid #888;
-    color: white; padding: 4px 8px; font-family: monospace;
-    font-size: 13px; outline: none; width: 140px;
+    background:rgba(255,255,255,.15); border:1px solid #888;
+    color:white; padding:4px 8px; font-family:monospace;
+    font-size:13px; outline:none; width:160px;
   }
   #nickname-ui button {
-    background: rgba(255,255,255,.2); border: 1px solid #aaa;
-    color: white; cursor: pointer; padding: 4px 10px;
-    font-family: monospace; font-size: 13px;
+    background:rgba(255,255,255,.2); border:1px solid #aaa;
+    color:white; cursor:pointer; padding:4px 10px;
+    font-family:monospace; font-size:13px;
   }
-  #nickname-ui button:hover { background: rgba(255,255,255,.35); }
-  #nickname-ui label { color: #ccc; font-size: 12px; }
-
-  /* ── Player list ── */
+  #nickname-ui button:hover { background:rgba(255,255,255,.35); }
+  #nickname-ui label { color:#ccc; font-size:12px; }
   #player-list {
-    position: fixed; top: 10px; right: 130px;
-    background: rgba(0,0,0,.5); color: white;
-    padding: 5px 8px; font-size: 11px; font-family: monospace;
-    min-width: 100px; display: none;
+    position:fixed; top:10px; right:130px;
+    background:rgba(0,0,0,.5); color:white;
+    padding:5px 8px; font-size:11px; font-family:monospace;
+    min-width:100px; display:none;
   }
-  #player-list div { margin: 1px 0; }
+  #player-list div { margin:1px 0; }
+  #toast {
+    position:fixed; bottom:130px; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,.75); color:#ff8; padding:6px 14px;
+    font-size:13px; font-family:monospace; display:none; pointer-events:none;
+  }
+
+  /* ── Touch controls ── */
+  #touch-controls { display:none; }
+
+  #joystick-zone {
+    position:fixed; bottom:24px; left:24px;
+    width:130px; height:130px;
+    touch-action:none;
+  }
+  #joystick-base {
+    position:absolute; inset:0;
+    border-radius:50%;
+    background:rgba(255,255,255,.12);
+    border:2px solid rgba(255,255,255,.35);
+  }
+  #joystick-knob {
+    position:absolute;
+    width:52px; height:52px; border-radius:50%;
+    background:rgba(255,255,255,.45);
+    border:2px solid rgba(255,255,255,.8);
+    top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+  }
+  #action-buttons {
+    position:fixed; bottom:24px; right:16px;
+    display:flex; flex-direction:column; align-items:flex-end; gap:10px;
+    touch-action:none;
+  }
+  #action-buttons .row { display:flex; gap:10px; }
+  .touch-btn {
+    width:62px; height:62px; border-radius:50%;
+    background:rgba(255,255,255,.18);
+    border:2px solid rgba(255,255,255,.5);
+    color:white; font-size:12px; font-weight:bold; font-family:monospace;
+    display:flex; align-items:center; justify-content:center;
+    user-select:none; -webkit-user-select:none; touch-action:none;
+    text-align:center; line-height:1.2;
+  }
+  .touch-btn.pressed { background:rgba(255,255,255,.38); border-color:white; }
+  #btn-jump  { background:rgba(100,220,100,.25); border-color:rgba(100,220,100,.8); }
+  #btn-mine  { background:rgba(220,80,80,.25);   border-color:rgba(220,80,80,.8);   }
+  #btn-place { background:rgba(80,160,220,.25);  border-color:rgba(80,160,220,.8);  }
 </style>
 </head>
 <body>
@@ -90,27 +125,45 @@
 <div id="hotbar"></div>
 <div id="mp-status" class="offline">OFFLINE</div>
 <div id="player-list"></div>
+<div id="toast"></div>
 <div id="nickname-ui">
-  <label>Nick:</label>
-  <input id="nick-input" maxlength="20" placeholder="YourName">
+  <label>Nick / cmd:</label>
+  <input id="nick-input" maxlength="40" placeholder="Name or /reset">
   <button id="nick-btn">Set</button>
+</div>
+
+<!-- Touch controls (shown only when touch device detected) -->
+<div id="touch-controls">
+  <div id="joystick-zone">
+    <div id="joystick-base"></div>
+    <div id="joystick-knob"></div>
+  </div>
+  <div id="action-buttons">
+    <div class="row">
+      <div class="touch-btn" id="btn-mine">Mine</div>
+      <div class="touch-btn" id="btn-place">Place</div>
+    </div>
+    <div class="row">
+      <div class="touch-btn" id="btn-jump">Jump</div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script>
 /* global THREE */
 
-/* ==========================================================
-   BASIC SETUP
-========================================================== */
+/* ============================================================
+   RENDERER SETUP
+============================================================ */
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x87ceeb)
+scene.fog = new THREE.Fog(0x87ceeb, 60, 160)
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 800)
-
-const renderer = new THREE.WebGLRenderer({ antialias: true })
+const renderer = new THREE.WebGLRenderer({ antialias: false })   // antialias off = big win on slow GPUs
 renderer.setSize(innerWidth, innerHeight)
-renderer.shadowMap.enabled = true
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5))          // cap pixel ratio
 document.body.appendChild(renderer.domElement)
 
 addEventListener('resize', () => {
@@ -122,12 +175,11 @@ addEventListener('resize', () => {
 scene.add(new THREE.HemisphereLight(0xbfdfff, 0x444444, 0.8))
 const sun = new THREE.DirectionalLight(0xffffff, 1)
 sun.position.set(100, 200, 100)
-sun.castShadow = true
-scene.add(sun)
+scene.add(sun)   // no shadow maps — huge GPU cost for voxel scenes
 
-/* ==========================================================
+/* ============================================================
    CONSTANTS
-========================================================== */
+============================================================ */
 const CHUNK_SIZE = 16
 const RENDER_DISTANCE = 3
 const SEA_LEVEL = 8
@@ -136,9 +188,235 @@ const MINING_DISTANCE = 6
 
 const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDROCK:7, SAND:8 }
 
-/* ==========================================================
-   NOISE
-========================================================== */
+// Which blocks are transparent (semi-transparent or see-through)
+const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES])
+
+/* ============================================================
+   TEXTURE ATLAS
+   Each block can specify:
+     texture : sides (and fallback for top/bottom)
+     top     : top face   (optional, falls back to texture)
+     bottom  : bottom face (optional, falls back to texture)
+   Values are either a CSS color string or a draw function (ctx, x, y, size).
+   Atlas tiles are TILE_SIZE×TILE_SIZE pixels.
+   Layout: one row per block type, three columns: side | top | bottom
+============================================================ */
+const TILE_SIZE = 16
+const ATLAS_COLS = 3   // side, top, bottom
+
+// Draw helpers (pixel-art style)
+function noise(ctx, x, y, sz, col1, col2, density = 0.35) {
+	ctx.fillStyle = col2
+	for (let py = 0; py < sz; py++)
+		for (let px = 0; px < sz; px++)
+			if (Math.random() < density) ctx.fillRect(x + px, y + py, 1, 1)
+}
+
+let images = {}
+
+let allLoaded = false
+let currentTheme = "default"
+
+const themeData = {}
+
+themeData["default"] = {
+	"grass": {
+		url: "https://purchart.cloud/images?file=2026-03-16--15-09-10---vasik---grass-block-side.png",
+	},
+}
+
+let themes = Object.keys(themeData)
+
+function loadImages(imageDefinitions) {
+	images = {}
+	allLoaded = false
+	let loadedImageCount = 0
+	let imageCount = Object.keys(imageDefinitions).length
+
+	Object.keys(imageDefinitions).forEach(function(imageId) {
+		const {url} = imageDefinitions[imageId]
+		const data = {}
+		data.img = new Image()
+		data.img.src = url
+		images[imageId] = data
+		data.img.onload = function() {
+			loadedImageCount++
+			if (loadedImageCount === imageCount) allLoaded = true
+		}
+	})
+}
+loadImages(themeData[currentTheme])
+
+// Block defs — draw functions receive (ctx, tileX, tileY, S=TILE_SIZE)
+const BLOCK_DEFS = {
+	[BLOCK.GRASS]: {
+		side(ctx, x, y, S) {
+			ctx.fillStyle = '#8b5a2b'; ctx.fillRect(x, y, S, S)
+			noise(ctx, x, y, S, '#8b5a2b', '#7a4e25')
+			ctx.fillStyle = '#3a8a2a'; ctx.fillRect(x, y + S - 4, S, 4)
+			noise(ctx, x, y + S - 4, 4, '#3a8a2a', '#2d7020', 0.4)
+		},
+		top(ctx, x, y, S) {
+			ctx.fillStyle = '#3a8a2a'; ctx.fillRect(x, y, S, S)
+			noise(ctx, x, y, S, '#3a8a2a', '#2d7020', 0.3)
+			noise(ctx, x, y, S, '#3a8a2a', '#4a9a35', 0.2)
+		},
+		bottom(ctx, x, y, S) {
+			ctx.fillStyle = '#8b5a2b'; ctx.fillRect(x, y, S, S)
+			noise(ctx, x, y, S, '#8b5a2b', '#7a4e25')
+		},
+	},
+	[BLOCK.DIRT]: {
+		side(ctx, x, y, S) {
+			// ctx.fillStyle = '#8b5a2b'; ctx.fillRect(x, y, S, S)
+			// noise(ctx, x, y, S, '#8b5a2b', '#7a4e25')
+			// noise(ctx, x, y, S, '#8b5a2b', '#9e6b38', 0.2)
+			ctx.drawImage(images['grass'], 0, 0)
+		},
+	},
+	[BLOCK.STONE]: {
+		side(ctx, x, y, S) {
+			ctx.fillStyle = '#888'; ctx.fillRect(x, y, S, S)
+			noise(ctx, x, y, S, '#888', '#999', 0.25)
+			noise(ctx, x, y, S, '#888', '#777', 0.2)
+			// crack lines
+			ctx.fillStyle = '#666'
+			ctx.fillRect(x + 2, y + 4, 4, 1); ctx.fillRect(x + 8, y + 10, 5, 1)
+			ctx.fillRect(x + 5, y + 2, 1, 4); ctx.fillRect(x + 12, y + 6, 1, 5)
+		},
+	},
+	[BLOCK.SAND]: {
+		side(ctx, x, y, S) {
+			ctx.fillStyle = '#c8b558'; ctx.fillRect(x, y, S, S)
+			noise(ctx, x, y, S, '#c8b558', '#b8a548', 0.3)
+			noise(ctx, x, y, S, '#c8b558', '#d8c568', 0.2)
+		},
+	},
+	[BLOCK.WATER]: {
+		side(ctx, x, y, S) {
+			ctx.fillStyle = 'rgba(30,80,220,0.65)'; ctx.fillRect(x, y, S, S)
+			ctx.fillStyle = 'rgba(80,140,255,0.25)'
+			for (let i = 0; i < S; i += 4) ctx.fillRect(x, y + i, S, 2)
+		},
+		top(ctx, x, y, S) {
+			ctx.fillStyle = 'rgba(30,100,230,0.7)'; ctx.fillRect(x, y, S, S)
+			ctx.fillStyle = 'rgba(120,180,255,0.3)'
+			ctx.fillRect(x + 2, y + 3, 5, 1); ctx.fillRect(x + 10, y + 8, 4, 1)
+			ctx.fillRect(x + 4, y + 12, 6, 1)
+		},
+	},
+	[BLOCK.WOOD]: {
+		side(ctx, x, y, S) {
+			ctx.fillStyle = '#7a4a22'; ctx.fillRect(x, y, S, S)
+			// vertical grain lines
+			for (let i = 2; i < S; i += 3) {
+				ctx.fillStyle = (i % 6 === 2) ? '#6a3a15' : '#8a5a2f'
+				ctx.fillRect(x + i, y, 1, S)
+			}
+		},
+		top(ctx, x, y, S) {
+			ctx.fillStyle = '#9a6a3a'; ctx.fillRect(x, y, S, S)
+			// ring pattern
+			ctx.fillStyle = '#7a5020'
+			for (let r = 1; r <= S / 2 - 1; r += 2) {
+				ctx.strokeStyle = '#7a5020'; ctx.lineWidth = 1
+				ctx.beginPath()
+				ctx.arc(x + S / 2, y + S / 2, r, 0, Math.PI * 2)
+				ctx.stroke()
+			}
+		},
+	},
+	[BLOCK.LEAVES]: {
+		side(ctx, x, y, S) {
+			ctx.fillStyle = 'rgba(34,120,34,0.85)'; ctx.fillRect(x, y, S, S)
+			noise(ctx, x, y, S, 'transparent', 'rgba(0,0,0,0)', 0)
+			// stipple
+			ctx.fillStyle = 'rgba(20,90,20,0.7)'
+			for (let py = 0; py < S; py += 2)
+				for (let px = (py % 4 === 0) ? 0 : 1; px < S; px += 2)
+					ctx.fillRect(x + px, y + py, 1, 1)
+			ctx.fillStyle = 'rgba(60,160,40,0.5)'
+			for (let py = 1; py < S; py += 3)
+				for (let px = 1; px < S; px += 3)
+					ctx.fillRect(x + px, y + py, 1, 1)
+		},
+	},
+	[BLOCK.BEDROCK]: {
+		side(ctx, x, y, S) {
+			ctx.fillStyle = '#222'; ctx.fillRect(x, y, S, S)
+			noise(ctx, x, y, S, '#222', '#333', 0.4)
+			noise(ctx, x, y, S, '#222', '#111', 0.2)
+		},
+	},
+}
+
+// Build atlas canvas: rows = block types (sorted), cols = [side, top, bottom]
+const ALL_BLOCK_IDS = Object.values(BLOCK).filter((v) => v !== BLOCK.AIR)
+const ATLAS_ROWS = ALL_BLOCK_IDS.length
+const atlasCanvas = document.createElement('canvas')
+atlasCanvas.width = TILE_SIZE * ATLAS_COLS
+atlasCanvas.height = TILE_SIZE * ATLAS_ROWS
+const atlasCtx = atlasCanvas.getContext('2d')
+atlasCtx.imageSmoothingEnabled = false
+atlasCtx.fillStyle = "#000000"
+atlasCtx.fillRect(0, 0, atlasCanvas.width, atlasCanvas.height)
+
+// row index for each block id
+const blockAtlasRow = {}
+ALL_BLOCK_IDS.forEach((id, i) => { blockAtlasRow[id] = i })
+
+function drawAtlasTile(blockId, col) {
+	const def = BLOCK_DEFS[blockId]
+	if (!def) return
+	const row = blockAtlasRow[blockId]
+	const tx = col * TILE_SIZE
+	const ty = row * TILE_SIZE
+	const fn = col === 0 ? def.side
+		: col === 1 ? (def.top || def.side)
+			: (def.bottom || def.side)
+	if (fn) fn(atlasCtx, tx, ty, TILE_SIZE)
+}
+
+ALL_BLOCK_IDS.forEach((id) => {
+	drawAtlasTile(id, 0)   // side
+	drawAtlasTile(id, 1)   // top
+	drawAtlasTile(id, 2)   // bottom
+})
+
+const atlasTexture = new THREE.CanvasTexture(atlasCanvas)
+atlasTexture.magFilter = THREE.NearestFilter
+atlasTexture.minFilter = THREE.NearestFilter
+
+// UV helper: returns [u0,v0, u1,v1] for a given block + face column
+const INV_W = 1 / (TILE_SIZE * ATLAS_COLS)
+const INV_H = 1 / (TILE_SIZE * ATLAS_ROWS)
+function tileUV(blockId, col) {
+	const row = blockAtlasRow[blockId]
+	const u0 = col * TILE_SIZE * INV_W
+	const u1 = (col + 1) * TILE_SIZE * INV_W
+	const v0 = 1 - (row + 1) * TILE_SIZE * INV_H
+	const v1 = 1 - row * TILE_SIZE * INV_H
+	return [u0, v0, u1, v1]
+}
+
+/* ============================================================
+   SHARED MATERIALS  (just two: opaque atlas + transparent atlas)
+============================================================ */
+const matOpaque = new THREE.MeshLambertMaterial({
+	map: atlasTexture,
+})
+const matTransparent = new THREE.MeshLambertMaterial({
+	map: atlasTexture,
+	transparent: true,
+	alphaTest: 0.05,
+	depthWrite: false,
+})
+
+/* ============================================================
+   NOISE / TERRAIN
+============================================================ */
+let SEED = 1337
+
 function hash(n) { return Math.abs(Math.sin(n) * 43758.5453) % 1 }
 
 function smoothNoise(x, z, scale, offset) {
@@ -160,27 +438,13 @@ function terrainHeight(x, z) {
 	return Math.max(h, BEDROCK_Y + 1)
 }
 
-/* ==========================================================
-   SEED  (may be overridden by server 'init')
-========================================================== */
-let SEED = 1337
-
-/* ==========================================================
-   BLOCK LOOKUP
-========================================================== */
-function getBlockMeshes() {
-	const meshes = []
-	for (const chunk of chunks.values())
-		for (const obj of chunk.children)
-			if (obj.isMesh) meshes.push(obj)
-	return meshes
-}
-
+/* ============================================================
+   BLOCK WORLD
+============================================================ */
 const modified = new Map()
-function key(x, y, z) { return `${x}_${y}_${z}` }
 
 function getBlock(x, y, z) {
-	const k = key(x, y, z)
+	const k = `${x}_${y}_${z}`
 	if (modified.has(k)) { const v = modified.get(k); return v === BLOCK.AIR ? null : v }
 	const h = terrainHeight(x, z)
 	if (y === BEDROCK_Y) return BLOCK.BEDROCK
@@ -190,96 +454,216 @@ function getBlock(x, y, z) {
 	return BLOCK.STONE
 }
 
-/* ==========================================================
-   MATERIALS
-========================================================== */
-function grassMaterial(y) {
-	const g = 0.6 + y * 0.01
-	return new THREE.MeshLambertMaterial({ color: new THREE.Color(0.2, g, 0.2) })
-}
-const materials = {
-	[BLOCK.DIRT]   : new THREE.MeshLambertMaterial({ color: 0x8b5a2b }),
-	[BLOCK.STONE]  : new THREE.MeshLambertMaterial({ color: 0x888888 }),
-	[BLOCK.SAND]   : new THREE.MeshLambertMaterial({ color: 0xcdb924 }),
-	[BLOCK.WATER]  : new THREE.MeshLambertMaterial({ color: 0x3366ff, transparent:true, opacity:0.6 }),
-	[BLOCK.WOOD]   : new THREE.MeshLambertMaterial({ color: 0x7a4a22 }),
-	[BLOCK.LEAVES] : new THREE.MeshLambertMaterial({ color: 0x228822, transparent:true, opacity:0.85 }),
-	[BLOCK.BEDROCK]: new THREE.MeshLambertMaterial({ color: 0x222222 }),
-}
-const cube = new THREE.BoxGeometry(1, 1, 1)
+function isTransparent(b) { return b === null || TRANSPARENT.has(b) }
 
-/* ==========================================================
-   CHUNKS
-========================================================== */
-const chunks = new Map()
+/* ============================================================
+   CHUNK GEOMETRY  — merged BufferGeometry, one draw call per
+   material per chunk instead of one Mesh per block.
+
+   Face order matches Three.js BoxGeometry:  +x -x +y -y +z -z
+   Atlas column:  +y face → col 1 (top),  -y face → col 2 (bottom),  rest → col 0 (side)
+============================================================ */
+const chunks = new Map()  // chunkKey → { opaque: Mesh, transparent: Mesh, pickMesh: Mesh }
+const pickMeshes = []         // flat list kept in sync for raycasting
+
 function chunkKey(x, z) { return `${x}_${z}` }
 
-function addBlock(group, type, x, y, z) {
-	const mat = type === BLOCK.GRASS ? grassMaterial(y) : materials[type]
-	const m = new THREE.Mesh(cube, mat)
-	m.position.set(x + .5, y + .5, z + .5)
-	m.userData = { x, y, z, type }
-	group.add(m)
+// Face definitions: [normalX, normalY, normalZ, v0..v3 offsets, atlasCol]
+// Each vertex offset is [dx,dy,dz] relative to block origin (0..1 cube)
+const FACES = [
+	// +X
+	{ n:[1, 0, 0], verts:[[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]], col:0 },
+	// -X
+	{ n:[-1, 0, 0], verts:[[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]], col:0 },
+	// +Y  (top)
+	{ n:[0, 1, 0], verts:[[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], col:1 },
+	// -Y  (bottom)
+	{ n:[0, -1, 0], verts:[[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], col:2 },
+	// +Z
+	{ n:[0, 0, 1], verts:[[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]], col:0 },
+	// -Z
+	{ n:[0, 0, -1], verts:[[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]], col:0 },
+]
+
+function buildChunkGeometry(cx, cz) {
+	// Accumulators for opaque and transparent faces
+	const pos = [[], []]
+	const uv = [[], []]
+	const norm = [[], []]
+	const idx = [[], []]
+	const vCount = [0, 0]
+
+	// Pick mesh: axis-aligned quads that store userData block coords
+	// We reuse simple geometry with per-vertex extras stored in userData array
+	const pickFaces = []  // { x,y,z,type, faceNormal }
+
+	for (let lx = 0; lx < CHUNK_SIZE; lx++)
+		for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+			const wx = cx * CHUNK_SIZE + lx
+			const wz = cz * CHUNK_SIZE + lz
+			const h = terrainHeight(wx, wz)
+			let maxY = Math.max(h, SEA_LEVEL)
+			for (const [mk, mv] of modified) {
+				if (mv === BLOCK.AIR) continue
+				const parts = mk.split('_')
+				if (+parts[0] === wx && +parts[2] === wz) maxY = Math.max(maxY, +parts[1])
+			}
+
+			for (let y = BEDROCK_Y; y <= maxY; y++) {
+				const t = getBlock(wx, y, wz)
+				if (!t) continue
+
+				const isTrans = TRANSPARENT.has(t)
+				const bucket = isTrans ? 1 : 0
+
+				for (const face of FACES) {
+					const [nx, ny, nz] = face.n
+					const neighbor = getBlock(wx + nx, y + ny, wz + nz)
+
+					// Show face when neighbor is:
+					// - null (air/void)
+					// - transparent and we are opaque
+					// - transparent and we are the same transparent type
+					//   EXCEPT: don't draw water-water or leaves-leaves internal faces
+					const neighborTrans = isTransparent(neighbor)
+					if (!neighborTrans) continue
+					if (isTrans && neighbor === t) continue  // same transparent type: skip internal face
+
+					// For transparent blocks: also render the solid block below them
+					// (handled by the solid block's own +Y face pointing into transparent space — already covered)
+
+					const [u0, v0, u1, v1] = tileUV(t, face.col)
+					const vc = vCount[bucket]
+
+					for (const [dx, dy, dz] of face.verts) {
+						pos[bucket].push(wx + dx, y + dy, wz + dz)
+						norm[bucket].push(nx, ny, nz)
+					}
+					// UVs: map quad corners to atlas tile
+					uv[bucket].push(
+						u0, v1,
+						u0, v0,
+						u1, v0,
+						u1, v1,
+					)
+					idx[bucket].push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
+					vCount[bucket] += 4
+
+					// Pick face (one entry per visible face)
+					pickFaces.push({ x: wx, y, z: wz, type: t, nx, ny, nz })
+				}
+			}
+		}
+
+	return { pos, uv, norm, idx, pickFaces }
+}
+
+function makeBufferMesh(pos, uv, norm, idx, material) {
+	if (idx.length === 0) return null
+	const geo = new THREE.BufferGeometry()
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+	geo.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3))
+	geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+	geo.setIndex(idx)
+	geo.computeBoundingSphere()
+	return new THREE.Mesh(geo, material)
+}
+
+// Invisible pick mesh: one BoxGeometry per visible face stored as instanced-ish
+// Actually we build a flat invisible mesh just for raycasting userData
+function makePickMesh(pickFaces) {
+	// Minimal geometry: just triangles with userData stored per-face
+	// We create a dummy mesh whose geometry encodes block coords in vertex color
+	// Simpler approach: individual tiny meshes would be slow — instead we store
+	// a lookup array on the mesh and decode hit triangle index → face entry.
+	if (pickFaces.length === 0) return null
+
+	const posArr = []
+	const idxArr = []
+	let vc = 0
+
+	for (const { x, y, z, nx, ny, nz } of pickFaces) {
+		// Build the same quad as the visual mesh for accurate hit detection
+		const face = FACES.find((f) => f.n[0] === nx && f.n[1] === ny && f.n[2] === nz)
+		if (!face) continue
+		for (const [dx, dy, dz] of face.verts) posArr.push(x + dx, y + dy, z + dz)
+		idxArr.push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
+		vc += 4
+	}
+
+	const geo = new THREE.BufferGeometry()
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3))
+	geo.setIndex(idxArr)
+	geo.computeBoundingSphere()
+
+	const mat = new THREE.MeshBasicMaterial({ visible: false })
+	const mesh = new THREE.Mesh(geo, mat)
+	mesh.userData.pickFaces = pickFaces   // face index = Math.floor(triangleIndex / 2)
+	return mesh
 }
 
 function rebuildChunk(cx, cz) {
 	const k = chunkKey(cx, cz)
 	const old = chunks.get(k)
-	if (old) scene.remove(old)
-
-	const group = new THREE.Group()
-	for (let x = 0; x < CHUNK_SIZE; x++) for (let z = 0; z < CHUNK_SIZE; z++) {
-		const wx = cx * CHUNK_SIZE + x
-		const wz = cz * CHUNK_SIZE + z
-		const h = terrainHeight(wx, wz)
-		let maxY = Math.max(h, SEA_LEVEL)
-		for (const [mk, mv] of modified) {
-			if (mv === BLOCK.AIR) continue
-			const [mx, my, mz] = mk.split('_').map(Number)
-			if (mx === wx && mz === wz && my > maxY) maxY = my
-		}
-		for (let y = BEDROCK_Y; y <= maxY; y++) {
-			const t = getBlock(wx, y, wz)
-			if (!t) continue
-			const neighbors = [
-				getBlock(wx + 1, y, wz), getBlock(wx - 1, y, wz),
-				getBlock(wx, y, wz + 1), getBlock(wx, y, wz - 1),
-				getBlock(wx, y + 1, wz), getBlock(wx, y - 1, wz),
-			]
-			if (neighbors.some((n) => n === null)) addBlock(group, t, wx, y, wz)
+	if (old) {
+		if (old.opaque) { scene.remove(old.opaque); old.opaque.geometry.dispose() }
+		if (old.transparent) { scene.remove(old.transparent); old.transparent.geometry.dispose() }
+		if (old.pick) {
+			scene.remove(old.pick); old.pick.geometry.dispose()
+			const pi = pickMeshes.indexOf(old.pick)
+			if (pi !== -1) pickMeshes.splice(pi, 1)
 		}
 	}
-	scene.add(group)
-	chunks.set(k, group)
+
+	const { pos, uv, norm, idx, pickFaces } = buildChunkGeometry(cx, cz)
+
+	const opaque = makeBufferMesh(pos[0], uv[0], norm[0], idx[0], matOpaque)
+	const transparent = makeBufferMesh(pos[1], uv[1], norm[1], idx[1], matTransparent)
+	const pick = makePickMesh(pickFaces)
+
+	if (opaque) scene.add(opaque)
+	if (transparent) scene.add(transparent)
+	if (pick) { scene.add(pick); pickMeshes.push(pick) }
+
+	chunks.set(k, { opaque, transparent, pick })
 }
 
 function generateChunk(cx, cz) { rebuildChunk(cx, cz) }
 
-/* ==========================================================
-   PLAYER ENTITY (block-figure)
-   Structure (offsets relative to foot position):
-     legs  (2 boxes): y 0 – 0.75
-     body  (1 box):   y 0.75 – 1.5
-     arms  (2 boxes): y 0.9 – 1.5  (sides)
-     head  (1 box):   y 1.5 – 2.1  (pivots with pitch)
-     label (sprite):  y 2.3
-========================================================== */
+/* ============================================================
+   RAYCASTING  (uses pick meshes — invisible, exact geometry)
+============================================================ */
+const raycaster = new THREE.Raycaster()
+raycaster.far = MINING_DISTANCE
+
+function raycastBlocks() {
+	raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+	const hits = raycaster.intersectObjects(pickMeshes)
+	if (!hits.length) return null
+	const hit = hits[0]
+	const faceIndex = Math.floor(hit.faceIndex / 2)
+	const faces = hit.object.userData.pickFaces
+	if (!faces || faceIndex >= faces.length) return null
+	return { hit, face: faces[faceIndex] }
+}
+
+/* ============================================================
+   PLAYER ENTITY  (block figure — unchanged logic, kept separate)
+============================================================ */
 function randomSkinColor() {
-	const skins = [0xffe0bd, 0xfcd5b5, 0xe8b89a, 0xc68642, 0x8d5524]
-	return skins[Math.floor(Math.random() * skins.length)]
+	const s = [0xffe0bd, 0xfcd5b5, 0xe8b89a, 0xc68642, 0x8d5524]
+	return s[Math.floor(Math.random() * s.length)]
 }
 function randomClothColor() {
-	const c = [0x1a73e8, 0xe84040, 0x2ea44f, 0xdd9900, 0x8844cc,
-		0x0d9488, 0xdc2626, 0x059669]
+	const c = [0x1a73e8, 0xe84040, 0x2ea44f, 0xdd9900, 0x8844cc, 0x0d9488, 0xdc2626, 0x059669]
 	return c[Math.floor(Math.random() * c.length)]
 }
 
 function makePlayerModel(nickname) {
 	const root = new THREE.Group()
-
 	const skin = randomSkinColor()
 	const cloth = randomClothColor()
-	const pants = cloth & 0x7f7f7f   // darker shade for pants
+	const pants = cloth & 0x7f7f7f
 
 	const matSkin = new THREE.MeshLambertMaterial({ color: skin })
 	const matCloth = new THREE.MeshLambertMaterial({ color: cloth })
@@ -291,125 +675,99 @@ function makePlayerModel(nickname) {
 		return m
 	}
 
-	// Legs  (two pillars)
 	root.add(box(0.3, 0.75, 0.3, matPants, -0.18, 0.375, 0))
 	root.add(box(0.3, 0.75, 0.3, matPants, 0.18, 0.375, 0))
-	// Body
 	root.add(box(0.75, 0.75, 0.35, matCloth, 0, 1.125, 0))
-	// Arms
 	root.add(box(0.25, 0.65, 0.28, matCloth, -0.55, 1.075, 0))
 	root.add(box(0.25, 0.65, 0.28, matCloth, 0.55, 1.075, 0))
 
-	// Head pivot  (so we can apply pitch to head independently)
 	const headPivot = new THREE.Group()
-	headPivot.position.set(0, 1.8, 0)  // neck height
+	headPivot.position.set(0, 1.8, 0)
 	root.add(headPivot)
 
-	const head = box(0.7, 0.65, 0.7, matSkin, 0, 0.325, 0)  // head centered on pivot
-	// Eyes (two dark quads on front face)
+	const head = box(0.7, 0.65, 0.7, matSkin, 0, 0.325, 0)
 	const eyeMat = new THREE.MeshLambertMaterial({ color: 0x111111 })
 	head.add(box(0.15, 0.1, 0.02, eyeMat, -0.15, 0.12, -0.36))
 	head.add(box(0.15, 0.1, 0.02, eyeMat, 0.15, 0.12, -0.36))
 	headPivot.add(head)
 
-	// Nickname label above head
 	const canvas = document.createElement('canvas')
-	canvas.width = 256
-	canvas.height = 64
+	canvas.width = 256; canvas.height = 64
 	const ctx = canvas.getContext('2d')
-	ctx.fillStyle = 'rgba(0,0,0,0.55)'
-	ctx.fillRect(0, 0, 256, 64)
-	ctx.fillStyle = '#ffffff'
-	ctx.font = 'bold 28px monospace'
-	ctx.textAlign = 'center'
-	ctx.fillText(nickname.slice(0, 18), 128, 40)
+	function drawLabel(text) {
+		ctx.clearRect(0, 0, 256, 64)
+		ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, 256, 64)
+		ctx.fillStyle = '#fff'; ctx.font = 'bold 28px monospace'; ctx.textAlign = 'center'
+		ctx.fillText(text.slice(0, 18), 128, 40)
+	}
+	drawLabel(nickname)
 	const tex = new THREE.CanvasTexture(canvas)
-	const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }))
+	const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, depthTest:false }))
 	sprite.scale.set(2.2, 0.55, 1)
 	sprite.position.set(0, 2.75, 0)
 	root.add(sprite)
 
 	root.userData.headPivot = headPivot
-	root.userData.label = sprite
-	root.userData.nickCanvas = canvas
-	root.userData.nickCtx = ctx
+	root.userData.drawLabel = drawLabel
 	root.userData.nickTex = tex
 
 	return root
 }
 
 function updatePlayerLabel(model, nickname) {
-	const ctx = model.userData.nickCtx
-	const tex = model.userData.nickTex
-	const c = model.userData.nickCanvas
-	ctx.clearRect(0, 0, c.width, c.height)
-	ctx.fillStyle = 'rgba(0,0,0,0.55)'
-	ctx.fillRect(0, 0, c.width, c.height)
-	ctx.fillStyle = '#ffffff'
-	ctx.font = 'bold 28px monospace'
-	ctx.textAlign = 'center'
-	ctx.fillText(nickname.slice(0, 18), 128, 40)
-	tex.needsUpdate = true
+	model.userData.drawLabel(nickname)
+	model.userData.nickTex.needsUpdate = true
 }
 
-/* ==========================================================
+/* ============================================================
    REMOTE PLAYERS
-========================================================== */
-const remotePlayers = new Map()  // id → { model, data }
+============================================================ */
+const remotePlayers = new Map()
 
 function addRemotePlayer(data) {
 	if (remotePlayers.has(data.id)) return
 	const model = makePlayerModel(data.nickname)
-	model.position.set(data.x, data.y - 1.7 + 1, data.z)  // foot position (+1 = stand on block surface)
+	model.position.set(data.x, data.y - 1.7 + 1, data.z)
 	scene.add(model)
 	remotePlayers.set(data.id, { model, data: { ...data } })
 }
-
 function removeRemotePlayer(id) {
 	const rp = remotePlayers.get(id)
 	if (!rp) return
 	scene.remove(rp.model)
 	remotePlayers.delete(id)
 }
-
 function moveRemotePlayer(id, x, y, z, yaw, pitch) {
 	const rp = remotePlayers.get(id)
 	if (!rp) return
-	// Smooth interpolation target
 	rp.data.tx = x; rp.data.ty = y - 1.7 + 1; rp.data.tz = z
-	rp.data.tyaw = yaw
-	rp.data.tpitch = pitch
+	rp.data.tyaw = yaw; rp.data.tpitch = pitch
 }
-
 function tickRemotePlayers(dt) {
-	const alpha = Math.min(dt * 20, 1)   // lerp speed
+	const alpha = Math.min(dt * 20, 1)
 	for (const { model, data } of remotePlayers.values()) {
 		if (data.tx !== undefined) {
 			model.position.x += (data.tx - model.position.x) * alpha
 			model.position.y += (data.ty - model.position.y) * alpha
 			model.position.z += (data.tz - model.position.z) * alpha
 		}
-		if (data.tyaw !== undefined) {
-			model.rotation.y = data.tyaw
-		}
-		if (data.tpitch !== undefined && model.userData.headPivot) {
+		if (data.tyaw !== undefined) model.rotation.y = data.tyaw
+		if (data.tpitch !== undefined && model.userData.headPivot)
 			model.userData.headPivot.rotation.x = data.tpitch
-		}
 	}
 }
 
-/* ==========================================================
+/* ============================================================
    PLAYER & CAMERA
-========================================================== */
+============================================================ */
 const player = {
 	pos: new THREE.Vector3(0, 20, 0),
 	vel: new THREE.Vector3(),
-	height: 1.7,
-	speed: 6,
-	onGround: false,
+	height: 1.7, speed: 6, onGround: false,
 }
 
 const yawObject = new THREE.Object3D()
+camera.position.y = 0.85
 yawObject.add(camera)
 scene.add(yawObject)
 
@@ -417,9 +775,7 @@ const keys = {}
 addEventListener('keydown', (e) => keys[e.code] = true)
 addEventListener('keyup', (e) => keys[e.code] = false)
 
-renderer.domElement.addEventListener('click', () => {
-	renderer.domElement.requestPointerLock()
-})
+renderer.domElement.addEventListener('click', () => { if (!('ontouchstart' in window)) renderer.domElement.requestPointerLock() })
 
 let pitch = 0
 addEventListener('mousemove', (e) => {
@@ -430,12 +786,11 @@ addEventListener('mousemove', (e) => {
 	camera.rotation.x = pitch
 })
 
-/* ==========================================================
+/* ============================================================
    MINING / BUILDING
-========================================================== */
-const raycaster = new THREE.Raycaster()
-raycaster.far = MINING_DISTANCE
+============================================================ */
 let miningTime = 0, mining = false
+let currentTarget = null   // cached raycast result
 
 addEventListener('mousedown', (e) => {
 	if (document.pointerLockElement !== renderer.domElement) return
@@ -448,14 +803,137 @@ addEventListener('mouseup', () => {
 })
 addEventListener('contextmenu', (e) => e.preventDefault())
 
-function mineBlock(dt) {
-	raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
-	const hits = raycaster.intersectObjects(getBlockMeshes())
-	if (!hits.length) return
+/* ============================================================
+   TOUCH CONTROLS
+============================================================ */
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0)
+if (isTouchDevice) {
+	document.getElementById('touch-controls').style.display = 'block'
+	// Hide desktop crosshair hint; pointer lock not used on touch
+}
 
-	const hit = hits[0]
-	const block = hit.object
-	if (block.userData.type === BLOCK.WATER) return
+// ── Joystick state ──
+const joy = { active:false, id:-1, cx:0, cy:0, dx:0, dy:0 }
+const JOY_RADIUS = 52   // max knob travel in px
+
+const joystickZone = document.getElementById('joystick-zone')
+const joystickKnob = document.getElementById('joystick-knob')
+
+function joyUpdate(tx, ty) {
+	const rect = joystickZone.getBoundingClientRect()
+	const cx = rect.left + rect.width / 2
+	const cy = rect.top + rect.height / 2
+	const dx = tx - cx
+	const dy = ty - cy
+	const dist = Math.sqrt(dx * dx + dy * dy)
+	const clamped = Math.min(dist, JOY_RADIUS)
+	const angle = Math.atan2(dy, dx)
+	joy.dx = (clamped / JOY_RADIUS) * Math.cos(angle)
+	joy.dy = (clamped / JOY_RADIUS) * Math.sin(angle)
+	const ox = Math.cos(angle) * clamped
+	const oy = Math.sin(angle) * clamped
+	joystickKnob.style.transform = `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))`
+}
+
+joystickZone.addEventListener('touchstart', (e) => {
+	e.preventDefault()
+	const t = e.changedTouches[0]
+	joy.active = true
+	joy.id = t.identifier
+	joyUpdate(t.clientX, t.clientY)
+}, { passive: false })
+
+joystickZone.addEventListener('touchmove', (e) => {
+	e.preventDefault()
+	for (const t of e.changedTouches) {
+		if (t.identifier === joy.id) { joyUpdate(t.clientX, t.clientY); break }
+	}
+}, { passive: false })
+
+function joyReset() {
+	joy.active = false; joy.id = -1; joy.dx = 0; joy.dy = 0
+	joystickKnob.style.transform = 'translate(-50%, -50%)'
+}
+joystickZone.addEventListener('touchend', (e) => { e.preventDefault(); joyReset() }, { passive:false })
+joystickZone.addEventListener('touchcancel', (e) => { e.preventDefault(); joyReset() }, { passive:false })
+
+// ── Look / camera swipe (anywhere NOT on a UI element) ──
+const look = { active:false, id:-1, lx:0, ly:0 }
+
+// Zones that should NOT trigger look: left 200px (joystick), right 200px (buttons), any UI element
+function isLookTarget(el) {
+	// Ignore touches that start on joystick, action buttons, or nickname UI
+	if (el.closest('#joystick-zone,#action-buttons,#nickname-ui,#hotbar')) return false
+	return true
+}
+
+document.addEventListener('touchstart', (e) => {
+	for (const t of e.changedTouches) {
+		if (!look.active && isLookTarget(e.target)) {
+			look.active = true
+			look.id = t.identifier
+			look.lx = t.clientX
+			look.ly = t.clientY
+		}
+	}
+}, { passive: true })
+
+document.addEventListener('touchmove', (e) => {
+	for (const t of e.changedTouches) {
+		if (t.identifier === look.id && look.active) {
+			const dx = t.clientX - look.lx
+			const dy = t.clientY - look.ly
+			look.lx = t.clientX
+			look.ly = t.clientY
+			yawObject.rotation.y -= dx * 0.004
+			pitch -= dy * 0.004
+			pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch))
+			camera.rotation.x = pitch
+		}
+	}
+}, { passive: true })
+
+document.addEventListener('touchend', (e) => {
+	for (const t of e.changedTouches) {
+		if (t.identifier === look.id) { look.active = false; look.id = -1 }
+	}
+}, { passive: true })
+
+// ── Action buttons ──
+const touchState = { jump:false, mine:false, place:false }
+
+function setupTouchBtn(id, key) {
+	const el = document.getElementById(id)
+	el.addEventListener('touchstart', (e) => {
+		e.preventDefault()
+		touchState[key] = true
+		el.classList.add('pressed')
+		if (key === 'place') placeBlock()
+		if (key === 'mine') { mining = true }
+	}, { passive:false })
+	el.addEventListener('touchend', (e) => {
+		e.preventDefault()
+		touchState[key] = false
+		el.classList.remove('pressed')
+		if (key === 'mine') { mining = false; miningTime = 0; document.getElementById('progress').style.display = 'none' }
+	}, { passive:false })
+	el.addEventListener('touchcancel', (e) => {
+		e.preventDefault()
+		touchState[key] = false
+		el.classList.remove('pressed')
+		if (key === 'mine') { mining = false; miningTime = 0 }
+	}, { passive:false })
+}
+
+setupTouchBtn('btn-jump', 'jump')
+setupTouchBtn('btn-mine', 'mine')
+setupTouchBtn('btn-place', 'place')
+
+function mineBlock(dt) {
+	const result = currentTarget
+	if (!result) return
+	const { face } = result
+	if (face.type === BLOCK.WATER) return
 
 	miningTime += dt
 	const progress = Math.min(miningTime / 0.6, 1)
@@ -464,27 +942,21 @@ function mineBlock(dt) {
 	bar.firstChild.style.width = progress * 100 + '%'
 
 	if (progress >= 1) {
-		const { x, y, z } = block.userData
+		const { x, y, z } = face
 		const k = `${x}_${y}_${z}`
 		modified.set(k, BLOCK.AIR)
-		const cx = Math.floor(x / CHUNK_SIZE)
-		const cz = Math.floor(z / CHUNK_SIZE)
-		rebuildChunk(cx, cz)
+		rebuildChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE))
 		miningTime = 0
 		netSendBlockUpdate(k, BLOCK.AIR)
 	}
 }
 
 function placeBlock() {
-	raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
-	const hits = raycaster.intersectObjects(getBlockMeshes())
-	if (!hits.length) return
-	const hit = hits[0]
-	const block = hit.object
-	if (!block.userData) return
-	const { x, y, z } = block.userData
-	const n = hit.face.normal.clone().round()
-	const px = x + n.x, py = y + n.y, pz = z + n.z
+	const result = currentTarget
+	if (!result) return
+	const { face } = result
+	const { x, y, z, nx, ny, nz } = face
+	const px = x + nx, py = y + ny, pz = z + nz
 	const pk = `${px}_${py}_${pz}`
 	const isM = modified.has(pk)
 	if (isM && modified.get(pk) !== BLOCK.AIR) return
@@ -498,17 +970,45 @@ function placeBlock() {
 	netSendBlockUpdate(pk, btype)
 }
 
-/* ==========================================================
+/* ============================================================
    HOTBAR
-========================================================== */
+============================================================ */
 const hotbar = document.getElementById('hotbar')
 let selectedSlot = 0
-for (let i = 0; i < 4; i++) {
-	const names = ['Dirt', 'Stone', 'Wood', 'Sand']
+const HOTBAR_BLOCKS = [BLOCK.DIRT, BLOCK.STONE, BLOCK.WOOD, BLOCK.SAND]
+const HOTBAR_NAMES = ['Dirt', 'Stone', 'Wood', 'Sand']
+
+// Draw mini block icons from atlas
+function makeBlockIcon(blockId) {
+	const c = document.createElement('canvas')
+	c.width = c.height = 24
+	const ctx2 = c.getContext('2d')
+	ctx2.imageSmoothingEnabled = false
+	// top face in top-left, side face filling rest (isometric-ish)
+	const [su0, sv0, su1, sv1] = tileUV(blockId, 0)
+	const [tu0, tv0, tu1, tv1] = tileUV(blockId, 1)
+	const aw = atlasCanvas.width, ah = atlasCanvas.height
+	// side
+	ctx2.drawImage(atlasCanvas,
+		su0 * aw, (1 - sv1) * ah, (su1 - su0) * aw, (sv1 - sv0) * ah,
+		0, 8, 24, 16)
+	// top
+	ctx2.drawImage(atlasCanvas,
+		tu0 * aw, (1 - tv1) * ah, (tu1 - tu0) * aw, (tv1 - tv0) * ah,
+		0, 0, 24, 10)
+	const img = document.createElement('img')
+	img.src = c.toDataURL()
+	img.className = 'icon'
+	return img
+}
+
+for (let i = 0; i < HOTBAR_BLOCKS.length; i++) {
 	const d = document.createElement('div')
 	d.className = 'slot'
-	d.textContent = names[i]
-	d.title = `${i + 1}`
+	d.appendChild(makeBlockIcon(HOTBAR_BLOCKS[i]))
+	const lbl = document.createElement('span')
+	lbl.textContent = HOTBAR_NAMES[i]
+	d.appendChild(lbl)
 	hotbar.appendChild(d)
 }
 function updateHotbar() {
@@ -519,68 +1019,82 @@ addEventListener('keydown', (e) => {
 })
 updateHotbar()
 
-/* ==========================================================
-   NICKNAME UI
-========================================================== */
+/* ============================================================
+   TOAST
+============================================================ */
+let toastTimer = null
+function showToast(msg) {
+	const el = document.getElementById('toast')
+	el.textContent = msg
+	el.style.display = 'block'
+	clearTimeout(toastTimer)
+	toastTimer = setTimeout(() => { el.style.display = 'none' }, 3000)
+}
+
+/* ============================================================
+   NICK / COMMAND UI
+============================================================ */
 let myNickname = 'Player' + Math.floor(Math.random() * 9000 + 1000)
 document.getElementById('nick-input').value = myNickname
 
-document.getElementById('nick-btn').addEventListener('click', () => {
-	const v = document.getElementById('nick-input').value.trim()
+function handleCommand(raw) {
+	const v = raw.trim()
 	if (!v) return
+	if (v === '/reset') {
+		modified.clear()
+		// Rebuild all loaded chunks
+		for (const [k] of chunks) {
+			const [cx2, cz2] = k.split('_').map(Number)
+			rebuildChunk(cx2, cz2)
+		}
+		// Tell server to reset too
+		netSend({ type: 'world_reset' })
+		showToast('World reset!')
+		document.getElementById('nick-input').value = ''
+		return
+	}
+	// Otherwise treat as nickname
 	myNickname = v.slice(0, 20)
 	netSendNickname(myNickname)
+	showToast(`Nickname set to "${myNickname}"`)
+}
+
+document.getElementById('nick-btn').addEventListener('click', () => {
+	handleCommand(document.getElementById('nick-input').value)
 })
 document.getElementById('nick-input').addEventListener('keydown', (e) => {
 	if (e.key === 'Enter') document.getElementById('nick-btn').click()
 })
 
-/* ==========================================================
+/* ============================================================
    NETWORKING
-========================================================== */
-const WS_URL = 'ws://localhost:8080'
+============================================================ */
+const WS_URL = 'wss://purchart.cloud/voxel-world'
 
-let ws = null
-let myId = null
-let connected = false
-let reconnectTimer = null
+let ws = null, myId = null, connected = false, reconnectTimer = null
 
 function setStatus(state, text) {
 	const el = document.getElementById('mp-status')
-	el.className = state   // 'online' | 'offline' | 'error'
-	el.textContent = text
+	el.className = state; el.textContent = text
 }
 
 function connect() {
-	try {
-		ws = new WebSocket(WS_URL)
-	} catch (e) {
-		setStatus('offline', 'OFFLINE')
-		scheduleReconnect()
-		return
-	}
+	try { ws = new WebSocket(WS_URL) }
+	catch (e) { setStatus('offline', 'OFFLINE'); scheduleReconnect(); return }
 
 	ws.onopen = () => {
 		connected = true
 		clearTimeout(reconnectTimer)
 		setStatus('', 'ONLINE ●')
-		ws.send(JSON.stringify({ type: 'join', nickname: myNickname }))
+		ws.send(JSON.stringify({ type:'join', nickname:myNickname }))
 	}
-
 	ws.onmessage = (e) => {
-		let msg
-		try { msg = JSON.parse(e.data) } catch { return }
+		let msg; try { msg = JSON.parse(e.data) } catch { return }
 		handleServerMessage(msg)
 	}
-
-	ws.onerror = () => {
-		setStatus('error', 'ERROR ✕')
-	}
-
+	ws.onerror = () => setStatus('error', 'ERROR ✕')
 	ws.onclose = () => {
-		connected = false
-		myId = null
-		// Remove all remote player models
+		connected = false; myId = null
 		for (const id of [...remotePlayers.keys()]) removeRemotePlayer(id)
 		setStatus('offline', 'OFFLINE')
 		scheduleReconnect()
@@ -589,88 +1103,67 @@ function connect() {
 
 function scheduleReconnect() {
 	clearTimeout(reconnectTimer)
-	reconnectTimer = setTimeout(() => connect(), 5000)
+	reconnectTimer = setTimeout(connect, 5000)
 }
 
 function handleServerMessage(msg) {
 	switch (msg.type) {
-
 		case 'init': {
 			myId = msg.id
-			// Adopt server seed so world is identical for everyone
 			SEED = msg.seed
-			// Apply server-authoritative modified blocks
 			modified.clear()
 			for (const { k, v } of msg.blocks) modified.set(k, v)
-			// Rebuild all loaded chunks
 			for (const [k] of chunks) {
-				const [cx, cz] = k.split('_').map(Number)
-				rebuildChunk(cx, cz)
+				const [cx2, cz2] = k.split('_').map(Number)
+				rebuildChunk(cx2, cz2)
 			}
-			// Spawn existing players
 			for (const p of msg.players) addRemotePlayer(p)
 			updatePlayerList()
 			break
 		}
-
-		case 'player_join': {
-			addRemotePlayer(msg.player)
-			updatePlayerList()
-			break
-		}
-
-		case 'player_leave': {
-			removeRemotePlayer(msg.id)
-			updatePlayerList()
-			break
-		}
-
-		case 'move': {
-			moveRemotePlayer(msg.id, msg.x, msg.y, msg.z, msg.yaw, msg.pitch)
-			break
-		}
-
+		case 'player_join': addRemotePlayer(msg.player); updatePlayerList(); break
+		case 'player_leave': removeRemotePlayer(msg.id); updatePlayerList(); break
+		case 'move': moveRemotePlayer(msg.id, msg.x, msg.y, msg.z, msg.yaw, msg.pitch); break
 		case 'block_update': {
 			modified.set(msg.k, msg.v)
-			const [bx, , bz] = msg.k.split('_').map(Number)
+			const [bx,, bz] = msg.k.split('_').map(Number)
 			rebuildChunk(Math.floor(bx / CHUNK_SIZE), Math.floor(bz / CHUNK_SIZE))
 			break
 		}
-
 		case 'player_rename': {
 			const rp = remotePlayers.get(msg.id)
-			if (rp) {
-				rp.data.nickname = msg.nickname
-				updatePlayerLabel(rp.model, msg.nickname)
-			}
+			if (rp) { rp.data.nickname = msg.nickname; updatePlayerLabel(rp.model, msg.nickname) }
 			updatePlayerList()
+			break
+		}
+		case 'world_reset': {
+			modified.clear()
+			for (const [k] of chunks) {
+				const [cx2, cz2] = k.split('_').map(Number)
+				rebuildChunk(cx2, cz2)
+			}
+			showToast('World was reset by another player')
 			break
 		}
 	}
 }
 
-// ── Outbound helpers ──────────────────────────────────────
 function netSend(obj) {
-	if (ws && ws.readyState === WebSocket.OPEN)
-		ws.send(JSON.stringify(obj))
+	if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj))
 }
 
-let lastSentPos = { x: null, y: null, z: null, yaw: null, pitch: null }
+let lastSentPos = {}
 function netSendMove(x, y, z, yaw, pitch) {
 	if (!connected) return
-	// Only send if something changed meaningfully
 	if (Math.abs(x - lastSentPos.x) < 0.02 && Math.abs(y - lastSentPos.y) < 0.02 &&
       Math.abs(z - lastSentPos.z) < 0.02 && Math.abs(yaw - lastSentPos.yaw) < 0.01 &&
       Math.abs(pitch - lastSentPos.pitch) < 0.01) return
-	lastSentPos = { x, y, z, yaw, pitch }
+	lastSentPos = {x, y, z, yaw, pitch}
 	netSend({ type:'move', x, y, z, yaw, pitch })
 }
-
 function netSendBlockUpdate(k, v) { netSend({ type:'block_update', k, v }) }
+function netSendNickname(name) { netSend({ type:'set_nickname', nickname:name }) }
 
-function netSendNickname(name) { netSend({ type:'set_nickname', nickname: name }) }
-
-// ── Player list overlay ───────────────────────────────────
 function updatePlayerList() {
 	const el = document.getElementById('player-list')
 	if (remotePlayers.size === 0) { el.style.display = 'none'; return }
@@ -683,14 +1176,14 @@ function updatePlayerList() {
 	}
 }
 
-// Start connecting right away
 connect()
 
-/* ==========================================================
+/* ============================================================
    MAIN LOOP
-========================================================== */
+============================================================ */
 const debug = document.getElementById('debug')
 let lastTime = performance.now()
+let frameCount = 0, fpsAccum = 0, fps = 0
 
 function animate() {
 	requestAnimationFrame(animate)
@@ -698,21 +1191,29 @@ function animate() {
 	const now = performance.now()
 	const dt = Math.min((now - lastTime) / 1000, 0.05)
 	lastTime = now
+	fpsAccum += dt; frameCount++
+	if (fpsAccum >= 0.5) { fps = Math.round(frameCount / fpsAccum); fpsAccum = 0; frameCount = 0 }
 
+	// Movement
 	const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(yawObject.quaternion)
 	const right = new THREE.Vector3(1, 0, 0).applyQuaternion(yawObject.quaternion)
-
 	if (keys.KeyW) player.pos.addScaledVector(forward, player.speed * dt)
 	if (keys.KeyS) player.pos.addScaledVector(forward, -player.speed * dt)
 	if (keys.KeyD) player.pos.addScaledVector(right, player.speed * dt)
 	if (keys.KeyA) player.pos.addScaledVector(right, -player.speed * dt)
+	// Joystick input: joy.dy = forward/back (-1..1), joy.dx = strafe (-1..1)
+	if (joy.active) {
+		player.pos.addScaledVector(forward, -joy.dy * player.speed * dt)
+		player.pos.addScaledVector(right, joy.dx * player.speed * dt)
+	}
 
+	// Gravity
 	player.vel.y -= 9.8 * dt
 	player.pos.y += player.vel.y * dt
 
 	const px = Math.floor(player.pos.x), pz = Math.floor(player.pos.z)
 	let ground = terrainHeight(px, pz)
-	for (let y = ground + 1; ; y++) { const b = getBlock(px, y, pz); if (b === null || b === BLOCK.WATER) break; ground = y }
+	for (let y = ground + 1;;y++) { const b = getBlock(px, y, pz); if (b === null || b === BLOCK.WATER) break; ground = y }
 	while (ground > BEDROCK_Y && getBlock(px, ground, pz) === null) ground--
 
 	if (player.pos.y - player.height <= ground) {
@@ -720,29 +1221,23 @@ function animate() {
 		player.vel.y = 0
 		player.onGround = true
 	}
-
-	if (keys.Space && player.onGround) {
+	if ((keys.Space || touchState.jump) && player.onGround) {
 		player.vel.y = Math.sqrt(2 * 9.8 * 1.5)
 		player.onGround = false
 	}
-
-	// Escape exits pointer lock; use Shift+Space or double-jump not yet needed
 	if (keys.Escape) document.exitPointerLock?.()
-
-	if (mining) mineBlock(dt)
 
 	yawObject.position.copy(player.pos)
 
-	// Send position to server (throttled inside the function)
-	netSendMove(
-		player.pos.x, player.pos.y, player.pos.z,
-		yawObject.rotation.y, pitch,
-	)
+	// Raycast once per frame — reuse for both mining and HUD
+	currentTarget = raycastBlocks()
 
-	// Tick remote player interpolation
+	if (mining) mineBlock(dt)
+
+	netSendMove(player.pos.x, player.pos.y, player.pos.z, yawObject.rotation.y, pitch)
 	tickRemotePlayers(dt)
 
-	// Chunk loading
+	// Chunk loading/unloading
 	const cx = Math.floor(player.pos.x / CHUNK_SIZE)
 	const cz = Math.floor(player.pos.z / CHUNK_SIZE)
 	for (let x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; x++)
@@ -752,18 +1247,15 @@ function animate() {
 		}
 
 	// Debug HUD
-	raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
-	const th = raycaster.intersectObjects(getBlockMeshes())
 	let ti = 'target: none'
-	if (th.length) {
-		const { x, y, z, type } = th[0].object.userData
-		const n = th[0].face.normal.clone().round()
-		const names = Object.keys(BLOCK)
-		ti = `target: ${names[type] || type} @ ${x},${y},${z}  place→ ${x + n.x},${y + n.y},${z + n.z}`
+	if (currentTarget) {
+		const { x, y, z, type, nx, ny, nz } = currentTarget.face
+		const names = ['AIR', 'GRASS', 'DIRT', 'STONE', 'WATER', 'WOOD', 'LEAVES', 'BEDROCK', 'SAND']
+		ti = `target: ${names[type] || type} @ ${x},${y},${z}  place→ ${x + nx},${y + ny},${z + nz}`
 	}
 	debug.textContent =
-`pos  ${player.pos.x.toFixed(2)} ${player.pos.y.toFixed(2)} ${player.pos.z.toFixed(2)}
-chunks ${chunks.size}  modified ${modified.size}
+`pos  ${player.pos.x.toFixed(1)} ${player.pos.y.toFixed(1)} ${player.pos.z.toFixed(1)}
+fps  ${fps}  chunks ${chunks.size}  modified ${modified.size}
 ${ti}
 slot: ${selectedSlot}  id: ${myId ?? 'offline'}  peers: ${remotePlayers.size}`
 

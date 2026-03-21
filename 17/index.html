@@ -546,8 +546,6 @@ function animate() {
 
 	// Jump (Space)
 	if (keys.Space && player.onGround) {
-		console.log('jump')
-		// v = sqrt(2 * g * h)
 		player.vel.y = Math.sqrt(2 * 9.8 * 1.5)
 		player.onGround = false
 	}
