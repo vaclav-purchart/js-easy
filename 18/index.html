@@ -251,6 +251,14 @@ const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDR
 // Which blocks are transparent (semi-transparent or see-through)
 const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
 
+const TEXTURES = {
+	[BLOCK.GRASS]: {
+		// side: "https://purchart.cloud/images?file=2026-03-16--15-09-10---vasik---grass-block-side.png",
+		// top: "",
+		// bottom: "",
+	},
+}
+
 /* ============================================================
    TEXTURE ATLAS
    Each block can specify:
@@ -349,6 +357,17 @@ const BLOCK_DEFS = {
 				ctx.stroke()
 			}
 		},
+		bottom(ctx, x, y, S) {
+			ctx.fillStyle = '#9a6a3a'; ctx.fillRect(x, y, S, S)
+			// ring pattern
+			ctx.fillStyle = '#7a5020'
+			for (let r = 1; r <= S / 2 - 1; r += 2) {
+				ctx.strokeStyle = '#7a5020'; ctx.lineWidth = 1
+				ctx.beginPath()
+				ctx.arc(x + S / 2, y + S / 2, r, 0, Math.PI * 2)
+				ctx.stroke()
+			}
+		},
 	},
 	[BLOCK.LEAVES]: {
 		side(ctx, x, y, S) {
@@ -428,11 +447,18 @@ atlasTexture.magFilter = THREE.NearestFilter
 atlasTexture.minFilter = THREE.NearestFilter
 
 /* ── Load external grass side texture and blit into atlas ── */
-;(function loadGrassTexture() {
+const images = []
+let imagesToLoad = 0
+
+const SIDE_INDEX = ["side", "top", "bottom"]
+
+function loadImage(blockType, side, url) {
 	const img = new Image()
 	img.crossOrigin = 'anonymous'
+	imagesToLoad++
 	img.onload = () => {
-		const row = blockAtlasRow[BLOCK.GRASS]
+		const sideIndex = SIDE_INDEX.indexOf(side)
+		const row = blockAtlasRow[blockType]
 		const tx = 0 * TILE_SIZE   // col 0 = side
 		const ty = row * TILE_SIZE
 		// Clear the tile first, then draw image scaled to TILE_SIZE
@@ -440,13 +466,31 @@ atlasTexture.minFilter = THREE.NearestFilter
 		atlasCtx.drawImage(img, tx, ty, TILE_SIZE, TILE_SIZE)
 		atlasTexture.needsUpdate = true
 		// Rebuild all currently loaded chunks so they pick up the new texture
-		for (const [k] of chunks) {
-			const [cx2, cz2] = k.split('_').map(Number)
-			rebuildChunk(cx2, cz2)
+		imagesToLoad--
+		if (imagesToLoad === 0) {
+			console.log('All images loaded, rebuilding texture atlas')
+			for (const [k] of chunks) {
+				const [cx2, cz2] = k.split('_').map(Number)
+				rebuildChunk(cx2, cz2)
+			}
 		}
 	}
-	img.onerror = () => console.warn('[atlas] Failed to load grass texture — using procedural fallback')
+	img.onerror = () => {
+		console.warn('[atlas] Failed to load grass texture — using procedural fallback')
+		imagesToLoad--
+	}
 	img.src = 'https://purchart.cloud/images?file=2026-03-16--15-09-10---vasik---grass-block-side.png'
+}
+
+;(function loadCustomTextures() {
+	const blocks = Object.keys(TEXTURES)
+	for (let blockType of blocks) {
+		const block = TEXTURES[blockType]
+		const {side, top, bottom} = block
+		if (side) loadImage(blockType, "side", side)
+		if (top) loadImage(blockType, "top", top)
+		if (bottom) loadImage(blockType, "bottom", bottom)
+	}
 }())
 
 // UV helper: returns [u0,v0, u1,v1] for a given block + face column
@@ -623,6 +667,7 @@ function buildChunkGeometry(cx, cz) {
 						norm[bucket].push(nx, ny, nz)
 					}
 					uv[bucket].push(u0, v1, u0, v0, u1, v0, u1, v1)
+					// uv[bucket].push(u0, v0, u0, v1, u1, v1, u1, v0)
 					idx[bucket].push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
 					vCount[bucket] += 4
 
@@ -1483,7 +1528,8 @@ function animate() {
 `pos  ${player.pos.x.toFixed(1)} ${player.pos.y.toFixed(1)} ${player.pos.z.toFixed(1)}
 fps  ${fps}  chunks ${chunks.size}  modified ${modified.size}
 ${ti}
-slot: ${selectedSlot}  id: ${myId ?? 'offline'}  peers: ${remotePlayers.size}`
+slot: ${selectedSlot}  id: ${myId ?? 'offline'}  peers: ${remotePlayers.size}
+in water: ${Boolean(inWater).toString()}`
 
 	renderer.render(scene, camera)
 }
