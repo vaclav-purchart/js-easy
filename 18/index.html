@@ -251,6 +251,7 @@ const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDR
 // Which blocks are transparent (semi-transparent or see-through)
 const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
 
+// Custom external textures - side, top, bottom
 const TEXTURES = {
 	[BLOCK.GRASS]: {
 		// side: "https://purchart.cloud/images?file=2026-03-16--15-09-10---vasik---grass-block-side.png",
@@ -286,8 +287,8 @@ const BLOCK_DEFS = {
 		side(ctx, x, y, S) {
 			ctx.fillStyle = '#8b5a2b'; ctx.fillRect(x, y, S, S)
 			noise(ctx, x, y, S, '#8b5a2b', '#7a4e25')
-			ctx.fillStyle = '#3a8a2a'; ctx.fillRect(x, y + S - 4, S, 4)
-			noise(ctx, x, y + S - 4, 4, '#3a8a2a', '#2d7020', 0.4)
+			ctx.fillStyle = '#3a8a2a'; ctx.fillRect(x, y, S, 4)
+			noise(ctx, x, y, 4, '#3a8a2a', '#2d7020', 0.4)
 		},
 		top(ctx, x, y, S) {
 			ctx.fillStyle = '#3a8a2a'; ctx.fillRect(x, y, S, S)
@@ -446,7 +447,7 @@ const atlasTexture = new THREE.CanvasTexture(atlasCanvas)
 atlasTexture.magFilter = THREE.NearestFilter
 atlasTexture.minFilter = THREE.NearestFilter
 
-/* ── Load external grass side texture and blit into atlas ── */
+/* ── Load external textures side texture and blit into atlas ── */
 const images = []
 let imagesToLoad = 0
 
@@ -468,6 +469,7 @@ function loadImage(blockType, side, url) {
 		// Rebuild all currently loaded chunks so they pick up the new texture
 		imagesToLoad--
 		if (imagesToLoad === 0) {
+			document.getElementById('debugImg').src = atlasCanvas.toDataURL()
 			console.log('All images loaded, rebuilding texture atlas')
 			for (const [k] of chunks) {
 				const [cx2, cz2] = k.split('_').map(Number)
@@ -479,7 +481,7 @@ function loadImage(blockType, side, url) {
 		console.warn('[atlas] Failed to load grass texture — using procedural fallback')
 		imagesToLoad--
 	}
-	img.src = 'https://purchart.cloud/images?file=2026-03-16--15-09-10---vasik---grass-block-side.png'
+	img.src = url
 }
 
 ;(function loadCustomTextures() {
@@ -500,8 +502,8 @@ function tileUV(blockId, col) {
 	const row = blockAtlasRow[blockId]
 	const u0 = col * TILE_SIZE * INV_W
 	const u1 = (col + 1) * TILE_SIZE * INV_W
-	const v0 = 1 - (row + 1) * TILE_SIZE * INV_H
-	const v1 = 1 - row * TILE_SIZE * INV_H
+	const v1 = 1 - (row + 1) * TILE_SIZE * INV_H
+	const v0 = 1 - row * TILE_SIZE * INV_H
 	return [u0, v0, u1, v1]
 }
 
@@ -1139,6 +1141,8 @@ function updateHotbar() {
 }
 addEventListener('keydown', (e) => {
 	if (e.key >= '1' && e.key <= '6') { selectedSlot = +e.key - 1; updateHotbar() }
+	console.log(e)
+	if (e.code === 'KeyM') document.getElementById('debugImg').style.display = document.getElementById('debugImg').style.display === 'none' ? 'block' : 'none'
 })
 updateHotbar()
 
@@ -1535,6 +1539,8 @@ in water: ${Boolean(inWater).toString()}`
 }
 
 animate()
+setTimeout(() => document.getElementById('debugImg').src = atlasCanvas.toDataURL(), 500)
 </script>
+<img id="debugImg" style="z-index: 1000; position: absolute; top: 0; display: none">
 </body>
 </html>
