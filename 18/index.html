@@ -116,6 +116,46 @@
   #btn-jump  { background:rgba(100,220,100,.25); border-color:rgba(100,220,100,.8); }
   #btn-mine  { background:rgba(220,80,80,.25);   border-color:rgba(220,80,80,.8);   }
   #btn-place { background:rgba(80,160,220,.25);  border-color:rgba(80,160,220,.8);  }
+
+  /* ── Underwater overlay ── */
+  #underwater-overlay {
+    position:fixed; inset:0; pointer-events:none; display:none;
+    background:rgba(10,50,160,0.28);
+    animation: uwpulse 3s ease-in-out infinite;
+  }
+  @keyframes uwpulse {
+    0%,100% { background:rgba(10,50,160,0.22); }
+    50%      { background:rgba(10,50,160,0.34); }
+  }
+
+  /* ── Chat ── */
+  #chat-log {
+    position:fixed; bottom:90px; left:10px;
+    width:320px; max-height:160px; overflow:hidden;
+    display:flex; flex-direction:column; justify-content:flex-end; gap:2px;
+    pointer-events:none;
+  }
+  .chat-msg {
+    background:rgba(0,0,0,.5); color:white;
+    padding:2px 7px; font-size:12px; font-family:monospace;
+    border-radius:2px; word-break:break-word;
+    animation: chatfade 12s forwards;
+  }
+  .chat-msg .chat-nick { color:#8df; font-weight:bold; }
+  .chat-msg.system     { color:#fa8; font-style:italic; }
+  @keyframes chatfade {
+    0%,75% { opacity:1; } 100% { opacity:0; }
+  }
+  #chat-input-wrap {
+    position:fixed; bottom:60px; left:10px;
+    display:none; align-items:center; gap:6px;
+  }
+  #chat-input-wrap input {
+    background:rgba(0,0,0,.7); border:1px solid #aaa;
+    color:white; padding:5px 10px; font-family:monospace;
+    font-size:13px; outline:none; width:280px; border-radius:2px;
+  }
+  #chat-input-wrap span { color:#888; font-size:11px; font-family:monospace; }
 </style>
 </head>
 <body>
@@ -128,8 +168,15 @@
 <div id="toast"></div>
 <div id="nickname-ui">
   <label>Nick / cmd:</label>
-  <input id="nick-input" maxlength="40" placeholder="Name or /reset">
+  <input id="nick-input" maxlength="40" placeholder="Name">
   <button id="nick-btn">Set</button>
+</div>
+
+<div id="underwater-overlay"></div>
+<div id="chat-log"></div>
+<div id="chat-input-wrap">
+  <input id="chat-input" maxlength="120" placeholder="Say something...">
+  <span>Enter · Esc</span>
 </div>
 
 <!-- Touch controls (shown only when touch device detected) -->
@@ -186,10 +233,10 @@ const SEA_LEVEL = 8
 const BEDROCK_Y = 0
 const MINING_DISTANCE = 6
 
-const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDROCK:7, SAND:8 }
+const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDROCK:7, SAND:8, GLASS:9 }
 
 // Which blocks are transparent (semi-transparent or see-through)
-const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES])
+const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
 
 /* ============================================================
    TEXTURE ATLAS
@@ -212,41 +259,6 @@ function noise(ctx, x, y, sz, col1, col2, density = 0.35) {
 			if (Math.random() < density) ctx.fillRect(x + px, y + py, 1, 1)
 }
 
-let images = {}
-
-let allLoaded = false
-let currentTheme = "default"
-
-const themeData = {}
-
-themeData["default"] = {
-	"grass": {
-		url: "https://purchart.cloud/images?file=2026-03-16--15-09-10---vasik---grass-block-side.png",
-	},
-}
-
-let themes = Object.keys(themeData)
-
-function loadImages(imageDefinitions) {
-	images = {}
-	allLoaded = false
-	let loadedImageCount = 0
-	let imageCount = Object.keys(imageDefinitions).length
-
-	Object.keys(imageDefinitions).forEach(function(imageId) {
-		const {url} = imageDefinitions[imageId]
-		const data = {}
-		data.img = new Image()
-		data.img.src = url
-		images[imageId] = data
-		data.img.onload = function() {
-			loadedImageCount++
-			if (loadedImageCount === imageCount) allLoaded = true
-		}
-	})
-}
-loadImages(themeData[currentTheme])
-
 // Block defs — draw functions receive (ctx, tileX, tileY, S=TILE_SIZE)
 const BLOCK_DEFS = {
 	[BLOCK.GRASS]: {
@@ -268,10 +280,9 @@ const BLOCK_DEFS = {
 	},
 	[BLOCK.DIRT]: {
 		side(ctx, x, y, S) {
-			// ctx.fillStyle = '#8b5a2b'; ctx.fillRect(x, y, S, S)
-			// noise(ctx, x, y, S, '#8b5a2b', '#7a4e25')
-			// noise(ctx, x, y, S, '#8b5a2b', '#9e6b38', 0.2)
-			ctx.drawImage(images['grass'], 0, 0)
+			ctx.fillStyle = '#8b5a2b'; ctx.fillRect(x, y, S, S)
+			noise(ctx, x, y, S, '#8b5a2b', '#7a4e25')
+			noise(ctx, x, y, S, '#8b5a2b', '#9e6b38', 0.2)
 		},
 	},
 	[BLOCK.STONE]: {
@@ -348,6 +359,22 @@ const BLOCK_DEFS = {
 			noise(ctx, x, y, S, '#222', '#111', 0.2)
 		},
 	},
+	[BLOCK.GLASS]: {
+		side(ctx, x, y, S) {
+			// Nearly transparent — just draw a subtle border/frame
+			ctx.clearRect(x, y, S, S)
+			ctx.fillStyle = 'rgba(180,220,255,0.08)'; ctx.fillRect(x, y, S, S)
+			ctx.fillStyle = 'rgba(200,235,255,0.55)'
+			ctx.fillRect(x, y, S, 1)   // top edge
+			ctx.fillRect(x, y + S - 1, S, 1) // bottom edge
+			ctx.fillRect(x, y, 1, S)     // left edge
+			ctx.fillRect(x + S - 1, y, 1, S)   // right edge
+			// subtle inner highlight
+			ctx.fillStyle = 'rgba(255,255,255,0.15)'
+			ctx.fillRect(x + 1, y + 1, S - 2, 1)
+			ctx.fillRect(x + 1, y + 1, 1, S - 2)
+		},
+	},
 }
 
 // Build atlas canvas: rows = block types (sorted), cols = [side, top, bottom]
@@ -387,6 +414,28 @@ const atlasTexture = new THREE.CanvasTexture(atlasCanvas)
 atlasTexture.magFilter = THREE.NearestFilter
 atlasTexture.minFilter = THREE.NearestFilter
 
+/* ── Load external grass side texture and blit into atlas ── */
+;(function loadGrassTexture() {
+	const img = new Image()
+	img.crossOrigin = 'anonymous'
+	img.onload = () => {
+		const row = blockAtlasRow[BLOCK.GRASS]
+		const tx = 0 * TILE_SIZE   // col 0 = side
+		const ty = row * TILE_SIZE
+		// Clear the tile first, then draw image scaled to TILE_SIZE
+		atlasCtx.clearRect(tx, ty, TILE_SIZE, TILE_SIZE)
+		atlasCtx.drawImage(img, tx, ty, TILE_SIZE, TILE_SIZE)
+		atlasTexture.needsUpdate = true
+		// Rebuild all currently loaded chunks so they pick up the new texture
+		for (const [k] of chunks) {
+			const [cx2, cz2] = k.split('_').map(Number)
+			rebuildChunk(cx2, cz2)
+		}
+	}
+	img.onerror = () => console.warn('[atlas] Failed to load grass texture — using procedural fallback')
+	img.src = 'https://purchart.cloud/images?file=2026-03-16--15-09-10---vasik---grass-block-side.png'
+}())
+
 // UV helper: returns [u0,v0, u1,v1] for a given block + face column
 const INV_W = 1 / (TILE_SIZE * ATLAS_COLS)
 const INV_H = 1 / (TILE_SIZE * ATLAS_ROWS)
@@ -400,16 +449,37 @@ function tileUV(blockId, col) {
 }
 
 /* ============================================================
-   SHARED MATERIALS  (just two: opaque atlas + transparent atlas)
+   MATERIALS
+   We use separate materials per transparency category so Three.js
+   renders them correctly (opaque first, then sorted transparent).
+   - matOpaque  : all solid blocks
+   - matWater   : water — blended, double-sided, no depth write
+   - matLeaves  : leaves — alpha-tested (punch-through), depth write on
+   - matGlass   : glass — blended, double-sided, no depth write
 ============================================================ */
-const matOpaque = new THREE.MeshLambertMaterial({
-	map: atlasTexture,
-})
-const matTransparent = new THREE.MeshLambertMaterial({
+const matOpaque = new THREE.MeshLambertMaterial({ map: atlasTexture })
+
+const matWater = new THREE.MeshLambertMaterial({
 	map: atlasTexture,
 	transparent: true,
-	alphaTest: 0.05,
+	opacity: 0.72,
 	depthWrite: false,
+	side: THREE.DoubleSide,
+})
+
+const matLeaves = new THREE.MeshLambertMaterial({
+	map: atlasTexture,
+	transparent: true,
+	alphaTest: 0.4,
+	depthWrite: true,
+})
+
+const matGlass = new THREE.MeshLambertMaterial({
+	map: atlasTexture,
+	transparent: true,
+	opacity: 0.35,
+	depthWrite: false,
+	side: THREE.DoubleSide,
 })
 
 /* ============================================================
@@ -485,17 +555,24 @@ const FACES = [
 	{ n:[0, 0, -1], verts:[[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]], col:0 },
 ]
 
-function buildChunkGeometry(cx, cz) {
-	// Accumulators for opaque and transparent faces
-	const pos = [[], []]
-	const uv = [[], []]
-	const norm = [[], []]
-	const idx = [[], []]
-	const vCount = [0, 0]
+// Map block type to geometry bucket index
+// 0=opaque  1=water  2=leaves  3=glass
+function blockBucket(t) {
+	if (t === BLOCK.WATER) return 1
+	if (t === BLOCK.LEAVES) return 2
+	if (t === BLOCK.GLASS) return 3
+	if (TRANSPARENT.has(t)) return 1  // fallback for future transparent blocks
+	return 0
+}
 
-	// Pick mesh: axis-aligned quads that store userData block coords
-	// We reuse simple geometry with per-vertex extras stored in userData array
-	const pickFaces = []  // { x,y,z,type, faceNormal }
+function buildChunkGeometry(cx, cz) {
+	const N = 4
+	const pos = Array.from({length:N}, () => [])
+	const uv = Array.from({length:N}, () => [])
+	const norm = Array.from({length:N}, () => [])
+	const idx = Array.from({length:N}, () => [])
+	const vCount = new Array(N).fill(0)
+	const pickFaces = []
 
 	for (let lx = 0; lx < CHUNK_SIZE; lx++)
 		for (let lz = 0; lz < CHUNK_SIZE; lz++) {
@@ -514,23 +591,16 @@ function buildChunkGeometry(cx, cz) {
 				if (!t) continue
 
 				const isTrans = TRANSPARENT.has(t)
-				const bucket = isTrans ? 1 : 0
+				const bucket = blockBucket(t)
 
 				for (const face of FACES) {
 					const [nx, ny, nz] = face.n
 					const neighbor = getBlock(wx + nx, y + ny, wz + nz)
 
-					// Show face when neighbor is:
-					// - null (air/void)
-					// - transparent and we are opaque
-					// - transparent and we are the same transparent type
-					//   EXCEPT: don't draw water-water or leaves-leaves internal faces
 					const neighborTrans = isTransparent(neighbor)
 					if (!neighborTrans) continue
-					if (isTrans && neighbor === t) continue  // same transparent type: skip internal face
-
-					// For transparent blocks: also render the solid block below them
-					// (handled by the solid block's own +Y face pointing into transparent space — already covered)
+					// Skip internal faces between same block types (water-water, glass-glass etc.)
+					if (isTrans && neighbor === t) continue
 
 					const [u0, v0, u1, v1] = tileUV(t, face.col)
 					const vc = vCount[bucket]
@@ -539,17 +609,10 @@ function buildChunkGeometry(cx, cz) {
 						pos[bucket].push(wx + dx, y + dy, wz + dz)
 						norm[bucket].push(nx, ny, nz)
 					}
-					// UVs: map quad corners to atlas tile
-					uv[bucket].push(
-						u0, v1,
-						u0, v0,
-						u1, v0,
-						u1, v1,
-					)
+					uv[bucket].push(u0, v1, u0, v0, u1, v0, u1, v1)
 					idx[bucket].push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
 					vCount[bucket] += 4
 
-					// Pick face (one entry per visible face)
 					pickFaces.push({ x: wx, y, z: wz, type: t, nx, ny, nz })
 				}
 			}
@@ -602,12 +665,13 @@ function makePickMesh(pickFaces) {
 	return mesh
 }
 
+const BUCKET_MATS = [matOpaque, matWater, matLeaves, matGlass]
+
 function rebuildChunk(cx, cz) {
 	const k = chunkKey(cx, cz)
 	const old = chunks.get(k)
 	if (old) {
-		if (old.opaque) { scene.remove(old.opaque); old.opaque.geometry.dispose() }
-		if (old.transparent) { scene.remove(old.transparent); old.transparent.geometry.dispose() }
+		for (const m of old.meshes) { scene.remove(m); m.geometry.dispose() }
 		if (old.pick) {
 			scene.remove(old.pick); old.pick.geometry.dispose()
 			const pi = pickMeshes.indexOf(old.pick)
@@ -617,15 +681,16 @@ function rebuildChunk(cx, cz) {
 
 	const { pos, uv, norm, idx, pickFaces } = buildChunkGeometry(cx, cz)
 
-	const opaque = makeBufferMesh(pos[0], uv[0], norm[0], idx[0], matOpaque)
-	const transparent = makeBufferMesh(pos[1], uv[1], norm[1], idx[1], matTransparent)
-	const pick = makePickMesh(pickFaces)
+	const meshes = []
+	for (let b = 0; b < BUCKET_MATS.length; b++) {
+		const m = makeBufferMesh(pos[b], uv[b], norm[b], idx[b], BUCKET_MATS[b])
+		if (m) { scene.add(m); meshes.push(m) }
+	}
 
-	if (opaque) scene.add(opaque)
-	if (transparent) scene.add(transparent)
+	const pick = makePickMesh(pickFaces)
 	if (pick) { scene.add(pick); pickMeshes.push(pick) }
 
-	chunks.set(k, { opaque, transparent, pick })
+	chunks.set(k, { meshes, pick })
 }
 
 function generateChunk(cx, cz) { rebuildChunk(cx, cz) }
@@ -964,7 +1029,7 @@ function placeBlock() {
 		const ph = terrainHeight(px, pz)
 		if (py <= ph || py === BEDROCK_Y || (py > ph && py <= SEA_LEVEL)) return
 	}
-	const btype = [BLOCK.DIRT, BLOCK.STONE, BLOCK.WOOD, BLOCK.SAND][selectedSlot] ?? BLOCK.DIRT
+	const btype = HOTBAR_BLOCKS[selectedSlot] ?? BLOCK.DIRT
 	modified.set(pk, btype)
 	rebuildChunk(Math.floor(px / CHUNK_SIZE), Math.floor(pz / CHUNK_SIZE))
 	netSendBlockUpdate(pk, btype)
@@ -975,8 +1040,8 @@ function placeBlock() {
 ============================================================ */
 const hotbar = document.getElementById('hotbar')
 let selectedSlot = 0
-const HOTBAR_BLOCKS = [BLOCK.DIRT, BLOCK.STONE, BLOCK.WOOD, BLOCK.SAND]
-const HOTBAR_NAMES = ['Dirt', 'Stone', 'Wood', 'Sand']
+const HOTBAR_BLOCKS = [BLOCK.DIRT, BLOCK.STONE, BLOCK.WOOD, BLOCK.SAND, BLOCK.GLASS, BLOCK.LEAVES]
+const HOTBAR_NAMES = ['Dirt', 'Stone', 'Wood', 'Sand', 'Glass', 'Leaves']
 
 // Draw mini block icons from atlas
 function makeBlockIcon(blockId) {
@@ -1015,7 +1080,7 @@ function updateHotbar() {
 	;[...hotbar.children].forEach((s, i) => s.classList.toggle('active', i === selectedSlot))
 }
 addEventListener('keydown', (e) => {
-	if (e.key >= '1' && e.key <= '4') { selectedSlot = +e.key - 1; updateHotbar() }
+	if (e.key >= '1' && e.key <= '6') { selectedSlot = +e.key - 1; updateHotbar() }
 })
 updateHotbar()
 
@@ -1142,7 +1207,12 @@ function handleServerMessage(msg) {
 				const [cx2, cz2] = k.split('_').map(Number)
 				rebuildChunk(cx2, cz2)
 			}
+			addChatMessage('', '⚡ World was reset', true)
 			showToast('World was reset by another player')
+			break
+		}
+		case 'chat': {
+			handleChatMessage(msg)
 			break
 		}
 	}
@@ -1179,6 +1249,86 @@ function updatePlayerList() {
 connect()
 
 /* ============================================================
+   UNDERWATER OVERLAY
+============================================================ */
+const underwaterOverlay = document.getElementById('underwater-overlay')
+
+/* ============================================================
+   CHAT SYSTEM
+============================================================ */
+const chatLog = document.getElementById('chat-log')
+const chatInputWrap = document.getElementById('chat-input-wrap')
+const chatInput = document.getElementById('chat-input')
+let chatOpen = false
+
+function addChatMessage(nick, text, isSystem) {
+	const msg = document.createElement('div')
+	msg.className = 'chat-msg' + (isSystem ? ' system' : '')
+	if (isSystem) {
+		msg.textContent = text
+	} else {
+		const nickSpan = document.createElement('span')
+		nickSpan.className = 'chat-nick'
+		nickSpan.textContent = nick + ': '
+		msg.appendChild(nickSpan)
+		msg.appendChild(document.createTextNode(text))
+	}
+	chatLog.appendChild(msg)
+	// Keep only last 20 messages visible
+	while (chatLog.children.length > 20) chatLog.removeChild(chatLog.firstChild)
+	// Remove message after animation ends
+	msg.addEventListener('animationend', () => msg.remove())
+}
+
+function openChat() {
+	if (chatOpen) return
+	chatOpen = true
+	chatInputWrap.style.display = 'flex'
+	chatInput.value = ''
+	chatInput.focus()
+	// Cancel any pointer lock so typing works
+	document.exitPointerLock?.()
+}
+
+function closeChat() {
+	chatOpen = false
+	chatInputWrap.style.display = 'none'
+	chatInput.blur()
+}
+
+function sendChat() {
+	const text = chatInput.value.trim()
+	closeChat()
+	if (!text) return
+	if (text === '/reset') {
+		handleCommand('/reset')
+		return
+	}
+	// Show locally immediately
+	addChatMessage(myNickname, text, false)
+	netSend({ type: 'chat', text })
+}
+
+chatInput.addEventListener('keydown', (e) => {
+	e.stopPropagation()   // don't let WASD etc. fire while typing
+	if (e.key === 'Enter') sendChat()
+	if (e.key === 'Escape') closeChat()
+})
+
+// T or Enter opens chat (when not already in an input)
+addEventListener('keydown', (e) => {
+	if (chatOpen) return
+	if (document.activeElement && document.activeElement.tagName === 'INPUT') return
+	if (e.key === 't' || e.key === 'T') { e.preventDefault(); openChat() }
+	if (e.key === 'Enter') { e.preventDefault(); openChat() }
+})
+
+// Handle incoming chat from server
+function handleChatMessage(msg) {
+	addChatMessage(msg.nickname, msg.text, false)
+}
+
+/* ============================================================
    MAIN LOOP
 ============================================================ */
 const debug = document.getElementById('debug')
@@ -1207,8 +1357,34 @@ function animate() {
 		player.pos.addScaledVector(right, joy.dx * player.speed * dt)
 	}
 
-	// Gravity
-	player.vel.y -= 9.8 * dt
+	// Detect if camera/feet are submerged
+	const eyeBlock = getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y + camera.position.y - 0.1), Math.floor(player.pos.z))
+	const feetBlock = getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y - player.height + 0.1), Math.floor(player.pos.z))
+	const underwater = eyeBlock === BLOCK.WATER
+	const inWater = feetBlock === BLOCK.WATER || underwater
+
+	// Underwater tint
+	underwaterOverlay.style.display = underwater ? 'block' : 'none'
+	if (underwater) {
+		scene.fog.near = 4; scene.fog.far = 18
+		scene.fog.color.set(0x1a4fa0)
+		scene.background.set(0x1a4fa0)
+	} else {
+		scene.fog.near = 60; scene.fog.far = 160
+		scene.fog.color.set(0x87ceeb)
+		scene.background.set(0x87ceeb)
+	}
+
+	// Gravity / buoyancy
+	if (inWater) {
+		// Buoyancy counters gravity, apply drag
+		player.vel.y += (9.8 * 0.85) * dt   // net downward accel ~1.47 m/s² in water
+		player.vel.y *= Math.pow(0.92, dt * 60)  // viscous drag
+		// Swim up with Space/Jump
+		if ((keys.Space || touchState.jump)) player.vel.y = Math.min(player.vel.y + 6 * dt, 3.5)
+	} else {
+		player.vel.y -= 9.8 * dt
+	}
 	player.pos.y += player.vel.y * dt
 
 	const px = Math.floor(player.pos.x), pz = Math.floor(player.pos.z)
@@ -1220,8 +1396,10 @@ function animate() {
 		player.pos.y = ground + player.height
 		player.vel.y = 0
 		player.onGround = true
+	} else if (!inWater) {
+		player.onGround = false
 	}
-	if ((keys.Space || touchState.jump) && player.onGround) {
+	if ((keys.Space || touchState.jump) && player.onGround && !inWater) {
 		player.vel.y = Math.sqrt(2 * 9.8 * 1.5)
 		player.onGround = false
 	}
