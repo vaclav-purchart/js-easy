@@ -156,6 +156,19 @@
     font-size:13px; outline:none; width:280px; border-radius:2px;
   }
   #chat-input-wrap span { color:#888; font-size:11px; font-family:monospace; }
+
+  /* Chat: scrollable persistent history view */
+  #chat-log.history-mode {
+    max-height: 260px;
+    overflow-y: auto;
+    background: rgba(0,0,0,.5);
+    padding: 4px 2px;
+    border-radius: 3px;
+  }
+  .chat-msg.persistent {
+    animation: none !important;
+    opacity: 1 !important;
+  }
 </style>
 </head>
 <body>
@@ -1261,23 +1274,39 @@ const chatInputWrap = document.getElementById('chat-input-wrap')
 const chatInput = document.getElementById('chat-input')
 let chatOpen = false
 
+const chatHistory = []   // { nick, text, isSystem }
+
 function addChatMessage(nick, text, isSystem) {
+	chatHistory.push({ nick, text, isSystem })
+	if (chatHistory.length > 200) chatHistory.shift()
+
+	// If chat is open, just append to persistent view (no fade)
+	if (chatOpen) {
+		const msg = document.createElement('div')
+		msg.className = 'chat-msg' + (isSystem ? ' system' : '') + ' persistent'
+		if (isSystem) { msg.textContent = text }
+		else {
+			const ns = document.createElement('span'); ns.className = 'chat-nick'
+			ns.textContent = nick + ': '; msg.appendChild(ns)
+			msg.appendChild(document.createTextNode(text))
+		}
+		chatLog.appendChild(msg)
+		chatLog.scrollTop = chatLog.scrollHeight
+		return
+	}
+
+	// Otherwise show fading popup
 	const msg = document.createElement('div')
 	msg.className = 'chat-msg' + (isSystem ? ' system' : '')
-	if (isSystem) {
-		msg.textContent = text
-	} else {
-		const nickSpan = document.createElement('span')
-		nickSpan.className = 'chat-nick'
-		nickSpan.textContent = nick + ': '
-		msg.appendChild(nickSpan)
+	if (isSystem) { msg.textContent = text }
+	else {
+		const ns = document.createElement('span'); ns.className = 'chat-nick'
+		ns.textContent = nick + ': '; msg.appendChild(ns)
 		msg.appendChild(document.createTextNode(text))
 	}
 	chatLog.appendChild(msg)
-	// Keep only last 20 messages visible
-	while (chatLog.children.length > 20) chatLog.removeChild(chatLog.firstChild)
-	// Remove message after animation ends
-	msg.addEventListener('animationend', () => msg.remove())
+	while (chatLog.children.length > 8) chatLog.removeChild(chatLog.firstChild)
+	msg.addEventListener('animationend', () => { if (!chatOpen) msg.remove() })
 }
 
 function openChat() {
@@ -1285,8 +1314,25 @@ function openChat() {
 	chatOpen = true
 	chatInputWrap.style.display = 'flex'
 	chatInput.value = ''
+	// Re-render full history so all messages are visible (not faded)
+	chatLog.innerHTML = ''
+	for (const m of chatHistory) {
+		const el = document.createElement('div')
+		el.className = 'chat-msg' + (m.isSystem ? ' system' : '') + ' persistent'
+		if (m.isSystem) {
+			el.textContent = m.text
+		} else {
+			const ns = document.createElement('span')
+			ns.className = 'chat-nick'
+			ns.textContent = m.nick + ': '
+			el.appendChild(ns)
+			el.appendChild(document.createTextNode(m.text))
+		}
+		chatLog.appendChild(el)
+	}
+	chatLog.classList.add('history-mode')
+	chatLog.scrollTop = chatLog.scrollHeight
 	chatInput.focus()
-	// Cancel any pointer lock so typing works
 	document.exitPointerLock?.()
 }
 
@@ -1294,6 +1340,9 @@ function closeChat() {
 	chatOpen = false
 	chatInputWrap.style.display = 'none'
 	chatInput.blur()
+	// Clear persistent history view, keep only recent fading popups
+	chatLog.innerHTML = ''
+	chatLog.classList.remove('history-mode')
 }
 
 function sendChat() {
@@ -1304,8 +1353,7 @@ function sendChat() {
 		handleCommand('/reset')
 		return
 	}
-	// Show locally immediately
-	addChatMessage(myNickname, text, false)
+	// Don't echo locally — server will broadcast back including to sender
 	netSend({ type: 'chat', text })
 }
 
