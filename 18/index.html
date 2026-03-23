@@ -756,6 +756,38 @@ function rebuildChunk(cx, cz) {
 function generateChunk(cx, cz) { rebuildChunk(cx, cz) }
 
 /* ============================================================
+   ASYNC CHUNK QUEUE
+   Instead of generating all chunks synchronously in one frame
+   (which causes a big stall), we queue them and process a few
+   per frame prioritised by distance to the player.
+============================================================ */
+const chunkQueue = new Map()   // key → {cx, cz, dist}  pending generation
+const CHUNKS_PER_FRAME = 2     // how many chunks to build per frame (tune to taste)
+
+function queueChunk(cx, cz) {
+	const k = chunkKey(cx, cz)
+	if (chunks.has(k) || chunkQueue.has(k)) return
+	// Use a placeholder so the main loop doesn't keep re-queuing it
+	chunkQueue.set(k, { cx, cz })
+}
+
+function flushChunkQueue(playerCx, playerCz) {
+	if (chunkQueue.size === 0) return
+	// Sort pending chunks by manhattan distance to player so nearest load first
+	const sorted = [...chunkQueue.values()].sort((a, b) => {
+		const da = Math.abs(a.cx - playerCx) + Math.abs(a.cz - playerCz)
+		const db = Math.abs(b.cx - playerCx) + Math.abs(b.cz - playerCz)
+		return da - db
+	})
+	const toProcess = sorted.slice(0, CHUNKS_PER_FRAME)
+	for (const { cx, cz } of toProcess) {
+		const k = chunkKey(cx, cz)
+		chunkQueue.delete(k)
+		rebuildChunk(cx, cz)
+	}
+}
+
+/* ============================================================
    RAYCASTING  (uses pick meshes — invisible, exact geometry)
 ============================================================ */
 const raycaster = new THREE.Raycaster()
@@ -1251,6 +1283,13 @@ function handleServerMessage(msg) {
 		case 'player_join': addRemotePlayer(msg.player); updatePlayerList(); break
 		case 'player_leave': removeRemotePlayer(msg.id); updatePlayerList(); break
 		case 'move': moveRemotePlayer(msg.id, msg.x, msg.y, msg.z, msg.yaw, msg.pitch); break
+		case 'moves': {
+			// Batched position update from server tick loop
+			for (const p of msg.players) {
+				if (p.id !== myId) moveRemotePlayer(p.id, p.x, p.y, p.z, p.yaw, p.pitch)
+			}
+			break
+		}
 		case 'block_update': {
 			modified.set(msg.k, msg.v)
 			const [bx,, bz] = msg.k.split('_').map(Number)
@@ -1285,11 +1324,17 @@ function netSend(obj) {
 }
 
 let lastSentPos = {}
+let lastMoveSendTime = 0
 function netSendMove(x, y, z, yaw, pitch) {
 	if (!connected) return
-	if (Math.abs(x - lastSentPos.x) < 0.02 && Math.abs(y - lastSentPos.y) < 0.02 &&
-      Math.abs(z - lastSentPos.z) < 0.02 && Math.abs(yaw - lastSentPos.yaw) < 0.01 &&
-      Math.abs(pitch - lastSentPos.pitch) < 0.01) return
+	// Threshold: don't send tiny micro-movements
+	if (Math.abs(x - lastSentPos.x) < 0.05 && Math.abs(y - lastSentPos.y) < 0.05 &&
+      Math.abs(z - lastSentPos.z) < 0.05 && Math.abs(yaw - lastSentPos.yaw) < 0.02 &&
+      Math.abs(pitch - lastSentPos.pitch) < 0.02) return
+	// Rate limit: max 20 updates per second (server ticks at 20 Hz anyway)
+	const now = performance.now()
+	if (now - lastMoveSendTime < 50) return
+	lastMoveSendTime = now
 	lastSentPos = {x, y, z, yaw, pitch}
 	netSend({ type:'move', x, y, z, yaw, pitch })
 }
@@ -1518,8 +1563,27 @@ function animate() {
 	for (let x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; x++)
 		for (let z = -RENDER_DISTANCE; z <= RENDER_DISTANCE; z++) {
 			const k = chunkKey(cx + x, cz + z)
-			if (!chunks.has(k)) generateChunk(cx + x, cz + z)
+			if (!chunks.has(k)) queueChunk(cx + x, cz + z)
 		}
+	flushChunkQueue(cx, cz)
+
+	// Unload chunks too far away
+	for (const [k] of chunks) {
+		const [kcx, kcz] = k.split('_').map(Number)
+		if (Math.abs(kcx - cx) > RENDER_DISTANCE + 1 || Math.abs(kcz - cz) > RENDER_DISTANCE + 1) {
+			const old = chunks.get(k)
+			if (old) {
+				for (const m of old.meshes) { scene.remove(m); m.geometry.dispose() }
+				if (old.pick) {
+					scene.remove(old.pick); old.pick.geometry.dispose()
+					const pi = pickMeshes.indexOf(old.pick)
+					if (pi !== -1) pickMeshes.splice(pi, 1)
+				}
+			}
+			chunks.delete(k)
+			chunkQueue.delete(k)
+		}
+	}
 
 	// Debug HUD
 	let ti = 'target: none'
@@ -1530,7 +1594,7 @@ function animate() {
 	}
 	debug.textContent =
 `pos  ${player.pos.x.toFixed(1)} ${player.pos.y.toFixed(1)} ${player.pos.z.toFixed(1)}
-fps  ${fps}  chunks ${chunks.size}  modified ${modified.size}
+fps  ${fps}  chunks ${chunks.size}  queue ${chunkQueue.size}  modified ${modified.size}
 ${ti}
 slot: ${selectedSlot}  id: ${myId ?? 'offline'}  peers: ${remotePlayers.size}
 in water: ${Boolean(inWater).toString()}`
