@@ -1482,18 +1482,7 @@ function animate() {
 	fpsAccum += dt; frameCount++
 	if (fpsAccum >= 0.5) { fps = Math.round(frameCount / fpsAccum); fpsAccum = 0; frameCount = 0 }
 
-	// Movement
-	const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(yawObject.quaternion)
-	const right = new THREE.Vector3(1, 0, 0).applyQuaternion(yawObject.quaternion)
-	if (keys.KeyW) player.pos.addScaledVector(forward, player.speed * dt)
-	if (keys.KeyS) player.pos.addScaledVector(forward, -player.speed * dt)
-	if (keys.KeyD) player.pos.addScaledVector(right, player.speed * dt)
-	if (keys.KeyA) player.pos.addScaledVector(right, -player.speed * dt)
-	// Joystick input: joy.dy = forward/back (-1..1), joy.dx = strafe (-1..1)
-	if (joy.active) {
-		player.pos.addScaledVector(forward, -joy.dy * player.speed * dt)
-		player.pos.addScaledVector(right, joy.dx * player.speed * dt)
-	}
+	// (movement applied per-axis inside collision section below)
 
 	// Detect if camera/feet are submerged
 	const eyeBlock = getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y - 0.1), Math.floor(player.pos.z))
@@ -1515,95 +1504,82 @@ function animate() {
 
 	// Gravity / buoyancy
 	if (inWater) {
-		// Buoyancy counters gravity, apply drag
-		player.vel.y += (9.8 * 0.85) * dt   // net downward accel ~1.47 m/s² in water
-		player.vel.y *= Math.pow(0.92, dt * 60)  // viscous drag
-		// Swim up with Space/Jump
+		player.vel.y += (9.8 * 0.85) * dt
+		player.vel.y *= Math.pow(0.92, dt * 60)
 		if ((keys.Space || touchState.jump)) player.vel.y = Math.min(player.vel.y + 6 * dt, 3.5)
 	} else {
 		player.vel.y -= 9.8 * dt
 	}
-	player.pos.y += player.vel.y * dt
 
-	// ── Collision detection ───────────────────────────────────────────────
-	// player.pos.y = eye/head level (feet + player.height).
-	// We probe 4 XZ corners of a 0.6-wide body so the player doesn't clip
-	// into block edges when walking along walls.
+	// ── Split-axis collision ──────────────────────────────────────────────
+	// Move one axis at a time, then resolve that axis before moving the next.
+	// This prevents diagonal corner-clipping and jump-into-wall teleports.
+	//
+	// Player AABB (all relative to player.pos which is the EYE / top of head):
+	//   feet  = player.pos.y - player.height   (bottom)
+	//   head  = player.pos.y                   (top)
+	//   width = HALF*2 = 0.6  (±HALF on each XZ side)
+
 	function isSolid(b) { return b !== null && b !== BLOCK.WATER && b !== BLOCK.AIR }
+	const HALF = 0.3
 
-	const HALF = 0.3   // half-width of player AABB
-
-	const corners = [
-		[HALF, HALF], [HALF, -HALF], [-HALF, HALF], [-HALF, -HALF],
-	]
-
-	// ── Vertical: floor ────────────────────────────────────────────────────
-	const feetY  = player.pos.y - player.height
-	const feetBlock_y = Math.floor(feetY)
-	let ground = feetBlock_y - 1
-	outer:
-	for (let dy = 0; dy <= 4; dy++) {
-		const testY = feetBlock_y - dy
-		for (const [ox, oz] of corners) {
-			if (isSolid(getBlock(Math.floor(player.pos.x + ox), testY, Math.floor(player.pos.z + oz)))) {
-				ground = testY
-				break outer
-			}
-		}
+	// Returns true if the player AABB at position (px, py, pz) overlaps any
+	// solid block. py is the eye/top position.
+	function overlapsAt(px, py, pz) {
+		const x0 = Math.floor(px - HALF), x1 = Math.floor(px + HALF - 0.001)
+		const z0 = Math.floor(pz - HALF), z1 = Math.floor(pz + HALF - 0.001)
+		const y0 = Math.floor(py - player.height + 0.001)
+		const y1 = Math.floor(py - 0.001)
+		for (let bx = x0; bx <= x1; bx++)
+			for (let bz = z0; bz <= z1; bz++)
+				for (let by = y0; by <= y1; by++)
+					if (isSolid(getBlock(bx, by, bz))) return true
+		return false
 	}
-	const groundSurface = ground + 1
 
-	if (player.vel.y <= 0 && feetY <= groundSurface && feetY >= groundSurface - 0.6) {
-		player.pos.y = groundSurface + player.height
+	// Move Y first (gravity dominates feel), then X, then Z.
+	// After each axis move, if we're now overlapping push back and zero velocity.
+
+	// ── Y axis ────────────────────────────────────────────────────────────
+	player.pos.y += player.vel.y * dt
+	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z)) {
+		if (player.vel.y < 0) {
+			// Falling — find the exact floor surface by stepping back up
+			const feetTarget = Math.floor(player.pos.y - player.height) + 1
+			player.pos.y = feetTarget + player.height
+			player.onGround = true
+		} else {
+			// Rising — hit a ceiling, push down to just below it
+			player.pos.y = Math.ceil(player.pos.y) - 0.001
+		}
 		player.vel.y = 0
-		player.onGround = true
 	} else if (!inWater) {
 		player.onGround = false
 	}
 
-	// ── Vertical: ceiling ──────────────────────────────────────────────────
-	const headBlock_y = Math.floor(player.pos.y)
-	let hitCeiling = false
-	for (const [ox, oz] of corners) {
-		if (isSolid(getBlock(Math.floor(player.pos.x + ox), headBlock_y, Math.floor(player.pos.z + oz)))) {
-			hitCeiling = true; break
-		}
-	}
-	if (hitCeiling && player.vel.y > 0) {
-		player.pos.y = headBlock_y - player.height
-		player.vel.y = 0
+	// ── X axis ────────────────────────────────────────────────────────────
+	const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(yawObject.quaternion)
+	const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(yawObject.quaternion)
+
+	let moveX = 0, moveZ = 0
+	if (keys.KeyW) { moveX += forward.x * player.speed * dt; moveZ += forward.z * player.speed * dt }
+	if (keys.KeyS) { moveX -= forward.x * player.speed * dt; moveZ -= forward.z * player.speed * dt }
+	if (keys.KeyD) { moveX += right.x * player.speed * dt;   moveZ += right.z * player.speed * dt }
+	if (keys.KeyA) { moveX -= right.x * player.speed * dt;   moveZ -= right.z * player.speed * dt }
+	if (joy.active) {
+		moveX += (-joy.dy * forward.x + joy.dx * right.x) * player.speed * dt
+		moveZ += (-joy.dy * forward.z + joy.dx * right.z) * player.speed * dt
 	}
 
-	// ── Horizontal: wall sliding ───────────────────────────────────────────
-	// Check both body blocks (feet and chest) so a 2-block-tall wall blocks fully.
-	const bodyYs = [
-		Math.floor(player.pos.y - player.height + 0.1),   // feet block
-		Math.floor(player.pos.y - player.height + 1.0),   // chest block
-	]
-
-	// X axis
-	for (const [ox, oz] of corners) {
-		const bx = Math.floor(player.pos.x + ox)
-		const bz = Math.floor(player.pos.z + oz)
-		for (const by of bodyYs) {
-			if (isSolid(getBlock(bx, by, bz))) {
-				player.pos.x = ox > 0 ? bx - HALF : bx + 1 + HALF
-				player.vel.x = 0
-				break
-			}
-		}
+	player.pos.x += moveX
+	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z)) {
+		player.pos.x -= moveX   // revert only X
 	}
-	// Z axis
-	for (const [ox, oz] of corners) {
-		const bx = Math.floor(player.pos.x + ox)
-		const bz = Math.floor(player.pos.z + oz)
-		for (const by of bodyYs) {
-			if (isSolid(getBlock(bx, by, bz))) {
-				player.pos.z = oz > 0 ? bz - HALF : bz + 1 + HALF
-				player.vel.z = 0
-				break
-			}
-		}
+
+	// ── Z axis ────────────────────────────────────────────────────────────
+	player.pos.z += moveZ
+	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z)) {
+		player.pos.z -= moveZ   // revert only Z
 	}
 
 	if ((keys.Space || touchState.jump) && player.onGround && !inWater) {
@@ -1611,6 +1587,13 @@ function animate() {
 		player.onGround = false
 	}
 	if (keys.Escape) document.exitPointerLock?.()
+	if (keys.KeyN) {
+		keys.KeyN = false
+		player.pos.set(0, 20, 0)
+		player.vel.set(0, 0, 0)
+		player.onGround = false
+		showToast('Respawned!')
+	}
 
 	yawObject.position.copy(player.pos)
 
