@@ -757,32 +757,28 @@ function generateChunk(cx, cz) { rebuildChunk(cx, cz) }
 
 /* ============================================================
    ASYNC CHUNK QUEUE
-   Instead of generating all chunks synchronously in one frame
-   (which causes a big stall), we queue them and process a few
-   per frame prioritised by distance to the player.
+   Instead of generating all missing chunks synchronously in one
+   frame (causes a stall), we queue them and process a fixed
+   number per frame, nearest-first.
 ============================================================ */
-const chunkQueue = new Map()   // key → {cx, cz, dist}  pending generation
-const CHUNKS_PER_FRAME = 2     // how many chunks to build per frame (tune to taste)
+const chunkQueue = new Map()   // key → {cx, cz}  pending generation
+const CHUNKS_PER_FRAME = 2
 
 function queueChunk(cx, cz) {
 	const k = chunkKey(cx, cz)
 	if (chunks.has(k) || chunkQueue.has(k)) return
-	// Use a placeholder so the main loop doesn't keep re-queuing it
 	chunkQueue.set(k, { cx, cz })
 }
 
 function flushChunkQueue(playerCx, playerCz) {
 	if (chunkQueue.size === 0) return
-	// Sort pending chunks by manhattan distance to player so nearest load first
 	const sorted = [...chunkQueue.values()].sort((a, b) => {
 		const da = Math.abs(a.cx - playerCx) + Math.abs(a.cz - playerCz)
 		const db = Math.abs(b.cx - playerCx) + Math.abs(b.cz - playerCz)
 		return da - db
 	})
-	const toProcess = sorted.slice(0, CHUNKS_PER_FRAME)
-	for (const { cx, cz } of toProcess) {
-		const k = chunkKey(cx, cz)
-		chunkQueue.delete(k)
+	for (const { cx, cz } of sorted.slice(0, CHUNKS_PER_FRAME)) {
+		chunkQueue.delete(chunkKey(cx, cz))
 		rebuildChunk(cx, cz)
 	}
 }
@@ -884,7 +880,7 @@ const remotePlayers = new Map()
 function addRemotePlayer(data) {
 	if (remotePlayers.has(data.id)) return
 	const model = makePlayerModel(data.nickname)
-	model.position.set(data.x, data.y - 1.7 + 1, data.z)
+	model.position.set(data.x, data.y - player.height, data.z)
 	scene.add(model)
 	remotePlayers.set(data.id, { model, data: { ...data } })
 }
@@ -897,7 +893,7 @@ function removeRemotePlayer(id) {
 function moveRemotePlayer(id, x, y, z, yaw, pitch) {
 	const rp = remotePlayers.get(id)
 	if (!rp) return
-	rp.data.tx = x; rp.data.ty = y - 1.7 + 1; rp.data.tz = z
+	rp.data.tx = x; rp.data.ty = y - player.height; rp.data.tz = z
 	rp.data.tyaw = yaw; rp.data.tpitch = pitch
 }
 function tickRemotePlayers(dt) {
@@ -924,7 +920,7 @@ const player = {
 }
 
 const yawObject = new THREE.Object3D()
-camera.position.y = 0.85
+camera.position.y = 0   // player.pos.y is already eye level (feet + height)
 yawObject.add(camera)
 scene.add(yawObject)
 
@@ -1331,7 +1327,7 @@ function netSendMove(x, y, z, yaw, pitch) {
 	if (Math.abs(x - lastSentPos.x) < 0.05 && Math.abs(y - lastSentPos.y) < 0.05 &&
       Math.abs(z - lastSentPos.z) < 0.05 && Math.abs(yaw - lastSentPos.yaw) < 0.02 &&
       Math.abs(pitch - lastSentPos.pitch) < 0.02) return
-	// Rate limit: max 20 updates per second (server ticks at 20 Hz anyway)
+	// Rate limit: max 20 updates/s (server ticks at 20 Hz anyway)
 	const now = performance.now()
 	if (now - lastMoveSendTime < 50) return
 	lastMoveSendTime = now
@@ -1500,7 +1496,7 @@ function animate() {
 	}
 
 	// Detect if camera/feet are submerged
-	const eyeBlock = getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y + camera.position.y - 0.1), Math.floor(player.pos.z))
+	const eyeBlock = getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y - 0.1), Math.floor(player.pos.z))
 	const feetBlock = getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y - player.height + 0.1), Math.floor(player.pos.z))
 	const underwater = eyeBlock === BLOCK.WATER
 	const inWater = feetBlock === BLOCK.WATER || underwater
@@ -1529,18 +1525,87 @@ function animate() {
 	}
 	player.pos.y += player.vel.y * dt
 
-	const px = Math.floor(player.pos.x), pz = Math.floor(player.pos.z)
-	let ground = terrainHeight(px, pz)
-	for (let y = ground + 1;;y++) { const b = getBlock(px, y, pz); if (b === null || b === BLOCK.WATER) break; ground = y }
-	while (ground > BEDROCK_Y && getBlock(px, ground, pz) === null) ground--
+	// ── Collision detection ───────────────────────────────────────────────
+	// player.pos.y = eye/head level (feet + player.height).
+	// We probe 4 XZ corners of a 0.6-wide body so the player doesn't clip
+	// into block edges when walking along walls.
+	function isSolid(b) { return b !== null && b !== BLOCK.WATER && b !== BLOCK.AIR }
 
-	if (player.pos.y - player.height <= ground) {
-		player.pos.y = ground + player.height
+	const HALF = 0.3   // half-width of player AABB
+
+	const corners = [
+		[HALF, HALF], [HALF, -HALF], [-HALF, HALF], [-HALF, -HALF],
+	]
+
+	// ── Vertical: floor ────────────────────────────────────────────────────
+	const feetY  = player.pos.y - player.height
+	const feetBlock_y = Math.floor(feetY)
+	let ground = feetBlock_y - 1
+	outer:
+	for (let dy = 0; dy <= 4; dy++) {
+		const testY = feetBlock_y - dy
+		for (const [ox, oz] of corners) {
+			if (isSolid(getBlock(Math.floor(player.pos.x + ox), testY, Math.floor(player.pos.z + oz)))) {
+				ground = testY
+				break outer
+			}
+		}
+	}
+	const groundSurface = ground + 1
+
+	if (player.vel.y <= 0 && feetY <= groundSurface && feetY >= groundSurface - 0.6) {
+		player.pos.y = groundSurface + player.height
 		player.vel.y = 0
 		player.onGround = true
 	} else if (!inWater) {
 		player.onGround = false
 	}
+
+	// ── Vertical: ceiling ──────────────────────────────────────────────────
+	const headBlock_y = Math.floor(player.pos.y)
+	let hitCeiling = false
+	for (const [ox, oz] of corners) {
+		if (isSolid(getBlock(Math.floor(player.pos.x + ox), headBlock_y, Math.floor(player.pos.z + oz)))) {
+			hitCeiling = true; break
+		}
+	}
+	if (hitCeiling && player.vel.y > 0) {
+		player.pos.y = headBlock_y - player.height
+		player.vel.y = 0
+	}
+
+	// ── Horizontal: wall sliding ───────────────────────────────────────────
+	// Check both body blocks (feet and chest) so a 2-block-tall wall blocks fully.
+	const bodyYs = [
+		Math.floor(player.pos.y - player.height + 0.1),   // feet block
+		Math.floor(player.pos.y - player.height + 1.0),   // chest block
+	]
+
+	// X axis
+	for (const [ox, oz] of corners) {
+		const bx = Math.floor(player.pos.x + ox)
+		const bz = Math.floor(player.pos.z + oz)
+		for (const by of bodyYs) {
+			if (isSolid(getBlock(bx, by, bz))) {
+				player.pos.x = ox > 0 ? bx - HALF : bx + 1 + HALF
+				player.vel.x = 0
+				break
+			}
+		}
+	}
+	// Z axis
+	for (const [ox, oz] of corners) {
+		const bx = Math.floor(player.pos.x + ox)
+		const bz = Math.floor(player.pos.z + oz)
+		for (const by of bodyYs) {
+			if (isSolid(getBlock(bx, by, bz))) {
+				player.pos.z = oz > 0 ? bz - HALF : bz + 1 + HALF
+				player.vel.z = 0
+				break
+			}
+		}
+	}
+
 	if ((keys.Space || touchState.jump) && player.onGround && !inWater) {
 		player.vel.y = Math.sqrt(2 * 9.8 * 1.5)
 		player.onGround = false
@@ -1567,7 +1632,7 @@ function animate() {
 		}
 	flushChunkQueue(cx, cz)
 
-	// Unload chunks too far away
+	// Unload chunks that are too far away
 	for (const [k] of chunks) {
 		const [kcx, kcz] = k.split('_').map(Number)
 		if (Math.abs(kcx - cx) > RENDER_DISTANCE + 1 || Math.abs(kcz - cz) > RENDER_DISTANCE + 1) {
