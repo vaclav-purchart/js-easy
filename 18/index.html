@@ -948,7 +948,7 @@ let currentTarget = null   // cached raycast result
 addEventListener('mousedown', (e) => {
 	if (document.pointerLockElement !== renderer.domElement) return
 	if (e.button === 0) mining = true
-	if (e.button === 2) placeBlock()
+	if (e.button === 2) { placeBlock(); triggerSwing() }
 })
 addEventListener('mouseup', () => {
 	mining = false; miningTime = 0
@@ -1117,19 +1117,191 @@ function placeBlock() {
 		const ph = terrainHeight(px, pz)
 		if (py <= ph || py === BEDROCK_Y || (py > ph && py <= SEA_LEVEL)) return
 	}
-	const btype = HOTBAR_BLOCKS[selectedSlot] ?? BLOCK.DIRT
+	const btype = equippedBlockId() ?? BLOCK.DIRT
 	modified.set(pk, btype)
 	rebuildChunk(Math.floor(px / CHUNK_SIZE), Math.floor(pz / CHUNK_SIZE))
 	netSendBlockUpdate(pk, btype)
 }
 
 /* ============================================================
-   HOTBAR
+   TOOLS  — PNG-based voxel items shown in hand
+============================================================ */
+
+// ── Tool definitions ─────────────────────────────────────────────────────
+// Each entry: { name, url }  OR  { name, draw(ctx,W,H) } for canvas-drawn tools.
+// Non-transparent pixels in the 16×16 bitmap become flat voxel slabs in 3D.
+const TOOL_DEFS = [
+	{
+		name: 'Sword',
+		url: 'https://purchart.cloud/images?file=2026-03-25--06-32-44---luky13---dia-mec.png',
+	},
+	{
+		name: 'Pickaxe',
+		url: 'https://purchart.cloud/images?file=2026-03-25--19-33-18---luky15---kamenny-krumpac.png',
+	},
+	// To add more tools, append here:
+	// { name: 'Axe', url: '...' },
+	// { name: 'Shovel', draw(ctx,W,H){ ... } },
+]
+
+// ── Build a 3D voxel model from a 16×16 RGBA pixel array ─────────────────
+// Each opaque pixel → one flat box (1×1×0.25 units).
+// Model origin is centred horizontally, bottom-aligned vertically.
+function buildToolModel(pixels, W, H) {
+	const root = new THREE.Group()
+	const VOXEL_SIZE = 1 / 16   // each pixel = 1/16 world unit → tool is 1 unit tall
+
+	for (let py = 0; py < H; py++) {
+		for (let px = 0; px < W; px++) {
+			const i = (py * W + px) * 4
+			const a = pixels[i + 3]
+			if (a < 16) continue   // skip transparent / near-transparent
+
+			const r = pixels[i] / 255
+			const g = pixels[i + 1] / 255
+			const b = pixels[i + 2] / 255
+
+			const geo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE * 0.5)
+			const mat = new THREE.MeshLambertMaterial({ color: new THREE.Color(r, g, b) })
+			const mesh = new THREE.Mesh(geo, mat)
+
+			// Place so (0,0) is top-left; centre the whole sprite
+			mesh.position.set(
+				(px - W / 2 + 0.5) * VOXEL_SIZE,
+				(-py + H / 2 - 0.5) * VOXEL_SIZE,
+				0
+			)
+			root.add(mesh)
+		}
+	}
+	return root
+}
+
+// ── Load one tool def → resolves with { name, model, iconDataURL } ────────
+function loadTool(def) {
+	return new Promise((resolve) => {
+		const W = 16, H = 16
+		const offscreen = document.createElement('canvas')
+		offscreen.width = W; offscreen.height = H
+		const ctx = offscreen.getContext('2d')
+
+		function finish() {
+			const pixels = ctx.getImageData(0, 0, W, H).data
+			const model = buildToolModel(pixels, W, H)
+			const iconDataURL = offscreen.toDataURL()
+			resolve({ name: def.name, model, iconDataURL })
+		}
+
+		if (def.draw) {
+			// Canvas-drawn tool
+			def.draw(ctx, W, H)
+			finish()
+		} else {
+			// PNG from URL
+			const img = new Image()
+			img.crossOrigin = 'anonymous'
+			img.onload = () => {
+				ctx.clearRect(0, 0, W, H)
+				ctx.drawImage(img, 0, 0, W, H)
+				finish()
+			}
+			img.onerror = () => {
+				// Fallback: draw a coloured rectangle so the slot isn't empty
+				ctx.fillStyle = '#f0f'
+				ctx.fillRect(0, 0, W, H)
+				finish()
+			}
+			img.src = def.url
+		}
+	})
+}
+
+// ── Hand / viewport model ─────────────────────────────────────────────────
+// The hand pivot is a child of the camera so it always stays in view.
+// We animate it by rotating the pivot on mousedown/mining.
+
+const handPivot = new THREE.Group()
+handPivot.position.set(0.38, -0.38, -0.55)
+camera.add(handPivot)   // child of camera → always stays in view
+
+// Inner group carries the fixed base orientation of the tool.
+// handPivot is used only for swing/bob animation so those don't stomp the base rotation.
+const handOrient = new THREE.Group()
+handOrient.rotation.y = Math.PI / 2    // face toward player (along Z)
+handOrient.rotation.z = -Math.PI / 2   // tilt horizontal, pointing in movement direction
+handPivot.add(handOrient)
+
+// Swing state
+let swingTime = 0
+let swingActive = false
+
+function tickHandModel(dt) {
+	const tool = equippedTool()
+	// Hide/show pivot depending on whether a tool is equipped
+	handPivot.visible = (tool !== null)
+	if (!tool) return
+
+	// Swap model if slot changed
+	if (handPivot.userData.activeModel !== tool.model) {
+		if (handPivot.userData.activeModel) handOrient.remove(handPivot.userData.activeModel)
+		handOrient.add(tool.model)
+		handPivot.userData.activeModel = tool.model
+	}
+
+	// Swing animation: forward-and-back rotation around X when mining
+	if (mining || swingActive) {
+		swingTime += dt * 8   // speed
+		if (swingTime >= Math.PI) {
+			swingTime = 0
+			swingActive = false
+		}
+	} else {
+		swingTime = 0
+	}
+	// Rotate so the tool swings forward (into the screen) and back
+	handPivot.rotation.x = Math.sin(swingTime) * (Math.PI / 3)
+	// Slight idle bob
+	handPivot.rotation.z = Math.sin(Date.now() * 0.001) * 0.03
+}
+
+// Trigger a single swing on right-click / place even when not mining
+function triggerSwing() { swingActive = true; swingTime = 0 }
+
+// ── Loaded tools registry ─────────────────────────────────────────────────
+const loadedTools = []   // filled async; index matches TOOL_DEFS order
+
+/* ============================================================
+   HOTBAR  — unified blocks + tools
 ============================================================ */
 const hotbar = document.getElementById('hotbar')
 let selectedSlot = 0
-const HOTBAR_BLOCKS = [BLOCK.DIRT, BLOCK.STONE, BLOCK.WOOD, BLOCK.SAND, BLOCK.GLASS, BLOCK.LEAVES]
-const HOTBAR_NAMES = ['Dirt', 'Stone', 'Wood', 'Sand', 'Glass', 'Leaves']
+
+// Hotbar items: first blocks, then tools (appended once loaded)
+// Each entry: { type:'block', blockId, name } | { type:'tool', toolIndex, name }
+const HOTBAR_ITEMS = [
+	{ type: 'block', blockId: BLOCK.DIRT,   name: 'Dirt'   },
+	{ type: 'block', blockId: BLOCK.STONE,  name: 'Stone'  },
+	{ type: 'block', blockId: BLOCK.WOOD,   name: 'Wood'   },
+	{ type: 'block', blockId: BLOCK.SAND,   name: 'Sand'   },
+	{ type: 'block', blockId: BLOCK.GLASS,  name: 'Glass'  },
+	{ type: 'block', blockId: BLOCK.LEAVES, name: 'Leaves' },
+	// Tools appended dynamically after loading (slots 7, 8, 9, …)
+]
+
+// These stay for backward compat with placeBlock
+const HOTBAR_BLOCKS = HOTBAR_ITEMS.map(it => it.blockId)
+
+function equippedTool() {
+	const item = HOTBAR_ITEMS[selectedSlot]
+	if (!item || item.type !== 'tool') return null
+	return loadedTools[item.toolIndex] ?? null
+}
+
+function equippedBlockId() {
+	const item = HOTBAR_ITEMS[selectedSlot]
+	if (!item || item.type !== 'block') return null
+	return item.blockId
+}
 
 // Draw mini block icons from atlas
 function makeBlockIcon(blockId) {
@@ -1137,15 +1309,12 @@ function makeBlockIcon(blockId) {
 	c.width = c.height = 24
 	const ctx2 = c.getContext('2d')
 	ctx2.imageSmoothingEnabled = false
-	// top face in top-left, side face filling rest (isometric-ish)
 	const [su0, sv0, su1, sv1] = tileUV(blockId, 0)
 	const [tu0, tv0, tu1, tv1] = tileUV(blockId, 1)
 	const aw = atlasCanvas.width, ah = atlasCanvas.height
-	// side
 	ctx2.drawImage(atlasCanvas,
 		su0 * aw, (1 - sv1) * ah, (su1 - su0) * aw, (sv1 - sv0) * ah,
 		0, 8, 24, 16)
-	// top
 	ctx2.drawImage(atlasCanvas,
 		tu0 * aw, (1 - tv1) * ah, (tu1 - tu0) * aw, (tv1 - tv0) * ah,
 		0, 0, 24, 10)
@@ -1155,24 +1324,62 @@ function makeBlockIcon(blockId) {
 	return img
 }
 
-for (let i = 0; i < HOTBAR_BLOCKS.length; i++) {
-	const d = document.createElement('div')
-	d.className = 'slot'
-	d.appendChild(makeBlockIcon(HOTBAR_BLOCKS[i]))
-	const lbl = document.createElement('span')
-	lbl.textContent = HOTBAR_NAMES[i]
-	d.appendChild(lbl)
-	hotbar.appendChild(d)
+function rebuildHotbarDOM() {
+	hotbar.innerHTML = ''
+	for (let i = 0; i < HOTBAR_ITEMS.length; i++) {
+		const item = HOTBAR_ITEMS[i]
+		const d = document.createElement('div')
+		d.className = 'slot'
+		d.dataset.slot = i
+		d.addEventListener('touchstart', (e) => {
+			e.preventDefault()   // prevent the delayed click and avoid scroll
+			selectedSlot = i; updateHotbar()
+		}, { passive: false })
+		d.addEventListener('click', () => { selectedSlot = i; updateHotbar() })
+
+		if (item.type === 'block') {
+			d.appendChild(makeBlockIcon(item.blockId))
+		} else {
+			// Tool icon: show the loaded PNG
+			const tool = loadedTools[item.toolIndex]
+			const img = document.createElement('img')
+			img.className = 'icon'
+			img.style.imageRendering = 'pixelated'
+			if (tool) img.src = tool.iconDataURL
+			d.appendChild(img)
+		}
+
+		const lbl = document.createElement('span')
+		lbl.textContent = item.name
+		d.appendChild(lbl)
+		hotbar.appendChild(d)
+	}
+	updateHotbar()
 }
+
 function updateHotbar() {
 	;[...hotbar.children].forEach((s, i) => s.classList.toggle('active', i === selectedSlot))
 }
+
+// Initial hotbar with blocks
+rebuildHotbarDOM()
+
+// Load all tools asynchronously, then append to hotbar
+;(async () => {
+	for (let i = 0; i < TOOL_DEFS.length; i++) {
+		const tool = await loadTool(TOOL_DEFS[i])
+		loadedTools.push(tool)
+		HOTBAR_ITEMS.push({ type: 'tool', toolIndex: i, name: tool.name })
+		rebuildHotbarDOM()
+	}
+})()
+
 addEventListener('keydown', (e) => {
-	if (e.key >= '1' && e.key <= '6') { selectedSlot = +e.key - 1; updateHotbar() }
-	console.log(e)
-	if (e.code === 'KeyM') document.getElementById('debugImg').style.display = document.getElementById('debugImg').style.display === 'none' ? 'block' : 'none'
+	if (e.key >= '1' && e.key <= '9') { selectedSlot = +e.key - 1; updateHotbar() }
+	if (e.code === 'KeyM') document.getElementById('debugImg').style.display =
+		document.getElementById('debugImg').style.display === 'none' ? 'block' : 'none'
 })
-updateHotbar()
+
 
 /* ============================================================
    TOAST
@@ -1601,6 +1808,8 @@ function animate() {
 	currentTarget = raycastBlocks()
 
 	if (mining) mineBlock(dt)
+
+	tickHandModel(dt)
 
 	netSendMove(player.pos.x, player.pos.y, player.pos.z, yawObject.rotation.y, pitch)
 	tickRemotePlayers(dt)
