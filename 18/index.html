@@ -1711,9 +1711,21 @@ function animate() {
 
 	// Gravity / buoyancy
 	if (inWater) {
-		player.vel.y += (9.8 * 0.85) * dt
-		player.vel.y *= Math.pow(0.92, dt * 60)
-		if ((keys.Space || touchState.jump)) player.vel.y = Math.min(player.vel.y + 6 * dt, 3.5)
+		// In water: replace gravity with drag + direct swim controls.
+		// Horizontal movement speed is reduced underwater.
+		// Space = swim up, Shift = swim down (sink), neither = slowly float up to surface.
+		const SWIM_SPEED = 4.0
+		const SINK_SPEED = 3.0
+		const FLOAT_SPEED = 1.5   // gentle upward drift when neither key pressed
+
+		if (keys.Space || touchState.jump) {
+			player.vel.y = SWIM_SPEED    // ascend
+		} else if (keys.ShiftLeft || keys.ShiftRight || touchState.mine) {
+			player.vel.y = -SINK_SPEED   // sink / submerge
+		} else {
+			// Drift gently upward so player naturally surfaces, but slowly
+			player.vel.y += (FLOAT_SPEED - player.vel.y) * Math.min(dt * 3, 1)
+		}
 	} else {
 		player.vel.y -= 9.8 * dt
 	}
@@ -1754,7 +1766,7 @@ function animate() {
 			// Falling — find the exact floor surface by stepping back up
 			const feetTarget = Math.floor(player.pos.y - player.height) + 1
 			player.pos.y = feetTarget + player.height
-			player.onGround = true
+			if (!inWater) player.onGround = true   // only land on ground when not in water
 		} else {
 			// Rising — hit a ceiling, push down to just below it
 			player.pos.y = Math.ceil(player.pos.y) - 0.001
@@ -1764,18 +1776,26 @@ function animate() {
 		player.onGround = false
 	}
 
+	// When swimming up and leaving water, give a small exit boost so the
+	// player can actually step onto shore (water surface → land block).
+	if (!inWater && player.vel.y > 0 && player.onGround) {
+		player.vel.y = Math.sqrt(2 * 9.8 * 0.6)   // small hop to clear the shore edge
+		player.onGround = false
+	}
+
 	// ── X axis ────────────────────────────────────────────────────────────
 	const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(yawObject.quaternion)
 	const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(yawObject.quaternion)
 
 	let moveX = 0, moveZ = 0
-	if (keys.KeyW) { moveX += forward.x * player.speed * dt; moveZ += forward.z * player.speed * dt }
-	if (keys.KeyS) { moveX -= forward.x * player.speed * dt; moveZ -= forward.z * player.speed * dt }
-	if (keys.KeyD) { moveX += right.x * player.speed * dt;   moveZ += right.z * player.speed * dt }
-	if (keys.KeyA) { moveX -= right.x * player.speed * dt;   moveZ -= right.z * player.speed * dt }
+	const horizSpeed = inWater ? player.speed * 0.5 : player.speed
+	if (keys.KeyW) { moveX += forward.x * horizSpeed * dt; moveZ += forward.z * horizSpeed * dt }
+	if (keys.KeyS) { moveX -= forward.x * horizSpeed * dt; moveZ -= forward.z * horizSpeed * dt }
+	if (keys.KeyD) { moveX += right.x * horizSpeed * dt;   moveZ += right.z * horizSpeed * dt }
+	if (keys.KeyA) { moveX -= right.x * horizSpeed * dt;   moveZ -= right.z * horizSpeed * dt }
 	if (joy.active) {
-		moveX += (-joy.dy * forward.x + joy.dx * right.x) * player.speed * dt
-		moveZ += (-joy.dy * forward.z + joy.dx * right.z) * player.speed * dt
+		moveX += (-joy.dy * forward.x + joy.dx * right.x) * horizSpeed * dt
+		moveZ += (-joy.dy * forward.z + joy.dx * right.z) * horizSpeed * dt
 	}
 
 	player.pos.x += moveX
