@@ -540,7 +540,6 @@ const matGlass = new THREE.MeshLambertMaterial({
 	depthWrite: false,
 	side: THREE.DoubleSide,
 })
-
 /* ============================================================
    NOISE / TERRAIN
 ============================================================ */
@@ -565,6 +564,97 @@ function terrainHeight(x, z) {
 	if (smoothNoise(x, z, 60, 200) < 0.28) h -= 3
 	if (Math.abs(smoothNoise(x, z, 200, 500) - 0.5) < 0.03) h = SEA_LEVEL - 2
 	return Math.max(h, BEDROCK_Y + 1)
+}
+
+/* ============================================================
+   PLANTS  — cross-quad vegetation (flowers, grass, etc.)
+   Each plant is defined by a 16×16 PNG URL or a draw function.
+   They render as two crossed quads (Minecraft-style) using a
+   separate atlas + alpha-tested double-sided material, so they
+   look correct from every direction.
+============================================================ */
+
+// ── Plant definitions ────────────────────────────────────────────────────
+// Each entry: { name, url } OR { name, draw(ctx,W,H) }
+// Add more plants here — index matches the plant atlas row.
+const PLANT_DEFS = [
+	{
+		name: 'Flower',
+		url: 'https://purchart.cloud/images?file=2026-03-29--20-01-34---vasek---flower.png',
+	},
+	// { name: 'Tall Grass', draw(ctx, W, H) { ... } },
+]
+
+// ── Plant atlas (one row per plant def, single column) ────────────────────
+const PLANT_TILE = 16
+const plantAtlasCanvas = document.createElement('canvas')
+plantAtlasCanvas.width  = PLANT_TILE
+plantAtlasCanvas.height = PLANT_TILE * PLANT_DEFS.length
+const plantAtlasCtx = plantAtlasCanvas.getContext('2d')
+plantAtlasCtx.imageSmoothingEnabled = false
+
+const plantTexture = new THREE.CanvasTexture(plantAtlasCanvas)
+plantTexture.magFilter = THREE.NearestFilter
+plantTexture.minFilter = THREE.NearestFilter
+
+const matPlant = new THREE.MeshLambertMaterial({
+	map: plantTexture,
+	transparent: true,
+	alphaTest: 0.1,
+	side: THREE.DoubleSide,
+	depthWrite: true,
+})
+
+// UV helper for plant atlas — returns [u0,v0,u1,v1] for plant row
+function plantUV(row) {
+	const totalH = PLANT_TILE * PLANT_DEFS.length
+	const v1 = 1 - row * PLANT_TILE / totalH
+	const v0 = 1 - (row + 1) * PLANT_TILE / totalH
+	return [0, v0, 1, v1]
+}
+
+// Load each plant texture into the plant atlas
+;(function loadPlantTextures() {
+	PLANT_DEFS.forEach((def, row) => {
+		const ty = row * PLANT_TILE
+		if (def.draw) {
+			def.draw(plantAtlasCtx, 0, ty, PLANT_TILE)
+			plantTexture.needsUpdate = true
+		} else if (def.url) {
+			const img = new Image()
+			img.crossOrigin = 'anonymous'
+			img.onload = () => {
+				plantAtlasCtx.clearRect(0, ty, PLANT_TILE, PLANT_TILE)
+				plantAtlasCtx.drawImage(img, 0, ty, PLANT_TILE, PLANT_TILE)
+				plantTexture.needsUpdate = true
+				// Rebuild loaded chunks so new texture is visible
+				for (const [k] of chunks) {
+					const [cx2, cz2] = k.split('_').map(Number)
+					rebuildChunk(cx2, cz2)
+				}
+			}
+			img.onerror = () => console.warn('[plants] Failed to load:', def.url)
+			img.src = def.url
+		}
+	})
+}())
+
+// ── Deterministic plant spawn ─────────────────────────────────────────────
+// Returns plant def index (≥0) if a plant should grow at (wx, wz), else -1.
+// Spawn rate: ~1 per PLANT_RARITY surface columns, only above sea level.
+const PLANT_RARITY = 500
+
+function plantAt(wx, wz) {
+	// Respect explicitly removed plants (mined by player)
+	if (modified.has(`plant_${wx}_${wz}`)) return -1
+	const h = Math.abs(Math.sin(wx * 127.1 + wz * 311.7 + SEED * 0.001) * 43758.5453) % 1
+	if (h > 1 / PLANT_RARITY) return -1
+	const th = terrainHeight(wx, wz)
+	if (th <= SEA_LEVEL) return -1   // no plants underwater or at sea level
+	const plantIndex = Math.floor(
+		(Math.abs(Math.sin(wx * 374.1 + wz * 591.3)) % 1) * PLANT_DEFS.length
+	)
+	return plantIndex
 }
 
 /* ============================================================
@@ -625,7 +715,7 @@ function blockBucket(t) {
 }
 
 function buildChunkGeometry(cx, cz) {
-	const N = 4
+	const N = 5   // 0=opaque 1=water 2=leaves 3=glass 4=plants
 	const pos = Array.from({length:N}, () => [])
 	const uv = Array.from({length:N}, () => [])
 	const norm = Array.from({length:N}, () => [])
@@ -669,11 +759,85 @@ function buildChunkGeometry(cx, cz) {
 						norm[bucket].push(nx, ny, nz)
 					}
 					uv[bucket].push(u0, v1, u0, v0, u1, v0, u1, v1)
-					// uv[bucket].push(u0, v0, u0, v1, u1, v1, u1, v0)
 					idx[bucket].push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
 					vCount[bucket] += 4
 
 					pickFaces.push({ x: wx, y, z: wz, type: t, nx, ny, nz })
+				}
+			}
+
+			// ── Plant cross quads ──────────────────────────────────────────
+			const plantIdx = plantAt(wx, wz)
+			if (plantIdx >= 0) {
+				const surfaceY = h
+				// Don't render if the surface block was mined away
+				if (getBlock(wx, surfaceY, wz) !== null && getBlock(wx, surfaceY + 1, wz) === null) {
+					const B = 4   // plant bucket
+					const [pu0, pv0, pu1, pv1] = plantUV(plantIdx)
+
+					// Two diagonal quads forming a cross.
+					// Each quad is emitted TWICE with opposite normals so both
+					// faces are independently lit (fixes the dark-side problem).
+					const quads = [
+						// Quad A: (0,0)→(1,1) diagonal in XZ
+						{
+							verts: [
+								[wx + 0, surfaceY + 1, wz + 0],
+								[wx + 0, surfaceY + 2, wz + 0],
+								[wx + 1, surfaceY + 2, wz + 1],
+								[wx + 1, surfaceY + 1, wz + 1],
+							],
+							// Perpendicular to the A diagonal in XZ: normal points along (1,0,-1) / (−1,0,1)
+							nx:  0.707, nz: -0.707,
+						},
+						// Quad B: (1,0)→(0,1) diagonal in XZ
+						{
+							verts: [
+								[wx + 1, surfaceY + 1, wz + 0],
+								[wx + 1, surfaceY + 2, wz + 0],
+								[wx + 0, surfaceY + 2, wz + 1],
+								[wx + 0, surfaceY + 1, wz + 1],
+							],
+							nx: 0.707, nz: 0.707,
+						},
+					]
+
+					for (const quad of quads) {
+						// Emit front face (normal pointing one way)
+						for (let pass = 0; pass < 2; pass++) {
+							const nx = pass === 0 ?  quad.nx : -quad.nx
+							const nz = pass === 0 ?  quad.nz : -quad.nz
+							// On the back pass, reverse winding so the face is flipped
+							const verts = pass === 0
+								? quad.verts
+								: [quad.verts[3], quad.verts[2], quad.verts[1], quad.verts[0]]
+
+							const vc = vCount[B]
+							for (const [vx, vy, vz] of verts) {
+								pos[B].push(vx, vy, vz)
+								norm[B].push(nx, 0, nz)
+							}
+							uv[B].push(
+								pu0, pv0,
+								pu0, pv1,
+								pu1, pv1,
+								pu1, pv0,
+							)
+							idx[B].push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
+							vCount[B] += 4
+						}
+					}
+
+					// One pickFace entry for the whole plant (not per-quad, not per-pass).
+					// We store the actual cross diagonal verts so makePickMesh builds
+					// accurate hit geometry. isPlant flag tells mineBlock what to remove.
+					pickFaces.push({
+						x: wx, y: surfaceY + 1, z: wz,
+						type: -(plantIdx + 1),   // negative = plant sentinel
+						nx: 0, ny: 1, nz: 0,
+						isPlant: true,
+						plantVerts: quads.flatMap(q => q.verts),
+					})
 				}
 			}
 		}
@@ -695,23 +859,31 @@ function makeBufferMesh(pos, uv, norm, idx, material) {
 // Invisible pick mesh: one BoxGeometry per visible face stored as instanced-ish
 // Actually we build a flat invisible mesh just for raycasting userData
 function makePickMesh(pickFaces) {
-	// Minimal geometry: just triangles with userData stored per-face
-	// We create a dummy mesh whose geometry encodes block coords in vertex color
-	// Simpler approach: individual tiny meshes would be slow — instead we store
-	// a lookup array on the mesh and decode hit triangle index → face entry.
 	if (pickFaces.length === 0) return null
 
 	const posArr = []
 	const idxArr = []
 	let vc = 0
 
-	for (const { x, y, z, nx, ny, nz } of pickFaces) {
-		// Build the same quad as the visual mesh for accurate hit detection
-		const face = FACES.find((f) => f.n[0] === nx && f.n[1] === ny && f.n[2] === nz)
-		if (!face) continue
-		for (const [dx, dy, dz] of face.verts) posArr.push(x + dx, y + dy, z + dz)
-		idxArr.push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
-		vc += 4
+	for (const pf of pickFaces) {
+		if (pf.isPlant) {
+			// Plant: use the actual cross diagonal verts (8 verts = 2 quads)
+			const verts = pf.plantVerts   // array of [x,y,z]
+			// Emit as two quads of 4 verts each
+			for (let q = 0; q < 2; q++) {
+				for (const [vx, vy, vz] of verts.slice(q * 4, q * 4 + 4)) posArr.push(vx, vy, vz)
+				idxArr.push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
+				vc += 4
+			}
+		} else {
+			const { x, y, z, nx, ny, nz } = pf
+			// Build the same quad as the visual mesh for accurate hit detection
+			const face = FACES.find((f) => f.n[0] === nx && f.n[1] === ny && f.n[2] === nz)
+			if (!face) continue
+			for (const [dx, dy, dz] of face.verts) posArr.push(x + dx, y + dy, z + dz)
+			idxArr.push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
+			vc += 4
+		}
 	}
 
 	const geo = new THREE.BufferGeometry()
@@ -719,13 +891,13 @@ function makePickMesh(pickFaces) {
 	geo.setIndex(idxArr)
 	geo.computeBoundingSphere()
 
-	const mat = new THREE.MeshBasicMaterial({ visible: false })
+	const mat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide })
 	const mesh = new THREE.Mesh(geo, mat)
-	mesh.userData.pickFaces = pickFaces   // face index = Math.floor(triangleIndex / 2)
+	mesh.userData.pickFaces = pickFaces
 	return mesh
 }
 
-const BUCKET_MATS = [matOpaque, matWater, matLeaves, matGlass]
+const BUCKET_MATS = [matOpaque, matWater, matLeaves, matGlass, matPlant]
 
 function rebuildChunk(cx, cz) {
 	const k = chunkKey(cx, cz)
@@ -794,15 +966,123 @@ function raycastBlocks() {
 	const hits = raycaster.intersectObjects(pickMeshes)
 	if (!hits.length) return null
 	const hit = hits[0]
-	const faceIndex = Math.floor(hit.faceIndex / 2)
 	const faces = hit.object.userData.pickFaces
-	if (!faces || faceIndex >= faces.length) return null
-	return { hit, face: faces[faceIndex] }
+	if (!faces) return null
+	// Walk pickFaces accumulating quad counts to find which entry owns this triangle.
+	// Normal block faces = 1 quad each; plant faces = 2 quads (both cross diagonals).
+	let quadOffset = 0
+	const hitQuad = Math.floor(hit.faceIndex / 2)
+	for (const pf of faces) {
+		const quads = pf.isPlant ? 2 : 1
+		if (hitQuad < quadOffset + quads) return { hit, face: pf }
+		quadOffset += quads
+	}
+	return null
 }
 
 /* ============================================================
-   PLAYER ENTITY  (block figure — unchanged logic, kept separate)
+   HITBOX OUTLINE  — wireframe shown on targeted block/plant
 ============================================================ */
+const hitboxMat = new THREE.LineBasicMaterial({
+	color: 0x000000,
+	depthTest: true,
+	transparent: true,
+	opacity: 0.6,
+	linewidth: 1,            // note: linewidth > 1 only works in WebGL 1 on some drivers
+})
+
+// Block hitbox: slightly expanded unit cube edges
+const _blockEdgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002, 1.002, 1.002))
+const hitboxMesh = new THREE.LineSegments(_blockEdgeGeo, hitboxMat)
+hitboxMesh.visible = false
+scene.add(hitboxMesh)
+
+// Plant hitbox: thin quad outline computed from plant atlas pixels.
+// We scan the plant texture to find the tight non-transparent bounding box,
+// then draw a rectangle in world space matching the cross geometry.
+// Cache per plantIdx so we only compute once per plant type.
+const _plantHitboxCache = {}
+
+function getPlantBoundsUV(plantIdx) {
+	if (_plantHitboxCache[plantIdx]) return _plantHitboxCache[plantIdx]
+	// Sample the plant atlas for this row
+	const W = PLANT_TILE, H = PLANT_TILE
+	const ty = plantIdx * H
+	const pixels = plantAtlasCtx.getImageData(0, ty, W, H).data
+	let minX = W, maxX = 0, minY = H, maxY = 0
+	for (let py = 0; py < H; py++) {
+		for (let px = 0; px < W; px++) {
+			const a = pixels[(py * W + px) * 4 + 3]
+			if (a > 16) {
+				if (px < minX) minX = px
+				if (px > maxX) maxX = px
+				if (py < minY) minY = py
+				if (py > maxY) maxY = py
+			}
+		}
+	}
+	if (minX > maxX) { minX = 0; maxX = W - 1; minY = 0; maxY = H - 1 }
+	// Convert to 0..1 UV fractions (py is top-down, world Y is up, so flip Y)
+	const result = {
+		u0: minX / W,      u1: (maxX + 1) / W,
+		v0: minY / H,      v1: (maxY + 1) / H,   // v0=top v1=bottom in image space
+	}
+	_plantHitboxCache[plantIdx] = result
+	return result
+}
+
+// Plant hitbox geometry is rebuilt each time the target changes
+let _lastPlantHitboxTarget = null
+const plantHitboxMesh = new THREE.LineSegments(
+	new THREE.BufferGeometry(), hitboxMat.clone()
+)
+plantHitboxMesh.visible = false
+scene.add(plantHitboxMesh)
+
+function updateHitbox(target) {
+	if (!target) {
+		hitboxMesh.visible = false
+		plantHitboxMesh.visible = false
+		return
+	}
+	const { face } = target
+	if (face.isPlant) {
+		hitboxMesh.visible = false
+		// Only recompute geometry if the target plant changed
+		if (_lastPlantHitboxTarget !== face) {
+			_lastPlantHitboxTarget = face
+			const b = getPlantBoundsUV(-(face.type + 1))
+			// Cross diagonal A: (0,0)→(1,1) in XZ, height v0..v1
+			const yBottom = face.y + (1 - b.v1)   // image top-down → world Y
+			const yTop    = face.y + (1 - b.v0)
+			const xMin = face.x + b.u0, xMax = face.x + b.u1
+			const zMin = face.z + b.u0, zMax = face.z + b.u1
+			// Draw two crossed rectangles in 3D
+			const pts = [
+				// Quad A diagonal corners
+				xMin, yBottom, zMin,   xMax, yBottom, zMax,
+				xMax, yBottom, zMax,   xMax, yTop,    zMax,
+				xMax, yTop,    zMax,   xMin, yTop,    zMin,
+				xMin, yTop,    zMin,   xMin, yBottom, zMin,
+				// Quad B diagonal corners
+				xMax, yBottom, zMin,   xMin, yBottom, zMax,
+				xMin, yBottom, zMax,   xMin, yTop,    zMax,
+				xMin, yTop,    zMax,   xMax, yTop,    zMin,
+				xMax, yTop,    zMin,   xMax, yBottom, zMin,
+			]
+			plantHitboxMesh.geometry.dispose()
+			plantHitboxMesh.geometry = new THREE.BufferGeometry()
+			plantHitboxMesh.geometry.setAttribute('position',
+				new THREE.Float32BufferAttribute(pts, 3))
+		}
+		plantHitboxMesh.visible = true
+	} else {
+		plantHitboxMesh.visible = false
+		_lastPlantHitboxTarget = null
+		hitboxMesh.position.set(face.x + 0.5, face.y + 0.5, face.z + 0.5)
+		hitboxMesh.visible = true
+	}
+}
 function randomSkinColor() {
 	const s = [0xffe0bd, 0xfcd5b5, 0xe8b89a, 0xc68642, 0x8d5524]
 	return s[Math.floor(Math.random() * s.length)]
@@ -1096,11 +1376,24 @@ function mineBlock(dt) {
 
 	if (progress >= 1) {
 		const { x, y, z } = face
-		const k = `${x}_${y}_${z}`
-		modified.set(k, BLOCK.AIR)
-		rebuildChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE))
 		miningTime = 0
-		netSendBlockUpdate(k, BLOCK.AIR)
+
+		if (face.type < 0) {
+			// Plant sentinel: mark the surface block below as having no plant.
+			// We store a special key "plant_x_z" in modified to suppress it.
+			const pk = `plant_${x}_${z}`
+			modified.set(pk, BLOCK.AIR)
+			rebuildChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE))
+			netSendBlockUpdate(pk, BLOCK.AIR)
+		} else {
+			const k = `${x}_${y}_${z}`
+			modified.set(k, BLOCK.AIR)
+			// Also remove any plant sitting on top of this block
+			const plantKey = `plant_${x}_${z}`
+			if (plantAt(x, z) >= 0) modified.set(plantKey, BLOCK.AIR)
+			rebuildChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE))
+			netSendBlockUpdate(k, BLOCK.AIR)
+		}
 	}
 }
 
@@ -1826,6 +2119,7 @@ function animate() {
 
 	// Raycast once per frame — reuse for both mining and HUD
 	currentTarget = raycastBlocks()
+	updateHitbox(currentTarget)
 
 	if (mining) mineBlock(dt)
 
