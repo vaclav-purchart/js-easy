@@ -74,7 +74,53 @@
     font-size:13px; font-family:monospace; display:none; pointer-events:none;
   }
 
-  /* ── Touch controls ── */
+  /* ── Lobby screen ── */
+  #lobby {
+    position:fixed; inset:0; z-index:1000;
+    background:rgba(10,20,40,0.92);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #lobby-box {
+    background:rgba(0,0,0,0.7); border:1px solid #555;
+    padding:32px 40px; min-width:320px; color:white; font-family:monospace;
+    display:flex; flex-direction:column; gap:14px;
+  }
+  #lobby-box h2 { margin:0 0 8px; font-size:22px; color:#8df; text-align:center; }
+  #lobby-box label { font-size:12px; color:#aaa; margin-bottom:2px; display:block; }
+  #lobby-box input {
+    width:100%; box-sizing:border-box;
+    background:rgba(255,255,255,.1); border:1px solid #666;
+    color:white; padding:7px 10px; font-family:monospace; font-size:14px; outline:none;
+  }
+  #lobby-box input:focus { border-color:#8df; }
+  .lobby-buttons { display:flex; gap:10px; margin-top:4px; }
+  .lobby-btn {
+    flex:1; padding:9px 0; font-family:monospace; font-size:13px; font-weight:bold;
+    border:1px solid #888; cursor:pointer; background:rgba(255,255,255,.12); color:white;
+  }
+  .lobby-btn:hover { background:rgba(255,255,255,.25); border-color:white; }
+  .lobby-btn.primary { background:rgba(80,160,80,.4); border-color:#4c4; }
+  .lobby-btn.primary:hover { background:rgba(80,160,80,.6); }
+  /* ── Settings panel ── */
+  #settings-panel {
+    position:fixed; top:10px; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,.75); color:white; padding:8px 16px;
+    font-family:monospace; font-size:12px; display:none;
+    gap:12px; align-items:center; flex-wrap:wrap; z-index:100;
+  }
+  #settings-panel label { color:#aaa; }
+  #settings-panel input[type=range] { width:90px; vertical-align:middle; }
+  #settings-panel button {
+    background:rgba(255,255,255,.15); border:1px solid #888; color:white;
+    padding:3px 10px; cursor:pointer; font-family:monospace; font-size:12px;
+  }
+  #settings-panel button:hover { background:rgba(255,255,255,.3); }
+  #settings-toggle {
+    position:fixed; top:10px; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,.5); color:#aaa; border:1px solid #555;
+    padding:3px 12px; font-family:monospace; font-size:11px; cursor:pointer;
+    z-index:101;
+  }
   #touch-controls { display:none; }
 
   #joystick-zone {
@@ -185,6 +231,41 @@
   <button id="nick-btn">Set</button>
 </div>
 
+<!-- Lobby screen — shown before game starts -->
+<div id="lobby">
+  <div id="lobby-box">
+    <h2>🌍 Voxel World</h2>
+    <div>
+      <label>Player name</label>
+      <input id="lobby-nick" maxlength="20" placeholder="Your name">
+    </div>
+    <div>
+      <label>World name (online only)</label>
+      <input id="lobby-world" maxlength="32" placeholder="default" value="default">
+    </div>
+    <div class="lobby-buttons">
+      <button class="lobby-btn primary" id="lobby-online">▶ Play Online</button>
+      <button class="lobby-btn" id="lobby-offline">🌐 Play Offline</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings toggle button -->
+<button id="settings-toggle" style="display:none">⚙ Settings</button>
+<div id="settings-panel">
+  <span>
+    <label>Render distance: <span id="rd-val">3</span></label><br>
+    <input type="range" id="rd-slider" min="1" max="8" value="3">
+  </span>
+  <span>
+    <label>Chunks/frame: <span id="cf-val">2</span></label><br>
+    <input type="range" id="cf-slider" min="1" max="8" value="2">
+  </span>
+  <button id="btn-save">💾 Save world</button>
+  <button id="btn-load">📂 Load world</button>
+  <input type="file" id="file-load" accept=".json" style="display:none">
+</div>
+
 <div id="underwater-overlay"></div>
 <div id="chat-log"></div>
 <div id="chat-input-wrap">
@@ -241,7 +322,7 @@ scene.add(sun)   // no shadow maps — huge GPU cost for voxel scenes
    CONSTANTS
 ============================================================ */
 const CHUNK_SIZE = 16
-const RENDER_DISTANCE = 3
+let RENDER_DISTANCE = 3
 const SEA_LEVEL = 8
 const BEDROCK_Y = 0
 const MINING_DISTANCE = 6
@@ -934,7 +1015,7 @@ function generateChunk(cx, cz) { rebuildChunk(cx, cz) }
    number per frame, nearest-first.
 ============================================================ */
 const chunkQueue = new Map()   // key → {cx, cz}  pending generation
-const CHUNKS_PER_FRAME = 2
+let CHUNKS_PER_FRAME = 2
 
 function queueChunk(cx, cz) {
 	const k = chunkKey(cx, cz)
@@ -1727,6 +1808,8 @@ document.getElementById('nick-input').addEventListener('keydown', (e) => {
 const WS_URL = 'wss://purchart.cloud/voxel-world'
 
 let ws = null, myId = null, connected = false, reconnectTimer = null
+let offlineMode = false
+let myWorldName = 'default'
 
 function setStatus(state, text) {
 	const el = document.getElementById('mp-status')
@@ -1734,6 +1817,7 @@ function setStatus(state, text) {
 }
 
 function connect() {
+	if (offlineMode) { setStatus('offline', 'OFFLINE (local)'); return }
 	try { ws = new WebSocket(WS_URL) }
 	catch (e) { setStatus('offline', 'OFFLINE'); scheduleReconnect(); return }
 
@@ -1741,7 +1825,7 @@ function connect() {
 		connected = true
 		clearTimeout(reconnectTimer)
 		setStatus('', 'ONLINE ●')
-		ws.send(JSON.stringify({ type:'join', nickname:myNickname }))
+		ws.send(JSON.stringify({ type:'join', nickname:myNickname, world:myWorldName }))
 	}
 	ws.onmessage = (e) => {
 		let msg; try { msg = JSON.parse(e.data) } catch { return }
@@ -1839,9 +1923,14 @@ function netSendNickname(name) { netSend({ type:'set_nickname', nickname:name })
 
 function updatePlayerList() {
 	const el = document.getElementById('player-list')
-	if (remotePlayers.size === 0) { el.style.display = 'none'; return }
+	const total = remotePlayers.size + 1   // +1 for self
 	el.style.display = 'block'
-	el.innerHTML = '<b>Players online</b><hr style="margin:3px 0">'
+	el.innerHTML = `<b>Players online (${total})</b><hr style="margin:3px 0">`
+	// Self first
+	const selfEl = document.createElement('div')
+	selfEl.style.color = '#8df'
+	selfEl.textContent = '● ' + myNickname + ' (you)'
+	el.appendChild(selfEl)
 	for (const { data } of remotePlayers.values()) {
 		const d = document.createElement('div')
 		d.textContent = '● ' + data.nickname
@@ -1849,11 +1938,97 @@ function updatePlayerList() {
 	}
 }
 
-connect()
+// ── Lobby ─────────────────────────────────────────────────────────────────
+const lobbyEl        = document.getElementById('lobby')
+const lobbyNickEl    = document.getElementById('lobby-nick')
+const lobbyWorldEl   = document.getElementById('lobby-world')
+const settingsToggle = document.getElementById('settings-toggle')
+const settingsPanel  = document.getElementById('settings-panel')
 
-/* ============================================================
-   UNDERWATER OVERLAY
-============================================================ */
+const _defaultNick = 'Player' + Math.floor(Math.random() * 9000 + 1000)
+lobbyNickEl.value = _defaultNick
+
+function startGame(online) {
+	myNickname = (lobbyNickEl.value.trim() || _defaultNick).slice(0, 20)
+	document.getElementById('nick-input').value = myNickname
+	myWorldName = (lobbyWorldEl.value.trim() || 'default').slice(0, 32)
+	offlineMode = !online
+
+	if (offlineMode) {
+		SEED = Math.floor(Math.random() * 1_000_000)
+		setStatus('offline', 'OFFLINE (local)')
+	}
+
+	lobbyEl.style.display = 'none'
+	settingsToggle.style.display = 'block'
+	updatePlayerList()
+	if (!offlineMode) connect()
+	animate()
+}
+
+document.getElementById('lobby-online').addEventListener('click', () => startGame(true))
+document.getElementById('lobby-offline').addEventListener('click', () => startGame(false))
+lobbyNickEl.addEventListener('keydown', e => { if (e.key === 'Enter') startGame(true) })
+lobbyWorldEl.addEventListener('keydown', e => { if (e.key === 'Enter') startGame(true) })
+
+// ── Settings panel ─────────────────────────────────────────────────────────
+settingsToggle.addEventListener('click', () => {
+	const open = settingsPanel.style.display === 'flex'
+	settingsPanel.style.display = open ? 'none' : 'flex'
+	settingsToggle.textContent = open ? '⚙ Settings' : '✕ Close'
+})
+
+const rdSlider = document.getElementById('rd-slider')
+const rdVal    = document.getElementById('rd-val')
+rdSlider.addEventListener('input', () => {
+	RENDER_DISTANCE = +rdSlider.value
+	rdVal.textContent = RENDER_DISTANCE
+})
+
+const cfSlider = document.getElementById('cf-slider')
+const cfVal    = document.getElementById('cf-val')
+cfSlider.addEventListener('input', () => {
+	CHUNKS_PER_FRAME = +cfSlider.value
+	cfVal.textContent = CHUNKS_PER_FRAME
+})
+
+// ── Save world ─────────────────────────────────────────────────────────────
+document.getElementById('btn-save').addEventListener('click', () => {
+	const data = { seed: SEED, world: myWorldName, modified: [...modified.entries()] }
+	const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+	const url = URL.createObjectURL(blob)
+	const a = document.createElement('a')
+	a.href = url
+	a.download = `voxel-${myWorldName}-${Date.now()}.json`
+	a.click()
+	URL.revokeObjectURL(url)
+	showToast('World saved!')
+})
+
+// ── Load world ─────────────────────────────────────────────────────────────
+document.getElementById('btn-load').addEventListener('click', () => {
+	document.getElementById('file-load').click()
+})
+document.getElementById('file-load').addEventListener('change', (e) => {
+	const file = e.target.files[0]
+	if (!file) return
+	const reader = new FileReader()
+	reader.onload = (ev) => {
+		try {
+			const data = JSON.parse(ev.target.result)
+			if (typeof data.seed === 'number') SEED = data.seed
+			modified.clear()
+			for (const [k, v] of data.modified || []) modified.set(k, v)
+			for (const [k] of chunks) {
+				const [cx2, cz2] = k.split('_').map(Number)
+				rebuildChunk(cx2, cz2)
+			}
+			showToast(`World loaded! Seed: ${SEED}`)
+		} catch (err) { showToast('Load failed: ' + err.message) }
+	}
+	reader.readAsText(file)
+	e.target.value = ''
+})
 const underwaterOverlay = document.getElementById('underwater-overlay')
 
 /* ============================================================
@@ -2173,7 +2348,7 @@ in water: ${Boolean(inWater).toString()}`
 	renderer.render(scene, camera)
 }
 
-animate()
+// animate() is called by startGame() once the lobby is dismissed
 setTimeout(() => document.getElementById('debugImg').src = atlasCanvas.toDataURL(), 500)
 </script>
 <img id="debugImg" style="z-index: 1000; position: absolute; top: 0; display: none">
