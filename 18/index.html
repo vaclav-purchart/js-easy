@@ -541,7 +541,7 @@ function loadImage(blockType, side, url) {
 	img.onload = () => {
 		const sideIndex = SIDE_INDEX.indexOf(side)
 		const row = blockAtlasRow[blockType]
-		const tx = 0 * TILE_SIZE   // col 0 = side
+		const tx = sideIndex * TILE_SIZE   // col 0 = side
 		const ty = row * TILE_SIZE
 		// Clear the tile first, then draw image scaled to TILE_SIZE
 		atlasCtx.clearRect(tx, ty, TILE_SIZE, TILE_SIZE)
