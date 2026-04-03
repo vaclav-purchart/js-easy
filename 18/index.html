@@ -77,8 +77,13 @@
   /* ── Lobby screen ── */
   #lobby {
     position:fixed; inset:0; z-index:1000;
-    background:rgba(10,20,40,0.92);
+    background-color:rgba(10,20,40,0.92);
+    background-image: url("https://purchart.cloud/images?file=voxel-world-lobby.svg");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
   }
   #lobby-box {
     background:rgba(0,0,0,0.7); border:1px solid #555;
@@ -980,41 +985,290 @@ function makePickMesh(pickFaces) {
 
 const BUCKET_MATS = [matOpaque, matWater, matLeaves, matGlass, matPlant]
 
-function rebuildChunk(cx, cz) {
-	const k = chunkKey(cx, cz)
-	const old = chunks.get(k)
-	if (old) {
-		for (const m of old.meshes) { scene.remove(m); m.geometry.dispose() }
-		if (old.pick) {
-			scene.remove(old.pick); old.pick.geometry.dispose()
-			const pi = pickMeshes.indexOf(old.pick)
-			if (pi !== -1) pickMeshes.splice(pi, 1)
-		}
-	}
+/* ============================================================
+   CHUNK WORKER POOL
+   buildChunkGeometry runs in Web Workers — zero main-thread cost.
+   Worker code is defined as real JS functions and serialised via
+   .toString() so it stays maintainable and gets linted normally.
+============================================================ */
 
-	const { pos, uv, norm, idx, pickFaces } = buildChunkGeometry(cx, cz)
+// ── Worker function definitions ───────────────────────────────────────────
+// These are REAL functions in the main script. We serialise them with
+// .toString() and inject them into the worker blob. This means they are
+// syntax-checked by the browser and easy to edit — no escaped strings.
 
-	const meshes = []
-	for (let b = 0; b < BUCKET_MATS.length; b++) {
-		const m = makeBufferMesh(pos[b], uv[b], norm[b], idx[b], BUCKET_MATS[b])
-		if (m) { scene.add(m); meshes.push(m) }
-	}
-
-	const pick = makePickMesh(pickFaces)
-	if (pick) { scene.add(pick); pickMeshes.push(pick) }
-
-	chunks.set(k, { meshes, pick })
+function _workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
+                           ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY) {
+	const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDROCK:7, SAND:8, GLASS:9 }
+	const TRANSPARENT = new Set([0, 4, 6, 9])
+	const blockAtlasRow = {}
+	ALL_BLOCK_IDS.forEach((id, i) => { blockAtlasRow[id] = i })
+	const INV_W = 1 / (TILE_SIZE * ATLAS_COLS)
+	const INV_H = 1 / (TILE_SIZE * ATLAS_ROWS)
+	const FACES = [
+		{ n:[1,0,0],  verts:[[1,0,0],[1,1,0],[1,1,1],[1,0,1]], col:0 },
+		{ n:[-1,0,0], verts:[[0,0,1],[0,1,1],[0,1,0],[0,0,0]], col:0 },
+		{ n:[0,1,0],  verts:[[0,1,1],[1,1,1],[1,1,0],[0,1,0]], col:1 },
+		{ n:[0,-1,0], verts:[[0,0,0],[1,0,0],[1,0,1],[0,0,1]], col:2 },
+		{ n:[0,0,1],  verts:[[1,0,1],[1,1,1],[0,1,1],[0,0,1]], col:0 },
+		{ n:[0,0,-1], verts:[[0,0,0],[0,1,0],[1,1,0],[1,0,0]], col:0 },
+	]
+	return { BLOCK, TRANSPARENT, blockAtlasRow, INV_W, INV_H, FACES }
 }
 
-function generateChunk(cx, cz) { rebuildChunk(cx, cz) }
+function _workerTileUV(blockId, col, blockAtlasRow, TILE_SIZE, INV_W, INV_H) {
+	const row = blockAtlasRow[blockId]
+	const u0 = col * TILE_SIZE * INV_W
+	const u1 = (col + 1) * TILE_SIZE * INV_W
+	const v1 = 1 - (row + 1) * TILE_SIZE * INV_H   // note: v1 > v0 in UV space (flipped Y)
+	const v0 = 1 - row * TILE_SIZE * INV_H
+	return [u0, v0, u1, v1]   // same order as main-thread tileUV
+}
 
-/* ============================================================
-   ASYNC CHUNK QUEUE
-   Instead of generating all missing chunks synchronously in one
-   frame (causes a stall), we queue them and process a fixed
-   number per frame, nearest-first.
-============================================================ */
-const chunkQueue = new Map()   // key → {cx, cz}  pending generation
+function _workerPlantUV(row, PLANT_TILE, PLANT_COUNT) {
+	const totalH = PLANT_TILE * PLANT_COUNT
+	const v1 = 1 - row * PLANT_TILE / totalH
+	const v0 = 1 - (row + 1) * PLANT_TILE / totalH
+	return [0, v0, 1, v1]
+}
+
+function _workerTerrain(SEED, SEA_LEVEL, BEDROCK_Y, BLOCK) {
+	function hash(n) { return Math.abs(Math.sin(n) * 43758.5453) % 1 }
+	function smoothNoise(x, z, scale, offset) {
+		const x0 = Math.floor(x / scale), z0 = Math.floor(z / scale)
+		const xf = x / scale - x0, zf = z / scale - z0
+		const n00 = hash(x0*57.13 + z0 + offset + SEED)
+		const n10 = hash((x0+1)*57.13 + z0 + offset + SEED)
+		const n01 = hash(x0*57.13 + (z0+1) + offset + SEED)
+		const n11 = hash((x0+1)*57.13 + (z0+1) + offset + SEED)
+		const u = xf*xf*(3-2*xf), v = zf*zf*(3-2*zf)
+		return n00*(1-u)*(1-v) + n10*u*(1-v) + n01*(1-u)*v + n11*u*v
+	}
+	function terrainHeight(x, z) {
+		let h = smoothNoise(x,z,40,0)*8 + smoothNoise(x,z,120,100)*12
+		h = Math.floor(SEA_LEVEL + h - 6)
+		if (smoothNoise(x,z,60,200) < 0.28) h -= 3
+		if (Math.abs(smoothNoise(x,z,200,500) - 0.5) < 0.03) h = SEA_LEVEL - 2
+		return Math.max(h, BEDROCK_Y + 1)
+	}
+	return { terrainHeight }
+}
+
+function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y) {
+	function getBlock(x, y, z) {
+		const k = x + '_' + y + '_' + z
+		if (modified.has(k)) { const v = modified.get(k); return v === BLOCK.AIR ? null : v }
+		const h = terrainHeight(x, z)
+		if (y === BEDROCK_Y) return BLOCK.BEDROCK
+		if (y > h) return y <= SEA_LEVEL ? BLOCK.WATER : null
+		if (y === h) return BLOCK.GRASS
+		if (y >= h - 3) return BLOCK.DIRT
+		return BLOCK.STONE
+	}
+	function isTransparent(b) { return b === null || b === BLOCK.AIR || b === BLOCK.WATER || b === BLOCK.LEAVES || b === BLOCK.GLASS }
+	function blockBucket(t) {
+		if (t === BLOCK.WATER) return 1
+		if (t === BLOCK.LEAVES) return 2
+		if (t === BLOCK.GLASS) return 3
+		return 0
+	}
+	return { getBlock, isTransparent, blockBucket }
+}
+
+function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
+	CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS, ATLAS_ROWS,
+	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY) {
+
+	// Re-establish all state inside the worker from the serialised parameters
+	const { BLOCK, TRANSPARENT, blockAtlasRow, INV_W, INV_H, FACES } =
+		_workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
+		                 ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY)
+
+	const tileUV  = (id, col) => _workerTileUV(id, col, blockAtlasRow, TILE_SIZE, INV_W, INV_H)
+	const plantUV = (row)     => _workerPlantUV(row, PLANT_TILE, plantCount)
+
+	const modified = new Map(modifiedEntries)
+	const { terrainHeight } = _workerTerrain(seed, SEA_LEVEL, BEDROCK_Y, BLOCK)
+	const { getBlock, isTransparent, blockBucket } = _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y)
+
+	function plantAt(wx, wz) {
+		if (modified.has('plant_' + wx + '_' + wz)) return -1
+		const h = Math.abs(Math.sin(wx*127.1 + wz*311.7 + seed*0.001) * 43758.5453) % 1
+		if (h > 1 / PLANT_RARITY) return -1
+		if (terrainHeight(wx, wz) <= SEA_LEVEL) return -1
+		return Math.floor((Math.abs(Math.sin(wx*374.1 + wz*591.3)) % 1) * plantCount)
+	}
+
+	const N = 5
+	const pos  = Array.from({length:N}, () => [])
+	const uv   = Array.from({length:N}, () => [])
+	const norm = Array.from({length:N}, () => [])
+	const idx  = Array.from({length:N}, () => [])
+	const vCount = new Array(N).fill(0)
+	const pickFaces = []
+
+	for (let lx = 0; lx < CHUNK_SIZE; lx++)
+		for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+			const wx = cx * CHUNK_SIZE + lx
+			const wz = cz * CHUNK_SIZE + lz
+			const h = terrainHeight(wx, wz)
+			let maxY = Math.max(h, SEA_LEVEL)
+			for (const [mk, mv] of modified) {
+				if (mv === BLOCK.AIR) continue
+				const parts = mk.split('_')
+				if (+parts[0] === wx && +parts[2] === wz) maxY = Math.max(maxY, +parts[1])
+			}
+
+			for (let y = BEDROCK_Y; y <= maxY; y++) {
+				const t = getBlock(wx, y, wz)
+				if (!t) continue
+				const isTrans = TRANSPARENT.has(t)
+				const bucket  = blockBucket(t)
+				for (const face of FACES) {
+					const [nx, ny, nz] = face.n
+					const neighbor = getBlock(wx + nx, y + ny, wz + nz)
+					if (!isTransparent(neighbor)) continue
+					if (isTrans && neighbor === t) continue
+					const [u0, v0, u1, v1] = tileUV(t, face.col)
+					const vc = vCount[bucket]
+					for (const [dx, dy, dz] of face.verts) {
+						pos[bucket].push(wx + dx, y + dy, wz + dz)
+						norm[bucket].push(nx, ny, nz)
+					}
+					uv[bucket].push(u0, v1, u0, v0, u1, v0, u1, v1)   // matches main-thread order
+					idx[bucket].push(vc, vc+1, vc+2, vc, vc+2, vc+3)
+					vCount[bucket] += 4
+					pickFaces.push({ x:wx, y, z:wz, type:t, nx, ny, nz })
+				}
+			}
+
+			// Plants
+			const plantIdx = plantAt(wx, wz)
+			if (plantIdx >= 0) {
+				const surfaceY = h
+				if (getBlock(wx, surfaceY, wz) !== null && getBlock(wx, surfaceY + 1, wz) === null) {
+					const B = 4
+					const [pu0, pv0, pu1, pv1] = plantUV(plantIdx)
+					const quads = [
+						{ verts:[[wx,surfaceY+1,wz],[wx,surfaceY+2,wz],[wx+1,surfaceY+2,wz+1],[wx+1,surfaceY+1,wz+1]], nx:0.707, nz:-0.707 },
+						{ verts:[[wx+1,surfaceY+1,wz],[wx+1,surfaceY+2,wz],[wx,surfaceY+2,wz+1],[wx,surfaceY+1,wz+1]], nx:0.707, nz:0.707 },
+					]
+					for (const quad of quads) {
+						for (let pass = 0; pass < 2; pass++) {
+							const qnx = pass === 0 ? quad.nx : -quad.nx
+							const qnz = pass === 0 ? quad.nz : -quad.nz
+							const verts = pass === 0 ? quad.verts : [quad.verts[3], quad.verts[2], quad.verts[1], quad.verts[0]]
+							const vc = vCount[B]
+							for (const [vx, vy, vz] of verts) { pos[B].push(vx, vy, vz); norm[B].push(qnx, 0, qnz) }
+							uv[B].push(pu0, pv0, pu0, pv1, pu1, pv1, pu1, pv0)
+							idx[B].push(vc, vc+1, vc+2, vc, vc+2, vc+3)
+							vCount[B] += 4
+						}
+					}
+					pickFaces.push({
+						x:wx, y:surfaceY+1, z:wz, type:-(plantIdx+1), nx:0, ny:1, nz:0,
+						isPlant:true, plantVerts:quads.flatMap(q => q.verts),
+					})
+				}
+			}
+		}
+
+	return { pos, uv, norm, idx, pickFaces }
+}
+
+function _workerMain() {
+	self.onmessage = (e) => {
+		const d = e.data
+		const result = _workerBuildGeometry(
+			d.cx, d.cz, d.seed, d.plantCount, d.modifiedEntries,
+			d.CHUNK_SIZE, d.SEA_LEVEL, d.BEDROCK_Y, d.TILE_SIZE, d.ATLAS_COLS,
+			d.ATLAS_ROWS, d.ALL_BLOCK_IDS, d.PLANT_TILE, d.PLANT_RARITY
+		)
+		const { pos, uv, norm, idx, pickFaces } = result
+		const bufs = [], typed = { pos:[], uv:[], norm:[], idx:[] }
+		for (let b = 0; b < 5; b++) {
+			typed.pos[b]  = new Float32Array(pos[b]);  bufs.push(typed.pos[b].buffer)
+			typed.uv[b]   = new Float32Array(uv[b]);   bufs.push(typed.uv[b].buffer)
+			typed.norm[b] = new Float32Array(norm[b]); bufs.push(typed.norm[b].buffer)
+			typed.idx[b]  = new Uint32Array(idx[b]);   bufs.push(typed.idx[b].buffer)
+		}
+		self.postMessage({ id:d.id, cx:d.cx, cz:d.cz, typed, pickFaces }, bufs)
+	}
+}
+
+// ── Build worker blob from function sources ───────────────────────────────
+// Each function is serialised with .toString() so the browser parses/lints
+// it as real JS. The worker blob just declares and immediately calls them.
+const WORKER_SRC = [
+	_workerConstants,
+	_workerTileUV,
+	_workerPlantUV,
+	_workerTerrain,
+	_workerGetBlock,
+	_workerBuildGeometry,
+	_workerMain,
+].map(fn => fn.toString()).join('\n') + '\n_workerMain();\n'
+
+// ── Worker pool ───────────────────────────────────────────────────────────
+const WORKER_COUNT  = Math.min(navigator.hardwareConcurrency || 2, 4)
+const _workerBlob   = new Blob([WORKER_SRC], { type: 'application/javascript' })
+const _workerURL    = URL.createObjectURL(_workerBlob)
+
+let _jobId = 0
+const _workerPool    = []
+const _pendingJobs   = new Map()   // jobId → resolve fn
+const _chunkInFlight = new Map()   // chunkKey → latest jobId
+
+for (let i = 0; i < WORKER_COUNT; i++) {
+	const slot = { worker: new Worker(_workerURL), busy: false }
+	slot.worker.onmessage = (e) => {
+		slot.busy = false
+		const { id, cx, cz, typed, pickFaces } = e.data
+		const resolve = _pendingJobs.get(id)
+		_pendingJobs.delete(id)
+		const k = chunkKey(cx, cz)
+		if (resolve && _chunkInFlight.get(k) === id) {
+			_chunkInFlight.delete(k)
+			resolve({ cx, cz, typed, pickFaces })
+		}
+		_drainWorkerQueue()
+	}
+	_workerPool.push(slot)
+}
+
+const _workerQueue = []
+
+function _drainWorkerQueue() {
+	for (const slot of _workerPool) {
+		if (!slot.busy && _workerQueue.length) {
+			const job = _workerQueue.shift()
+			slot.busy = true
+			slot.worker.postMessage(job, job._bufs)
+		}
+	}
+}
+
+function _enqueueChunk(cx, cz) {
+	return new Promise((resolve) => {
+		const id = ++_jobId
+		_chunkInFlight.set(chunkKey(cx, cz), id)
+		_pendingJobs.set(id, resolve)
+		const job = {
+			id, cx, cz, seed: SEED, plantCount: PLANT_DEFS.length,
+			modifiedEntries: [...modified.entries()],
+			// Pass constants so the worker doesn't need to import anything
+			CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
+			ATLAS_ROWS: ALL_BLOCK_IDS.length, ALL_BLOCK_IDS,
+			PLANT_TILE, PLANT_RARITY,
+			_bufs: [],
+		}
+		_workerQueue.push(job)
+		_drainWorkerQueue()
+	})
+}
+
+// ── Chunk queue (priority-sorted, controls enqueue order) ─────────────────
+const chunkQueue = new Map()
 let CHUNKS_PER_FRAME = 2
 
 function queueChunk(cx, cz) {
@@ -1035,6 +1289,54 @@ function flushChunkQueue(playerCx, playerCz) {
 		rebuildChunk(cx, cz)
 	}
 }
+
+// ── rebuildChunk — no flash: keep old meshes until new geometry is ready ──
+function rebuildChunk(cx, cz) {
+	const k = chunkKey(cx, cz)
+
+	// Mark as in-flight immediately so queueChunk won't re-enqueue this chunk
+	// while the worker is busy. We preserve the old entry so existing meshes
+	// stay visible (no flash) — just tag it so we know a build is pending.
+	const existing = chunks.get(k)
+	chunks.set(k, existing ? { ...existing, building: true } : { meshes: [], pick: null, building: true })
+
+	_enqueueChunk(cx, cz).then(({ cx, cz, typed, pickFaces }) => {
+		const k2 = chunkKey(cx, cz)
+		// Chunk may have been unloaded while building — discard silently
+		if (!chunks.has(k2)) return
+
+		// Remove OLD meshes only now, atomically before adding new ones
+		const old = chunks.get(k2)
+		if (old) {
+			for (const m of old.meshes) { scene.remove(m); m.geometry.dispose() }
+			if (old.pick) {
+				scene.remove(old.pick); old.pick.geometry.dispose()
+				const pi = pickMeshes.indexOf(old.pick)
+				if (pi !== -1) pickMeshes.splice(pi, 1)
+			}
+		}
+
+		const meshes = []
+		for (let b = 0; b < BUCKET_MATS.length; b++) {
+			if (typed.idx[b].length === 0) continue
+			const geo = new THREE.BufferGeometry()
+			geo.setAttribute('position', new THREE.Float32BufferAttribute(typed.pos[b], 3))
+			geo.setAttribute('normal',   new THREE.Float32BufferAttribute(typed.norm[b], 3))
+			geo.setAttribute('uv',       new THREE.Float32BufferAttribute(typed.uv[b], 2))
+			geo.setIndex(new THREE.BufferAttribute(typed.idx[b], 1))
+			geo.computeBoundingSphere()
+			const m = new THREE.Mesh(geo, BUCKET_MATS[b])
+			scene.add(m); meshes.push(m)
+		}
+		const pick = makePickMesh(pickFaces)
+		if (pick) { scene.add(pick); pickMeshes.push(pick) }
+		chunks.set(k2, { meshes, pick })
+	})
+}
+
+function generateChunk(cx, cz) { rebuildChunk(cx, cz) }
+
+
 
 /* ============================================================
    RAYCASTING  (uses pick meshes — invisible, exact geometry)
