@@ -21,7 +21,6 @@
   }
   @media (pointer: coarse) {
     #hotbar { bottom: 180px; }
-    #nickname-ui { bottom: 170px; }
     #debug { font-size:10px; }
   }
   .slot {
@@ -36,6 +35,17 @@
     width:100px; height:8px; background:rgba(0,0,0,.4); display:none;
   }
   #progress div { height:100%; width:0%; background:white; }
+    /* ── Player HP bar (own health) ── */
+  #hp-bar-wrap {
+    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    display:none; align-items:center; gap:6px; pointer-events:none;
+  }
+  #hp-bar-wrap span { color:white; font-family:monospace; font-size:11px; white-space:nowrap; }
+  #hp-bar {
+    width:120px; height:8px; background:rgba(0,0,0,.5);
+    border:1px solid rgba(255,255,255,.3);
+  }
+  #hp-bar div { height:100%; width:100%; background:#4c4; transition:width .2s, background .2s; }
   #mp-status {
     position:fixed; top:10px; right:10px;
     background:rgba(0,0,0,.5); color:#0f0;
@@ -44,23 +54,6 @@
   }
   #mp-status.offline { color:#f80; border-color:#f80; }
   #mp-status.error   { color:#f44; border-color:#f44; }
-  #nickname-ui {
-    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
-    background:rgba(0,0,0,.65); padding:8px 12px;
-    display:flex; gap:8px; align-items:center;
-  }
-  #nickname-ui input {
-    background:rgba(255,255,255,.15); border:1px solid #888;
-    color:white; padding:4px 8px; font-family:monospace;
-    font-size:13px; outline:none; width:160px;
-  }
-  #nickname-ui button {
-    background:rgba(255,255,255,.2); border:1px solid #aaa;
-    color:white; cursor:pointer; padding:4px 10px;
-    font-family:monospace; font-size:13px;
-  }
-  #nickname-ui button:hover { background:rgba(255,255,255,.35); }
-  #nickname-ui label { color:#ccc; font-size:12px; }
   #player-list {
     position:fixed; top:10px; right:130px;
     background:rgba(0,0,0,.5); color:white;
@@ -74,6 +67,72 @@
     font-size:13px; font-family:monospace; display:none; pointer-events:none;
   }
 
+  /* ── Game GUI (inventory / block picker / crafting) ── */
+  #game-gui {
+    position:fixed; inset:0; z-index:500;
+    background:rgba(0,0,0,.55); display:none;
+    align-items:center; justify-content:center;
+  }
+  #game-gui.open { display:flex; }
+  #gui-panel {
+    background:rgba(18,18,28,.96); border:1px solid #445;
+    min-width:480px; max-width:95vw; max-height:85vh;
+    display:flex; flex-direction:column; color:white; font-family:monospace;
+    overflow:hidden;
+  }
+  #gui-tabs {
+    display:flex; border-bottom:1px solid #334;
+    background:rgba(0,0,0,.3);
+  }
+  .gui-tab {
+    padding:10px 20px; cursor:pointer; font-size:13px; color:#aaa;
+    border-right:1px solid #334; user-select:none;
+    transition:background .15s, color .15s;
+  }
+  .gui-tab:hover { background:rgba(255,255,255,.07); color:#ddd; }
+  .gui-tab.active { background:rgba(255,255,255,.1); color:white; border-bottom:2px solid #8df; }
+  #gui-close {
+    margin-left:auto; padding:10px 16px; cursor:pointer;
+    color:#888; font-size:16px; line-height:1;
+    border-left:1px solid #334;
+  }
+  #gui-close:hover { color:white; background:rgba(255,80,80,.2); }
+  #gui-body { flex:1; overflow-y:auto; padding:16px; }
+  /* Block picker grid */
+  .block-grid {
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(64px, 1fr)); gap:6px;
+  }
+  .block-grid-item {
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:6px 4px; border:1px solid #334; background:rgba(255,255,255,.04);
+    cursor:pointer; transition:background .1s, border-color .1s;
+  }
+  .block-grid-item:hover { background:rgba(255,255,255,.12); border-color:#8df; }
+  .block-grid-item.selected { border-color:#fff; background:rgba(255,255,255,.15); }
+  .block-grid-item img { width:36px; height:36px; image-rendering:pixelated; }
+  .block-grid-item span { font-size:9px; color:#aaa; text-align:center; line-height:1.2; }
+  .gui-section-title {
+    font-size:11px; color:#8df; letter-spacing:.08em; text-transform:uppercase;
+    margin:0 0 8px; padding-bottom:4px; border-bottom:1px solid #334;
+  }
+  .gui-coming-soon {
+    color:#556; font-size:13px; text-align:center; padding:40px 0;
+  }
+  /* Touch open button */
+  #btn-gui {
+    background:rgba(180,140,60,.25); border-color:rgba(220,180,80,.8);
+  }
+  #btn-inventory-open {
+    position:fixed; bottom:180px; right:16px;
+    width:44px; height:44px; border-radius:8px;
+    background:rgba(0,0,0,.5); border:1px solid #666;
+    color:white; font-size:18px; cursor:pointer;
+    display:none; align-items:center; justify-content:center;
+    z-index:10;
+  }
+  @media (pointer: coarse) {
+    #btn-inventory-open { display:flex; }
+  }
   /* ── Lobby screen ── */
   #lobby {
     position:fixed; inset:0; z-index:1000;
@@ -226,15 +285,25 @@
 <div id="crosshair"></div>
 <div id="debug"></div>
 <div id="progress"><div></div></div>
+<div id="hp-bar-wrap"><span id="hp-label">❤ 100</span><div id="hp-bar"><div></div></div></div>
 <div id="hotbar"></div>
 <div id="mp-status" class="offline">OFFLINE</div>
 <div id="player-list"></div>
 <div id="toast"></div>
-<div id="nickname-ui">
-  <label>Nick / cmd:</label>
-  <input id="nick-input" maxlength="40" placeholder="Name">
-  <button id="nick-btn">Set</button>
+
+<!-- Game GUI — block picker / inventory / crafting -->
+<div id="game-gui">
+  <div id="gui-panel">
+    <div id="gui-tabs">
+      <!-- tabs injected by JS -->
+      <div id="gui-close" title="Close (E/I/Esc)">✕</div>
+    </div>
+    <div id="gui-body"></div>
+  </div>
 </div>
+
+<!-- Touch shortcut to open inventory (shown only on touch devices via CSS) -->
+<button id="btn-inventory-open" title="Inventory (E)">🎒</button>
 
 <!-- Lobby screen — shown before game starts -->
 <div id="lobby">
@@ -291,6 +360,7 @@
     </div>
     <div class="row">
       <div class="touch-btn" id="btn-jump">Jump</div>
+      <div class="touch-btn" id="btn-gui">🎒</div>
     </div>
   </div>
 </div>
@@ -332,6 +402,35 @@ const SEA_LEVEL = 8
 const BEDROCK_Y = 0
 const MINING_DISTANCE = 6
 
+/* ============================================================
+   BLOCK REGISTRY & PLUGIN API
+   All block IDs, draw functions, and transparency are registered
+   here. Plugins call VoxelWorld.registerBlock() to add new blocks.
+   IDs 1–99 are reserved for core blocks; plugins should use 100+.
+============================================================ */
+
+// Expose the plugin API as a global so plugin <script> files can call it.
+// Functions that need engine internals are set up further below; plugins
+// registered before init() are queued and applied automatically.
+window.VoxelWorld = {
+	_pendingBlocks: [],   // queued before atlas is ready
+	_ready: false,
+
+	// Register a new block type. Call any time — before or after game start.
+	// def: { id, name, category, transparent?, draw:{side,top?,bottom?}, url? }
+	registerBlock(def) {
+		if (!this._ready) { this._pendingBlocks.push(def); return }
+		_registerBlockNow(def)
+	},
+
+	// Register a GUI tab (delegates to the existing function once defined)
+	registerGuiTab(id, label, fn) {
+		if (!this._ready) { this._pendingBlocks.push({ _guiTab: true, id, label, fn }); return }
+		registerGuiTab(id, label, fn)
+	},
+}
+
+// Core block IDs — fixed, never change
 const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDROCK:7, SAND:8, GLASS:9 }
 
 // Which blocks are transparent (semi-transparent or see-through)
@@ -497,17 +596,20 @@ const BLOCK_DEFS = {
 }
 
 // Build atlas canvas: rows = block types (sorted), cols = [side, top, bottom]
+// ALL_BLOCK_IDS is a live array — plugins push new IDs into it via registerBlock()
 const ALL_BLOCK_IDS = Object.values(BLOCK).filter((v) => v !== BLOCK.AIR)
-const ATLAS_ROWS = ALL_BLOCK_IDS.length
+
+// Atlas canvas starts sized for core blocks; grows when plugins add blocks
+const ATLAS_ROWS_MAX = 256   // pre-allocate enough height for plugins
 const atlasCanvas = document.createElement('canvas')
 atlasCanvas.width = TILE_SIZE * ATLAS_COLS
-atlasCanvas.height = TILE_SIZE * ATLAS_ROWS
+atlasCanvas.height = TILE_SIZE * ATLAS_ROWS_MAX
 const atlasCtx = atlasCanvas.getContext('2d')
 atlasCtx.imageSmoothingEnabled = false
 atlasCtx.fillStyle = "#000000"
 atlasCtx.fillRect(0, 0, atlasCanvas.width, atlasCanvas.height)
 
-// row index for each block id
+// row index for each block id — grows as blocks are registered
 const blockAtlasRow = {}
 ALL_BLOCK_IDS.forEach((id, i) => { blockAtlasRow[id] = i })
 
@@ -581,9 +683,12 @@ function loadImage(blockType, side, url) {
 	}
 }())
 
-// UV helper: returns [u0,v0, u1,v1] for a given block + face column
+// UV helper: returns [u0,v0, u1,v1] for a given block + face column.
+// INV_H is based on the canvas height (ATLAS_ROWS_MAX), not the number of
+// registered blocks — the canvas is pre-allocated at full size so Three.js
+// samples it correctly regardless of how many rows are actually used.
 const INV_W = 1 / (TILE_SIZE * ATLAS_COLS)
-const INV_H = 1 / (TILE_SIZE * ATLAS_ROWS)
+const INV_H = 1 / (TILE_SIZE * ATLAS_ROWS_MAX)
 function tileUV(blockId, col) {
 	const row = blockAtlasRow[blockId]
 	const u0 = col * TILE_SIZE * INV_W
@@ -998,9 +1103,11 @@ const BUCKET_MATS = [matOpaque, matWater, matLeaves, matGlass, matPlant]
 // syntax-checked by the browser and easy to edit — no escaped strings.
 
 function _workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
-                           ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY) {
-	const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDROCK:7, SAND:8, GLASS:9 }
-	const TRANSPARENT = new Set([0, 4, 6, 9])
+                           ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY,
+                           blockMap, transparentIds) {
+	// blockMap: { AIR:0, GRASS:1, ... } — passed from main thread so plugins extend it
+	const BLOCK = blockMap
+	const TRANSPARENT = new Set(transparentIds)
 	const blockAtlasRow = {}
 	ALL_BLOCK_IDS.forEach((id, i) => { blockAtlasRow[id] = i })
 	const INV_W = 1 / (TILE_SIZE * ATLAS_COLS)
@@ -1077,12 +1184,12 @@ function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y) {
 
 function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 	CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS, ATLAS_ROWS,
-	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY) {
+	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY, blockMap, transparentIds) {
 
-	// Re-establish all state inside the worker from the serialised parameters
 	const { BLOCK, TRANSPARENT, blockAtlasRow, INV_W, INV_H, FACES } =
 		_workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
-		                 ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY)
+		                 ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY,
+		                 blockMap, transparentIds)
 
 	const tileUV  = (id, col) => _workerTileUV(id, col, blockAtlasRow, TILE_SIZE, INV_W, INV_H)
 	const plantUV = (row)     => _workerPlantUV(row, PLANT_TILE, plantCount)
@@ -1182,7 +1289,8 @@ function _workerMain() {
 		const result = _workerBuildGeometry(
 			d.cx, d.cz, d.seed, d.plantCount, d.modifiedEntries,
 			d.CHUNK_SIZE, d.SEA_LEVEL, d.BEDROCK_Y, d.TILE_SIZE, d.ATLAS_COLS,
-			d.ATLAS_ROWS, d.ALL_BLOCK_IDS, d.PLANT_TILE, d.PLANT_RARITY
+			d.ATLAS_ROWS, d.ALL_BLOCK_IDS, d.PLANT_TILE, d.PLANT_RARITY,
+			d.blockMap, d.transparentIds
 		)
 		const { pos, uv, norm, idx, pickFaces } = result
 		const bufs = [], typed = { pos:[], uv:[], norm:[], idx:[] }
@@ -1258,8 +1366,12 @@ function _enqueueChunk(cx, cz) {
 			modifiedEntries: [...modified.entries()],
 			// Pass constants so the worker doesn't need to import anything
 			CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
-			ATLAS_ROWS: ALL_BLOCK_IDS.length, ALL_BLOCK_IDS,
+			ATLAS_ROWS: ATLAS_ROWS_MAX,   // must match canvas height, not block count
+			ALL_BLOCK_IDS: [...ALL_BLOCK_IDS],
 			PLANT_TILE, PLANT_RARITY,
+			// Dynamic block data — plugins may have added new blocks
+			blockMap: { ...BLOCK },
+			transparentIds: [...TRANSPARENT],
 			_bufs: [],
 		}
 		_workerQueue.push(job)
@@ -1523,9 +1635,53 @@ function makePlayerModel(nickname) {
 	sprite.position.set(0, 2.75, 0)
 	root.add(sprite)
 
+	// HP bar — canvas sprite above the name label
+	const hpCanvas = document.createElement('canvas')
+	hpCanvas.width = 128; hpCanvas.height = 16
+	const hpCtx = hpCanvas.getContext('2d')
+	function drawHpBar(hp) {
+		hpCtx.clearRect(0, 0, 128, 16)
+		// Background
+		hpCtx.fillStyle = 'rgba(0,0,0,0.6)'
+		hpCtx.fillRect(0, 4, 128, 8)
+		// Fill — green → yellow → red based on HP
+		const frac = Math.max(0, hp / 100)
+		const r = Math.floor(255 * (1 - frac)), g = Math.floor(255 * frac)
+		hpCtx.fillStyle = `rgb(${r},${g},0)`
+		hpCtx.fillRect(0, 4, Math.round(128 * frac), 8)
+		// Border
+		hpCtx.strokeStyle = 'rgba(255,255,255,0.4)'
+		hpCtx.lineWidth = 1
+		hpCtx.strokeRect(0.5, 4.5, 127, 7)
+	}
+	drawHpBar(100)
+	const hpTex = new THREE.CanvasTexture(hpCanvas)
+	const hpSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map:hpTex, depthTest:false }))
+	hpSprite.scale.set(1.4, 0.18, 1)
+	hpSprite.position.set(0, 3.1, 0)
+	root.add(hpSprite)
+
 	root.userData.headPivot = headPivot
 	root.userData.drawLabel = drawLabel
 	root.userData.nickTex = tex
+	root.userData.drawHpBar = drawHpBar
+	root.userData.hpTex = hpTex
+
+	// Right arm pivot — used to swing/hold items, parented to right shoulder
+	const armPivot = new THREE.Group()
+	armPivot.position.set(0.55, 1.075, 0)   // right shoulder
+	root.add(armPivot)
+
+	// Item holder inside the arm pivot (wrist position)
+	const itemHolder = new THREE.Group()
+	itemHolder.position.set(0, -0.5, -0.3)   // hang below/in front of hand
+	itemHolder.rotation.y = Math.PI / 2
+	itemHolder.rotation.z = -Math.PI / 2
+	armPivot.add(itemHolder)
+
+	root.userData.armPivot   = armPivot
+	root.userData.itemHolder = itemHolder
+	root.userData.heldModel  = null
 
 	return root
 }
@@ -1539,26 +1695,48 @@ function updatePlayerLabel(model, nickname) {
    REMOTE PLAYERS
 ============================================================ */
 const remotePlayers = new Map()
+const playerPickMeshes = []   // invisible bounding boxes for combat raycasting
 
 function addRemotePlayer(data) {
 	if (remotePlayers.has(data.id)) return
 	const model = makePlayerModel(data.nickname)
 	model.position.set(data.x, data.y - player.height, data.z)
 	scene.add(model)
-	remotePlayers.set(data.id, { model, data: { ...data } })
+
+	// Invisible bounding box used for combat raycasting (slightly larger than body)
+	const hitGeo = new THREE.BoxGeometry(0.8, 1.85, 0.8)
+	const hitMat = new THREE.MeshBasicMaterial({ visible: false })
+	const hitBox = new THREE.Mesh(hitGeo, hitMat)
+	hitBox.position.y = 0.925   // centre of body
+	hitBox.userData.playerId = data.id
+	model.add(hitBox)
+	playerPickMeshes.push(hitBox)
+
+	remotePlayers.set(data.id, { model, hitBox, data: { ...data, hp: data.hp ?? 100 } })
+
+	// Set initial HP bar
+	if (model.userData.drawHpBar) {
+		model.userData.drawHpBar(data.hp ?? 100)
+		model.userData.hpTex.needsUpdate = true
+	}
 }
 function removeRemotePlayer(id) {
 	const rp = remotePlayers.get(id)
 	if (!rp) return
 	scene.remove(rp.model)
+	const pi = playerPickMeshes.indexOf(rp.hitBox)
+	if (pi !== -1) playerPickMeshes.splice(pi, 1)
 	remotePlayers.delete(id)
 }
-function moveRemotePlayer(id, x, y, z, yaw, pitch) {
+function moveRemotePlayer(id, x, y, z, yaw, pitch, held, swing) {
 	const rp = remotePlayers.get(id)
 	if (!rp) return
 	rp.data.tx = x; rp.data.ty = y - player.height; rp.data.tz = z
 	rp.data.tyaw = yaw; rp.data.tpitch = pitch
+	if (held !== undefined) rp.data.held = held
+	if (swing !== undefined) rp.data.swing = swing
 }
+
 function tickRemotePlayers(dt) {
 	const alpha = Math.min(dt * 20, 1)
 	for (const { model, data } of remotePlayers.values()) {
@@ -1570,6 +1748,53 @@ function tickRemotePlayers(dt) {
 		if (data.tyaw !== undefined) model.rotation.y = data.tyaw
 		if (data.tpitch !== undefined && model.userData.headPivot)
 			model.userData.headPivot.rotation.x = data.tpitch
+
+		// ── Held item ──────────────────────────────────────────────────────
+		const holder = model.userData.itemHolder
+		if (holder && data.held !== undefined) {
+			const held = data.held   // null | { t:'block', id } | { t:'tool', i }
+			const prevKey = model.userData.heldKey
+			const newKey  = held ? JSON.stringify(held) : null
+
+			if (newKey !== prevKey) {
+				// Remove old model
+				if (model.userData.heldModel) {
+					holder.remove(model.userData.heldModel)
+					model.userData.heldModel = null
+				}
+				model.userData.heldKey = newKey
+
+				if (held) {
+					let m = null
+					if (held.t === 'block') {
+						// Clone the cached block model (each player needs its own instance)
+						const src = makeBlockHandModel(held.id)
+						m = src.clone()
+					} else if (held.t === 'tool') {
+						const tool = loadedTools[held.i]
+						if (tool) {
+							// Clone tool model group
+							m = tool.model.clone()
+						}
+					}
+					if (m) {
+						holder.add(m)
+						model.userData.heldModel = m
+					}
+				}
+			}
+		}
+
+		// ── Arm swing animation ────────────────────────────────────────────
+		const armPivot = model.userData.armPivot
+		if (armPivot) {
+			if (data.swing) {
+				data.swingTime = ((data.swingTime ?? 0) + dt * 8) % (Math.PI * 2)
+			} else {
+				data.swingTime = 0
+			}
+			armPivot.rotation.x = Math.sin(data.swingTime ?? 0) * (Math.PI / 3)
+		}
 	}
 }
 
@@ -1610,7 +1835,7 @@ let currentTarget = null   // cached raycast result
 
 addEventListener('mousedown', (e) => {
 	if (document.pointerLockElement !== renderer.domElement) return
-	if (e.button === 0) mining = true
+	if (e.button === 0) { mining = true; tryHitPlayer() }
 	if (e.button === 2) { placeBlock(); triggerSwing() }
 })
 addEventListener('mouseup', () => {
@@ -1679,7 +1904,7 @@ const look = { active:false, id:-1, lx:0, ly:0 }
 // Zones that should NOT trigger look: left 200px (joystick), right 200px (buttons), any UI element
 function isLookTarget(el) {
 	// Ignore touches that start on joystick, action buttons, or nickname UI
-	if (el.closest('#joystick-zone,#action-buttons,#nickname-ui,#hotbar')) return false
+	if (el.closest('#joystick-zone,#action-buttons,#hotbar,#game-gui,#btn-inventory-open')) return false
 	return true
 }
 
@@ -1725,7 +1950,7 @@ function setupTouchBtn(id, key) {
 		touchState[key] = true
 		el.classList.add('pressed')
 		if (key === 'place') placeBlock()
-		if (key === 'mine') { mining = true }
+		if (key === 'mine') { mining = true; tryHitPlayer() }
 	}, { passive:false })
 	el.addEventListener('touchend', (e) => {
 		e.preventDefault()
@@ -1853,6 +2078,38 @@ function buildToolModel(pixels, W, H) {
 	return root
 }
 
+// ── Build a small 3D block for the hand — uses the atlas texture ─────────
+// Returns a THREE.Mesh that looks like a held block (tilted cube).
+const _blockHandModelCache = new Map()
+function makeBlockHandModel(blockId) {
+	if (_blockHandModelCache.has(blockId)) return _blockHandModelCache.get(blockId)
+
+	const S = 0.42   // world-unit size of the hand-held block
+	const geo = new THREE.BoxGeometry(S, S, S)
+
+	// Assign per-face UVs from the atlas: right/left/top/bottom/front/back
+	// BoxGeometry face order: +X, -X, +Y, -Y, +Z, -Z → side,side,top,bottom,side,side
+	const uvAttr = geo.attributes.uv
+	const faceUVSources = [0, 0, 1, 2, 0, 0]   // col: side,side,top,bottom,side,side
+	for (let face = 0; face < 6; face++) {
+		const [u0, v0, u1, v1] = tileUV(blockId, faceUVSources[face])
+		const base = face * 4
+		// BoxGeometry UV layout per face: BL, BR, TL, TR
+		uvAttr.setXY(base + 0, u0, v0)
+		uvAttr.setXY(base + 1, u1, v0)
+		uvAttr.setXY(base + 2, u0, v1)
+		uvAttr.setXY(base + 3, u1, v1)
+	}
+	uvAttr.needsUpdate = true
+
+	const mesh = new THREE.Mesh(geo, matOpaque)
+	// Tilt so it looks naturally held — rotate 20° on X and Y
+	mesh.rotation.x = 0.35
+	mesh.rotation.y = 0.6
+	_blockHandModelCache.set(blockId, mesh)
+	return mesh
+}
+
 // ── Load one tool def → resolves with { name, model, iconDataURL } ────────
 function loadTool(def) {
 	return new Promise((resolve) => {
@@ -1912,31 +2169,32 @@ let swingTime = 0
 let swingActive = false
 
 function tickHandModel(dt) {
-	const tool = equippedTool()
-	// Hide/show pivot depending on whether a tool is equipped
-	handPivot.visible = (tool !== null)
-	if (!tool) return
+	const tool    = equippedTool()
+	const blockId = equippedBlockId()
 
-	// Swap model if slot changed
-	if (handPivot.userData.activeModel !== tool.model) {
+	// Determine the model to show
+	let wantModel = null
+	if (tool)         wantModel = tool.model
+	else if (blockId) wantModel = makeBlockHandModel(blockId)
+
+	handPivot.visible = (wantModel !== null)
+	if (!wantModel) return
+
+	// Swap model if equipped item changed
+	if (handPivot.userData.activeModel !== wantModel) {
 		if (handPivot.userData.activeModel) handOrient.remove(handPivot.userData.activeModel)
-		handOrient.add(tool.model)
-		handPivot.userData.activeModel = tool.model
+		handOrient.add(wantModel)
+		handPivot.userData.activeModel = wantModel
 	}
 
-	// Swing animation: forward-and-back rotation around X when mining
+	// Swing animation: forward-and-back rotation around X when mining/placing
 	if (mining || swingActive) {
-		swingTime += dt * 8   // speed
-		if (swingTime >= Math.PI) {
-			swingTime = 0
-			swingActive = false
-		}
+		swingTime += dt * 8
+		if (swingTime >= Math.PI) { swingTime = 0; swingActive = false }
 	} else {
 		swingTime = 0
 	}
-	// Rotate so the tool swings forward (into the screen) and back
 	handPivot.rotation.x = Math.sin(swingTime) * (Math.PI / 3)
-	// Slight idle bob
 	handPivot.rotation.z = Math.sin(Date.now() * 0.001) * 0.03
 }
 
@@ -2070,39 +2328,268 @@ function showToast(msg) {
 }
 
 /* ============================================================
-   NICK / COMMAND UI
+   BLOCK REGISTRY  — single source of truth for all available blocks.
+   Add entries here to make blocks appear in the GUI automatically.
+   Mods can push to this array before or after game start.
+   Each entry: { id, name, category }
+============================================================ */
+const BLOCK_REGISTRY = [
+	{ id: BLOCK.DIRT,   name: 'Dirt',   category: 'Natural' },
+	{ id: BLOCK.GRASS,  name: 'Grass',  category: 'Natural' },
+	{ id: BLOCK.STONE,  name: 'Stone',  category: 'Natural' },
+	{ id: BLOCK.SAND,   name: 'Sand',   category: 'Natural' },
+	{ id: BLOCK.WOOD,   name: 'Wood',   category: 'Natural' },
+	{ id: BLOCK.LEAVES, name: 'Leaves', category: 'Natural' },
+	{ id: BLOCK.WATER,  name: 'Water',  category: 'Natural' },
+	{ id: BLOCK.GLASS,  name: 'Glass',  category: 'Crafted' },
+	{ id: BLOCK.BEDROCK,name: 'Bedrock',category: 'Special' },
+]
+
+
+// ── Core block registration implementation ────────────────────────────────
+// Adds a new block type at runtime: extends atlas, registers in GUI, updates
+// the worker's block list (passed per-job so no worker recreation needed).
+function _registerBlockNow(def) {
+	const id = def.id
+	if (blockAtlasRow[id] !== undefined) {
+		console.warn(`[plugin] Block id ${id} already registered, skipping`)
+		return
+	}
+	// 1. Register ID
+	if (!BLOCK[def.name]) BLOCK[def.name] = id   // optional: add to BLOCK map
+	if (def.transparent) TRANSPARENT.add(id)
+	const row = ALL_BLOCK_IDS.length
+	ALL_BLOCK_IDS.push(id)
+	blockAtlasRow[id] = row
+
+	// 2. Draw into atlas (the canvas is pre-allocated large enough)
+	BLOCK_DEFS[id] = def.draw || {}
+	drawAtlasTile(id, 0); drawAtlasTile(id, 1); drawAtlasTile(id, 2)
+	atlasTexture.needsUpdate = true
+
+	// 3. Register in GUI
+	BLOCK_REGISTRY.push({ id, name: def.name, category: def.category || 'Plugin' })
+
+	// 4. Invalidate chunk hand-model cache for this id (in case it was built before)
+	_blockHandModelCache.delete(id)
+
+	// 5. Rebuild loaded chunks so geometry picks up any world blocks of this type
+	for (const [k] of chunks) {
+		const [cx2, cz2] = k.split('_').map(Number)
+		rebuildChunk(cx2, cz2)
+	}
+
+	console.log(`[plugin] Registered block "${def.name}" (id=${id})`)
+}
+
+// Activate the plugin API and flush any pending registrations made before init
+VoxelWorld._ready = true
+for (const def of VoxelWorld._pendingBlocks) {
+	if (def._guiTab) registerGuiTab(def.id, def.label, def.fn)
+	else _registerBlockNow(def)
+}
+VoxelWorld._pendingBlocks = []
+// Keep registerBlock live for plugins loaded after init
+VoxelWorld.registerBlock = (def) => _registerBlockNow(def)
+VoxelWorld.registerGuiTab = (id, label, fn) => registerGuiTab(id, label, fn)
+
+/* ============================================================
+   GAME GUI  — tabbed modal panel (block picker / inventory / crafting)
+   Tabs are registered dynamically so mods can add their own.
+============================================================ */
+const guiEl   = document.getElementById('game-gui')
+const guiTabs = document.getElementById('gui-tabs')
+const guiBody = document.getElementById('gui-body')
+let guiOpen = false
+let activeTabId = null
+
+// Tab registry: { id, label, render() → HTMLElement }
+const GUI_TABS = []
+
+function registerGuiTab(id, label, renderFn) {
+	GUI_TABS.push({ id, label, render: renderFn })
+	_rebuildGuiTabs()
+}
+
+function _rebuildGuiTabs() {
+	// Preserve the close button — remove only tab elements
+	;[...guiTabs.querySelectorAll('.gui-tab')].forEach(el => el.remove())
+	for (const tab of GUI_TABS) {
+		const el = document.createElement('div')
+		el.className = 'gui-tab' + (tab.id === activeTabId ? ' active' : '')
+		el.textContent = tab.label
+		el.addEventListener('click', () => openGuiTab(tab.id))
+		el.addEventListener('touchstart', (e) => { e.preventDefault(); openGuiTab(tab.id) }, { passive:false })
+		guiTabs.insertBefore(el, document.getElementById('gui-close'))
+	}
+}
+
+function openGuiTab(id) {
+	activeTabId = id
+	_rebuildGuiTabs()
+	const tab = GUI_TABS.find(t => t.id === id)
+	guiBody.innerHTML = ''
+	if (tab) guiBody.appendChild(tab.render())
+}
+
+function openGui(tabId) {
+	if (guiOpen) return
+	guiOpen = true
+	guiEl.classList.add('open')
+	document.exitPointerLock?.()
+	openGuiTab(tabId || activeTabId || GUI_TABS[0]?.id)
+}
+
+function closeGui() {
+	if (!guiOpen) return
+	guiOpen = false
+	guiEl.classList.remove('open')
+}
+
+document.getElementById('gui-close').addEventListener('click', closeGui)
+document.getElementById('gui-close').addEventListener('touchstart', (e) => { e.preventDefault(); closeGui() }, { passive:false })
+guiEl.addEventListener('click', (e) => { if (e.target === guiEl) closeGui() })
+document.getElementById('btn-inventory-open').addEventListener('click', () => openGui())
+document.getElementById('btn-inventory-open').addEventListener('touchstart', (e) => { e.preventDefault(); openGui() }, { passive:false })
+// btn-gui is the touch-control button
+;(function() {
+	const btnGui = document.getElementById('btn-gui')
+	if (btnGui) {
+		btnGui.addEventListener('touchstart', (e) => { e.preventDefault(); openGui() }, { passive:false })
+		btnGui.addEventListener('click', () => openGui())
+	}
+})()
+
+// Key handlers for opening / closing the GUI
+addEventListener('keydown', (e) => {
+	if (document.activeElement?.tagName === 'INPUT') return
+	if (chatOpen) return
+	if (e.code === 'KeyE' || e.code === 'KeyI') {
+		e.preventDefault()
+		guiOpen ? closeGui() : openGui()
+	}
+	if (e.code === 'Escape' && guiOpen) { e.preventDefault(); closeGui() }
+})
+
+// ── Block Picker tab ──────────────────────────────────────────────────────
+function renderBlockPicker() {
+	const wrap = document.createElement('div')
+
+	// Group by category
+	const categories = {}
+	for (const entry of BLOCK_REGISTRY) {
+		if (!categories[entry.category]) categories[entry.category] = []
+		categories[entry.category].push(entry)
+	}
+
+	for (const [cat, entries] of Object.entries(categories)) {
+		const title = document.createElement('div')
+		title.className = 'gui-section-title'
+		title.textContent = cat
+		wrap.appendChild(title)
+
+		const grid = document.createElement('div')
+		grid.className = 'block-grid'
+
+		for (const entry of entries) {
+			const item = document.createElement('div')
+			item.className = 'block-grid-item'
+			// Highlight if this block is in the current hotbar slot
+			if (equippedBlockId() === entry.id) item.classList.add('selected')
+
+			const icon = makeBlockIcon(entry.id)
+			icon.style.width = '36px'; icon.style.height = '36px'
+			item.appendChild(icon)
+
+			const lbl = document.createElement('span')
+			lbl.textContent = entry.name
+			item.appendChild(lbl)
+
+			item.addEventListener('click', () => _pickBlock(entry.id, item, grid))
+			item.addEventListener('touchstart', (e) => { e.preventDefault(); _pickBlock(entry.id, item, grid) }, { passive:false })
+			grid.appendChild(item)
+		}
+		wrap.appendChild(grid)
+
+		// Spacer between categories
+		const spacer = document.createElement('div')
+		spacer.style.height = '12px'
+		wrap.appendChild(spacer)
+	}
+	return wrap
+}
+
+function _pickBlock(blockId, itemEl, grid) {
+	// Assign to hotbar: find existing slot with this block, or use/create one
+	const existingIdx = HOTBAR_ITEMS.findIndex(it => it.type === 'block' && it.blockId === blockId)
+	if (existingIdx !== -1) {
+		selectedSlot = existingIdx
+	} else {
+		// Replace the first block slot with this block
+		const firstBlockIdx = HOTBAR_ITEMS.findIndex(it => it.type === 'block')
+		if (firstBlockIdx !== -1) {
+			// Shift blocks left, put new one at end of block section
+			const blockItems = HOTBAR_ITEMS.filter(it => it.type === 'block')
+			const toolItems  = HOTBAR_ITEMS.filter(it => it.type === 'tool')
+			blockItems.shift()
+			const reg = BLOCK_REGISTRY.find(r => r.id === blockId)
+			blockItems.push({ type:'block', blockId, name: reg?.name ?? String(blockId) })
+			HOTBAR_ITEMS.length = 0
+			for (const it of [...blockItems, ...toolItems]) HOTBAR_ITEMS.push(it)
+			selectedSlot = HOTBAR_ITEMS.length - toolItems.length - 1
+		}
+	}
+	// Update selection highlight in grid
+	;[...grid.querySelectorAll('.block-grid-item')].forEach(el => el.classList.remove('selected'))
+	itemEl.classList.add('selected')
+	rebuildHotbarDOM()
+	closeGui()
+}
+
+registerGuiTab('blocks', '🧱 Blocks', renderBlockPicker)
+
+// ── Inventory tab (stub — extensible for future) ──────────────────────────
+registerGuiTab('inventory', '🎒 Inventory', () => {
+	const el = document.createElement('div')
+	el.className = 'gui-coming-soon'
+	el.textContent = 'Inventory — coming soon'
+	return el
+})
+
+// ── Crafting tab (stub) ───────────────────────────────────────────────────
+registerGuiTab('crafting', '⚒ Crafting', () => {
+	const el = document.createElement('div')
+	el.className = 'gui-coming-soon'
+	el.textContent = 'Crafting — coming soon'
+	return el
+})
+
+/* ============================================================
+   NICK / COMMAND  (nickname set via /nick in chat; /reset still works)
 ============================================================ */
 let myNickname = 'Player' + Math.floor(Math.random() * 9000 + 1000)
-document.getElementById('nick-input').value = myNickname
 
 function handleCommand(raw) {
 	const v = raw.trim()
 	if (!v) return
 	if (v === '/reset') {
 		modified.clear()
-		// Rebuild all loaded chunks
 		for (const [k] of chunks) {
 			const [cx2, cz2] = k.split('_').map(Number)
 			rebuildChunk(cx2, cz2)
 		}
-		// Tell server to reset too
 		netSend({ type: 'world_reset' })
 		showToast('World reset!')
-		document.getElementById('nick-input').value = ''
 		return
 	}
-	// Otherwise treat as nickname
-	myNickname = v.slice(0, 20)
-	netSendNickname(myNickname)
-	showToast(`Nickname set to "${myNickname}"`)
+	if (v.startsWith('/nick ')) {
+		myNickname = v.slice(6).trim().slice(0, 20)
+		netSendNickname(myNickname)
+		showToast(`Nickname set to "${myNickname}"`)
+		return
+	}
+	showToast('Unknown command: ' + v)
 }
-
-document.getElementById('nick-btn').addEventListener('click', () => {
-	handleCommand(document.getElementById('nick-input').value)
-})
-document.getElementById('nick-input').addEventListener('keydown', (e) => {
-	if (e.key === 'Enter') document.getElementById('nick-btn').click()
-})
 
 /* ============================================================
    NETWORKING
@@ -2164,11 +2651,10 @@ function handleServerMessage(msg) {
 		}
 		case 'player_join': addRemotePlayer(msg.player); updatePlayerList(); break
 		case 'player_leave': removeRemotePlayer(msg.id); updatePlayerList(); break
-		case 'move': moveRemotePlayer(msg.id, msg.x, msg.y, msg.z, msg.yaw, msg.pitch); break
+		case 'move': moveRemotePlayer(msg.id, msg.x, msg.y, msg.z, msg.yaw, msg.pitch, msg.held, msg.swing); break
 		case 'moves': {
-			// Batched position update from server tick loop
 			for (const p of msg.players) {
-				if (p.id !== myId) moveRemotePlayer(p.id, p.x, p.y, p.z, p.yaw, p.pitch)
+				if (p.id !== myId) moveRemotePlayer(p.id, p.x, p.y, p.z, p.yaw, p.pitch, p.held, p.swing)
 			}
 			break
 		}
@@ -2194,6 +2680,45 @@ function handleServerMessage(msg) {
 			showToast('World was reset by another player')
 			break
 		}
+		case 'hp_update': {
+			if (msg.id === myId) {
+				updateHpHUD(msg.hp)
+			} else {
+				const rp = remotePlayers.get(msg.id)
+				if (rp) {
+					rp.data.hp = msg.hp
+					if (rp.model.userData.drawHpBar) {
+						rp.model.userData.drawHpBar(msg.hp)
+						rp.model.userData.hpTex.needsUpdate = true
+					}
+				}
+			}
+			break
+		}
+		case 'player_died': {
+			if (msg.id === myId) {
+				// Local player died — respawn
+				player.pos.set(0, 20, 0)
+				player.vel.set(0, 0, 0)
+				player.onGround = false
+				updateHpHUD(msg.hp)
+				showToast(`💀 You were killed by ${msg.killerName}!`)
+				addChatMessage('', `💀 ${myNickname} was killed by ${msg.killerName}`, true)
+			} else {
+				// Remote player died — update their HP bar and show message
+				const rp = remotePlayers.get(msg.id)
+				if (rp) {
+					rp.data.hp = msg.hp
+					if (rp.model.userData.drawHpBar) {
+						rp.model.userData.drawHpBar(msg.hp)
+						rp.model.userData.hpTex.needsUpdate = true
+					}
+					const name = rp.data.nickname
+					addChatMessage('', `💀 ${name} was killed by ${msg.killerName}`, true)
+				}
+			}
+			break
+		}
 		case 'chat': {
 			handleChatMessage(msg)
 			break
@@ -2201,24 +2726,84 @@ function handleServerMessage(msg) {
 	}
 }
 
+/* ============================================================
+   HEALTH SYSTEM
+============================================================ */
+let myHp = 100
+const MAX_HP = 100
+const hpBarWrap  = document.getElementById('hp-bar-wrap')
+const hpBarFill  = document.querySelector('#hp-bar div')
+const hpLabel    = document.getElementById('hp-label')
+
+function updateHpHUD(hp) {
+	myHp = hp
+	const frac = Math.max(0, hp / MAX_HP)
+	hpBarFill.style.width = (frac * 100) + '%'
+	const r = Math.floor(255 * (1 - frac)), g = Math.floor(255 * frac)
+	hpBarFill.style.background = `rgb(${r},${g},0)`
+	hpLabel.textContent = `❤ ${hp}`
+}
+
+function showHpBar(show) {
+	hpBarWrap.style.display = show ? 'flex' : 'none'
+}
+
+// ── Combat raycasting ─────────────────────────────────────────────────────
+// Fires when the player left-clicks while holding a tool.
+// We raycast against playerPickMeshes (invisible bounding boxes).
+const _combatRaycaster = new THREE.Raycaster()
+_combatRaycaster.far = 4   // melee range in blocks
+let _lastHitSendTime = 0
+
+function tryHitPlayer() {
+	if (!equippedTool()) return   // only tools can hit players
+	const now = performance.now()
+	if (now - _lastHitSendTime < 500) return   // client-side cooldown matches server
+	_combatRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
+	const hits = _combatRaycaster.intersectObjects(playerPickMeshes)
+	if (!hits.length) return
+	const targetId = hits[0].object.userData.playerId
+	if (!targetId) return
+	_lastHitSendTime = now
+	netSend({ type: 'hit_player', targetId })
+	triggerSwing()
+}
+
 function netSend(obj) {
 	if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj))
 }
-
-let lastSentPos = {}
 let lastMoveSendTime = 0
+let lastSentPos = {}
 function netSendMove(x, y, z, yaw, pitch) {
 	if (!connected) return
-	// Threshold: don't send tiny micro-movements
-	if (Math.abs(x - lastSentPos.x) < 0.05 && Math.abs(y - lastSentPos.y) < 0.05 &&
-      Math.abs(z - lastSentPos.z) < 0.05 && Math.abs(yaw - lastSentPos.yaw) < 0.02 &&
-      Math.abs(pitch - lastSentPos.pitch) < 0.02) return
-	// Rate limit: max 20 updates/s (server ticks at 20 Hz anyway)
+	// Compute held item descriptor
+	const tool    = equippedTool()
+	const blockId = equippedBlockId()
+	let held = null
+	if (tool) {
+		const ti = loadedTools.indexOf(tool)
+		held = { t: 'tool', i: ti }
+	} else if (blockId) {
+		held = { t: 'block', id: blockId }
+	}
+	const swing = !!(mining || swingActive)
+	const heldStr = JSON.stringify(held)
+
+	// Send if position/look changed enough OR if held/swing changed
+	const posUnchanged = (
+		Math.abs(x - lastSentPos.x) < 0.05 && Math.abs(y - lastSentPos.y) < 0.05 &&
+		Math.abs(z - lastSentPos.z) < 0.05 && Math.abs(yaw - lastSentPos.yaw) < 0.02 &&
+		Math.abs(pitch - lastSentPos.pitch) < 0.02
+	)
+	const itemUnchanged = (heldStr === lastSentPos.heldStr && swing === lastSentPos.swing)
+	if (posUnchanged && itemUnchanged) return
+
+	// Rate limit: max 20 updates/s
 	const now = performance.now()
 	if (now - lastMoveSendTime < 50) return
 	lastMoveSendTime = now
-	lastSentPos = {x, y, z, yaw, pitch}
-	netSend({ type:'move', x, y, z, yaw, pitch })
+	lastSentPos = { x, y, z, yaw, pitch, heldStr, swing }
+	netSend({ type: 'move', x, y, z, yaw, pitch, held, swing })
 }
 function netSendBlockUpdate(k, v) { netSend({ type:'block_update', k, v }) }
 function netSendNickname(name) { netSend({ type:'set_nickname', nickname:name }) }
@@ -2252,7 +2837,6 @@ lobbyNickEl.value = _defaultNick
 
 function startGame(online) {
 	myNickname = (lobbyNickEl.value.trim() || _defaultNick).slice(0, 20)
-	document.getElementById('nick-input').value = myNickname
 	myWorldName = (lobbyWorldEl.value.trim() || 'default').slice(0, 32)
 	offlineMode = !online
 
@@ -2264,6 +2848,8 @@ function startGame(online) {
 	lobbyEl.style.display = 'none'
 	settingsToggle.style.display = 'block'
 	updatePlayerList()
+	showHpBar(true)
+	updateHpHUD(100)
 	if (!offlineMode) connect()
 	animate()
 }
@@ -2416,8 +3002,8 @@ function sendChat() {
 	const text = chatInput.value.trim()
 	closeChat()
 	if (!text) return
-	if (text === '/reset') {
-		handleCommand('/reset')
+	if (text.startsWith('/')) {
+		handleCommand(text)
 		return
 	}
 	// Don't echo locally — server will broadcast back including to sender
@@ -2654,5 +3240,13 @@ in water: ${Boolean(inWater).toString()}`
 setTimeout(() => document.getElementById('debugImg').src = atlasCanvas.toDataURL(), 500)
 </script>
 <img id="debugImg" style="z-index: 1000; position: absolute; top: 0; display: none">
+<!--
+  ── Plugins ──────────────────────────────────────────────────────────────
+  Add plugin <script> tags here, after the main game script.
+  Each plugin calls VoxelWorld.registerBlock() / VoxelWorld.registerGuiTab().
+  Example: <script src="plugin-brick.js"></script>
+  Plugins use block IDs >= 100 to avoid conflicts with core blocks (1-99).
+-->
+<script src="https://purchart.cloud/list?file=plugin-brick.js"></script>
 </body>
 </html>
