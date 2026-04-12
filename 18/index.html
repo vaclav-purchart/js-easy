@@ -35,7 +35,7 @@
     width:100px; height:8px; background:rgba(0,0,0,.4); display:none;
   }
   #progress div { height:100%; width:0%; background:white; }
-    /* ── Player HP bar (own health) ── */
+  /* ── Player HP bar (own health) ── */
   #hp-bar-wrap {
     position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
     display:none; align-items:center; gap:6px; pointer-events:none;
@@ -133,7 +133,6 @@
   @media (pointer: coarse) {
     #btn-inventory-open { display:flex; }
   }
-  /* ── Lobby screen ── */
   #lobby {
     position:fixed; inset:0; z-index:1000;
     background-color:rgba(10,20,40,0.92);
@@ -150,8 +149,8 @@
     display:flex; flex-direction:column; gap:14px;
   }
   #lobby-box h2 { margin:0 0 8px; font-size:22px; color:#8df; text-align:center; }
-  #lobby-box label { font-size:12px; color:#aaa; margin-bottom:2px; display:block; }
-  #lobby-box input {
+  #lobby-box .login-label { font-size:12px; color:#aaa; margin-bottom:2px; display:block; }
+  #lobby-box .login-input {
     width:100%; box-sizing:border-box;
     background:rgba(255,255,255,.1); border:1px solid #666;
     color:white; padding:7px 10px; font-family:monospace; font-size:14px; outline:none;
@@ -165,6 +164,31 @@
   .lobby-btn:hover { background:rgba(255,255,255,.25); border-color:white; }
   .lobby-btn.primary { background:rgba(80,160,80,.4); border-color:#4c4; }
   .lobby-btn.primary:hover { background:rgba(80,160,80,.6); }
+  /* ── Plugin picker ── */
+  #lobby-plugins { display:flex; flex-direction:column; gap:6px; }
+  #lobby-plugins-header {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:2px;
+  }
+  #lobby-plugins-header label { margin:0; }
+  #lobby-plugins-check-all {
+    font-size:11px; color:#8df; cursor:pointer; background:none; border:none;
+    font-family:monospace; padding:0; text-decoration:underline;
+  }
+  #lobby-plugins-list {
+    max-height:140px; overflow-y:auto; display:flex; flex-direction:column; gap:3px;
+    padding:4px; background:rgba(0,0,0,.3); border:1px solid #444;
+  }
+  #lobby-plugins-list.loading { color:#666; font-size:12px; padding:10px; text-align:center; }
+  #lobby-plugins-list.error   { color:#f66; font-size:12px; padding:10px; }
+  .plugin-row {
+    display:flex !important; align-items:center; gap:8px; padding:3px 4px;
+    border-radius:2px; cursor:pointer;
+  }
+  .plugin-row:hover { background:rgba(255,255,255,.06); }
+  .plugin-row input[type=checkbox] { margin:0; cursor:pointer; accent-color:#8df; }
+  .plugin-row .plugin-name  { color:white; font-size:12px; }
+  .plugin-row .plugin-author { color:#8df; font-size:11px; margin-left:auto; white-space:nowrap; }
   /* ── Settings panel ── */
   #settings-panel {
     position:fixed; top:10px; left:50%; transform:translateX(-50%);
@@ -310,12 +334,19 @@
   <div id="lobby-box">
     <h2>🌍 Voxel World</h2>
     <div>
-      <label>Player name</label>
-      <input id="lobby-nick" maxlength="20" placeholder="Your name">
+      <label class="login-label">Player name</label>
+      <input class="login-input" id="lobby-nick" maxlength="20" placeholder="Your name">
     </div>
     <div>
-      <label>World name (online only)</label>
-      <input id="lobby-world" maxlength="32" placeholder="default" value="default">
+      <label class="login-label">World name (online only)</label>
+      <input class="login-input" id="lobby-world" maxlength="32" placeholder="default" value="default">
+    </div>
+    <div id="lobby-plugins">
+      <div id="lobby-plugins-header">
+        <label>Plugins</label>
+        <button id="lobby-plugins-check-all">Check all</button>
+      </div>
+      <div id="lobby-plugins-list" class="loading">Loading plugins…</div>
     </div>
     <div class="lobby-buttons">
       <button class="lobby-btn primary" id="lobby-online">▶ Play Online</button>
@@ -2345,7 +2376,6 @@ const BLOCK_REGISTRY = [
 	{ id: BLOCK.BEDROCK,name: 'Bedrock',category: 'Special' },
 ]
 
-
 // ── Core block registration implementation ────────────────────────────────
 // Adds a new block type at runtime: extends atlas, registers in GUI, updates
 // the worker's block list (passed per-job so no worker recreation needed).
@@ -2835,7 +2865,99 @@ const settingsPanel  = document.getElementById('settings-panel')
 const _defaultNick = 'Player' + Math.floor(Math.random() * 9000 + 1000)
 lobbyNickEl.value = _defaultNick
 
-function startGame(online) {
+// ── Plugin picker ──────────────────────────────────────────────────────────
+const PLUGINS_API   = 'https://purchart.cloud/voxel-world/plugins'
+const pluginListEl  = document.getElementById('lobby-plugins-list')
+const checkAllBtn   = document.getElementById('lobby-plugins-check-all')
+let availablePlugins = []   // { url, filename, name, author }
+
+function parsePluginMeta(url) {
+	// filename schema: plugin---[author]---[name].js
+	const filename = url.split('/list?file=').pop()
+	console.log(filename)
+
+	const m = filename.match(/^plugin---(.+?)---(.+?)\.js$/i)
+	return {
+		url,
+		filename,
+		author: m ? m[1].replace(/-/g, ' ') : 'unknown',
+		name:   m ? m[2].replace(/-/g, ' ') : filename,
+	}
+}
+
+function buildPluginList(plugins) {
+	availablePlugins = plugins
+	pluginListEl.classList.remove('loading', 'error')
+	pluginListEl.innerHTML = ''
+
+	if (plugins.length === 0) {
+		pluginListEl.textContent = 'No plugins available.'
+		pluginListEl.style.color = '#666'
+		return
+	}
+
+	for (const p of plugins) {
+		const row  = document.createElement('label')
+		row.className = 'plugin-row'
+
+		const cb   = document.createElement('input')
+		cb.type    = 'checkbox'
+		cb.dataset.url = p.url
+		cb.checked = true
+
+		const nameEl   = document.createElement('span')
+		nameEl.className = 'plugin-name'
+		nameEl.textContent = p.name
+
+		const authorEl = document.createElement('span')
+		authorEl.className = 'plugin-author'
+		authorEl.textContent = p.author
+
+		row.appendChild(cb)
+		row.appendChild(nameEl)
+		row.appendChild(authorEl)
+		pluginListEl.appendChild(row)
+	}
+
+	updateCheckAllLabel()
+}
+
+function updateCheckAllLabel() {
+	const all = [...pluginListEl.querySelectorAll('input[type=checkbox]')]
+	checkAllBtn.textContent = all.every(c => c.checked) ? 'Uncheck all' : 'Check all'
+}
+
+checkAllBtn.addEventListener('click', () => {
+	const all = [...pluginListEl.querySelectorAll('input[type=checkbox]')]
+	const shouldCheck = !all.every(c => c.checked)
+	all.forEach(c => { c.checked = shouldCheck })
+	updateCheckAllLabel()
+})
+pluginListEl.addEventListener('change', updateCheckAllLabel)
+
+// Fetch plugin list on page load
+fetch(PLUGINS_API)
+	.then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json() })
+	.then(urls => buildPluginList(urls.map(parsePluginMeta)))
+	.catch(err => {
+		pluginListEl.classList.remove('loading')
+		pluginListEl.classList.add('error')
+		pluginListEl.textContent = 'Could not load plugin list: ' + err.message
+	})
+
+// ── Load a plugin script dynamically (returns a Promise) ──────────────────
+function loadPluginScript(url) {
+	return new Promise((resolve, reject) => {
+		const s = document.createElement('script')
+		s.src = url
+		s.onload  = resolve
+		s.onerror = () => reject(new Error('Failed to load: ' + url))
+		document.head.appendChild(s)
+	})
+}
+
+// ── startGame — loads selected plugins then launches ──────────────────────
+async function startGame(online) {
 	myNickname = (lobbyNickEl.value.trim() || _defaultNick).slice(0, 20)
 	myWorldName = (lobbyWorldEl.value.trim() || 'default').slice(0, 32)
 	offlineMode = !online
@@ -2843,6 +2965,24 @@ function startGame(online) {
 	if (offlineMode) {
 		SEED = Math.floor(Math.random() * 1_000_000)
 		setStatus('offline', 'OFFLINE (local)')
+	}
+
+	// Load checked plugins sequentially so they register in order
+	const checked = [...pluginListEl.querySelectorAll('input[type=checkbox]:checked')]
+	if (checked.length > 0) {
+		const btns = document.querySelectorAll('.lobby-btn')
+		btns.forEach(b => { b.disabled = true; b.style.opacity = '0.5' })
+
+		for (const cb of checked) {
+			try {
+				await loadPluginScript(cb.dataset.url)
+				console.log('[lobby] Loaded plugin:', cb.dataset.url)
+			} catch (e) {
+				console.warn('[lobby] Plugin failed to load:', e.message)
+			}
+		}
+
+		btns.forEach(b => { b.disabled = false; b.style.opacity = '' })
 	}
 
 	lobbyEl.style.display = 'none'
@@ -3247,6 +3387,5 @@ setTimeout(() => document.getElementById('debugImg').src = atlasCanvas.toDataURL
   Example: <script src="plugin-brick.js"></script>
   Plugins use block IDs >= 100 to avoid conflicts with core blocks (1-99).
 -->
-<script src="https://purchart.cloud/list?file=plugin-brick.js"></script>
 </body>
 </html>
