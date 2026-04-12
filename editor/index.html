@@ -1070,6 +1070,17 @@ console.log("test")
 				}
 
 				this.updateTimeout = setTimeout(() => {
+					// Check for Voxel World Plugin and switch language
+					const code = this.editor.getValue()
+					const isVoxelPlugin = code.startsWith('/**\n * Voxel World Plugin') || code.startsWith('/** JavaScript */')
+					const currentLanguage = monaco.editor.getModels()[0]?.getLanguageId()
+
+					if (isVoxelPlugin && currentLanguage !== 'javascript') {
+						monaco.editor.setModelLanguage(this.editor.getModel(), 'javascript')
+					} else if (!isVoxelPlugin && currentLanguage !== 'html') {
+						monaco.editor.setModelLanguage(this.editor.getModel(), 'html')
+					}
+
 					this.updatePreview()
 					this.saveToLocalStorage() // Auto-save to localStorage
 					this.checkJavaScriptErrors() // Simple syntax checking
