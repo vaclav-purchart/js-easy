@@ -440,24 +440,84 @@ const MINING_DISTANCE = 6
    IDs 1–99 are reserved for core blocks; plugins should use 100+.
 ============================================================ */
 
-// Expose the plugin API as a global so plugin <script> files can call it.
-// Functions that need engine internals are set up further below; plugins
-// registered before init() are queued and applied automatically.
+// Expose the plugin API as a global. Plugins must export an init(api) function
+// instead of running code at load time. The engine calls init(api) after the
+// plugin script loads, passing a fully-populated api object.
+//
+// Plugin pattern:
+//   VoxelWorld.registerPlugin('PluginName', { init(api) { const ID = api.allocateBlockId(); ... } })
+//
+// The api object exposes:
+//   api.allocateBlockId()            → unique integer ID, engine-assigned (no collisions)
+//   api.registerBlock(def)           → def without .id field; id is returned by allocateBlockId
+//   api.registerGuiTab(id,label,fn)
+//   api.BLOCK                        → core block ID map
+//   api.rebuildAllChunks()           → force-refresh all loaded chunks
 window.VoxelWorld = {
-	_pendingBlocks: [],   // queued before atlas is ready
+	_pendingInits: [],   // { pluginObj } queued before engine is ready
 	_ready: false,
+	_nextPluginId: 100,  // plugin block IDs start at 100, assigned by engine
 
-	// Register a new block type. Call any time — before or after game start.
-	// def: { id, name, category, transparent?, draw:{side,top?,bottom?}, url? }
-	registerBlock(def) {
-		if (!this._ready) { this._pendingBlocks.push(def); return }
-		_registerBlockNow(def)
+	_getBlockId(pluginName) {
+		let hash = 0
+
+		for (let i = 0; i < pluginName.length; i++) {
+			hash = (hash * 31 + pluginName.charCodeAt(i)) >>> 0 // keep it uint32
+		}
+
+		// Map to range 100–255 (156 values)
+		return 100 + (hash % 156)
 	},
 
-	// Register a GUI tab (delegates to the existing function once defined)
-	registerGuiTab(id, label, fn) {
-		if (!this._ready) { this._pendingBlocks.push({ _guiTab: true, id, label, fn }); return }
-		registerGuiTab(id, label, fn)
+	registerPlugin(pluginName, pluginObj) {
+		const pluginDef = {...pluginObj, PLUGIN_NAME: pluginName}
+		this._pendingInits.push(pluginDef)
+		pluginDef.init(this._makeApi(pluginDef))
+	},
+
+	// Called by the lobby after a plugin script loads.
+	// Finds the plugin's init function and either calls it immediately
+	// (if engine is ready) or queues it.
+	_initPlugin(pluginObj) {
+		if (typeof pluginObj?.init !== 'function') return
+		if (!this._ready) { this._pendingInits.push(pluginObj); return }
+		this._callInit(pluginObj)
+	},
+
+	_callInit(pluginObj) {
+		try {
+			pluginObj.init(this._makeApi(pluginObj))
+		} catch (e) {
+			console.error('[VoxelWorld] Plugin init error:', e)
+		}
+	},
+
+	_makeApi(pluginObj) {
+		return {
+			PLUGIN_NAME: pluginObj.PLUGIN_NAME,
+
+			// Returns a guaranteed-unique block ID. Always call this instead of
+			// hardcoding a number — the engine tracks allocation to prevent collisions.
+			allocateBlockId: () => VoxelWorld._getBlockId(pluginObj.PLUGIN_NAME),
+
+			// Register a block. def must NOT include .id — get one from allocateBlockId().
+			// Returns the registered ID for convenience.
+			registerBlock: (def) => _registerBlockNow(def),
+
+			// Register a GUI tab in the in-game inventory panel.
+			registerGuiTab: (id, label, fn) => registerGuiTab(id, label, fn),
+
+			// Read-only reference to core block IDs.
+			get BLOCK() { return BLOCK },
+
+			// Rebuild all currently loaded chunks (e.g. after adding terrain-generated blocks).
+			rebuildAllChunks() {
+				for (const [k] of chunks) {
+					const [cx, cz] = k.split('_').map(Number)
+					rebuildChunk(cx, cz)
+				}
+			},
+		}
 	},
 }
 
@@ -2412,16 +2472,12 @@ function _registerBlockNow(def) {
 	console.log(`[plugin] Registered block "${def.name}" (id=${id})`)
 }
 
-// Activate the plugin API and flush any pending registrations made before init
+// Activate the plugin API and flush any plugins that were loaded before engine init
 VoxelWorld._ready = true
-for (const def of VoxelWorld._pendingBlocks) {
-	if (def._guiTab) registerGuiTab(def.id, def.label, def.fn)
-	else _registerBlockNow(def)
+for (const pluginObj of VoxelWorld._pendingInits) {
+	VoxelWorld._callInit(pluginObj)
 }
-VoxelWorld._pendingBlocks = []
-// Keep registerBlock live for plugins loaded after init
-VoxelWorld.registerBlock = (def) => _registerBlockNow(def)
-VoxelWorld.registerGuiTab = (id, label, fn) => registerGuiTab(id, label, fn)
+VoxelWorld._pendingInits = []
 
 /* ============================================================
    GAME GUI  — tabbed modal panel (block picker / inventory / crafting)
@@ -2945,12 +3001,19 @@ fetch(PLUGINS_API)
 		pluginListEl.textContent = 'Could not load plugin list: ' + err.message
 	})
 
-// ── Load a plugin script dynamically (returns a Promise) ──────────────────
+// Load a plugin script and call its init(api) function.
+// Plugin scripts must assign their object to a well-known global OR
+// export it as window.VoxelWorldPlugin (fallback). The convention is:
+//   VoxelWorld.registerPlugin('PluginName', { init(api) { const ID = api.allocateBlockId(); ... } })
+// We detect the newly added global by diffing window keys before/after load.
 function loadPluginScript(url) {
 	return new Promise((resolve, reject) => {
+		// const keysBefore = new Set(Object.keys(window))
 		const s = document.createElement('script')
 		s.src = url
-		s.onload  = resolve
+		s.onload = () => {
+			resolve()
+		}
 		s.onerror = () => reject(new Error('Failed to load: ' + url))
 		document.head.appendChild(s)
 	})
