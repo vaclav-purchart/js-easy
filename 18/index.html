@@ -493,24 +493,103 @@ window.VoxelWorld = {
 	},
 
 	_makeApi(pluginObj) {
-		return {
+		/**
+		 * Plugin API — passed as the first argument to every plugin's init(api) function.
+		 *
+		 * @typedef {Object} PluginApi
+		 *
+		 * @property {string} PLUGIN_NAME
+		 *   The name this plugin was registered with. Used internally for ID allocation.
+		 *
+		 * @property {function(): number} allocateBlockId
+		 *   Returns a stable, collision-free integer block ID for this plugin.
+		 *   The ID is derived deterministically from PLUGIN_NAME so it survives
+		 *   reloads and world restores. Always call this — never hardcode an ID.
+		 *   Example:
+		 *     const MY_BLOCK = api.allocateBlockId()
+		 *
+		 * @property {function(BlockDef): void} registerBlock
+		 *   Register a new solid block type. The def object:
+		 *   {
+		 *     id:          number   — from allocateBlockId()
+		 *     name:        string   — display name in GUI
+		 *     category:    string   — group in block picker (e.g. 'Natural', 'Crafted')
+		 *     transparent: boolean  — optional, default false. Set true for glass-like blocks.
+		 *     draw: {
+		 *       side(ctx, x, y, S)    — required. Draws the side face texture.
+		 *       top(ctx, x, y, S)     — optional. Falls back to side if omitted.
+		 *       bottom(ctx, x, y, S)  — optional. Falls back to side if omitted.
+		 *     }
+		 *   }
+		 *   ctx is a CanvasRenderingContext2D. x,y are tile origin in the atlas.
+		 *   S is TILE_SIZE (16). All drawing must stay within [x,y]..[x+S,y+S].
+		 *
+		 * @property {function(number, string, string=): void} loadBlockTexture
+		 *   Load a PNG from a URL and blit it into the atlas for a given block ID.
+		 *   face is optional: 'side' | 'top' | 'bottom' | 'all' (default 'all').
+		 *   When face is 'all' or omitted, the same image fills all three columns.
+		 *   The block must already be registered before calling this.
+		 *   Example:
+		 *     api.loadBlockTexture(MY_BLOCK, 'https://example.com/stone.png')
+		 *     api.loadBlockTexture(MY_BLOCK, 'https://example.com/top.png', 'top')
+		 *
+		 * @property {function(string, string, function(): HTMLElement): void} registerGuiTab
+		 *   Add a tab to the in-game inventory panel.
+		 *   (id, label, renderFn) — renderFn must return an HTMLElement.
+		 *
+		 * @property {Object} BLOCK
+		 *   Read-only map of core block IDs: { AIR, GRASS, DIRT, STONE, … }
+		 *
+		 * @property {function(): void} rebuildAllChunks
+		 *   Force-regenerate all currently loaded chunks. Call after making
+		 *   changes that affect terrain appearance (e.g. after textures load).
+		 */
+		const api = {
 			PLUGIN_NAME: pluginObj.PLUGIN_NAME,
 
-			// Returns a guaranteed-unique block ID. Always call this instead of
-			// hardcoding a number — the engine tracks allocation to prevent collisions.
 			allocateBlockId: () => VoxelWorld._getBlockId(pluginObj.PLUGIN_NAME),
 
-			// Register a block. def must NOT include .id — get one from allocateBlockId().
-			// Returns the registered ID for convenience.
-			registerBlock: (def) => _registerBlockNow(def),
+			registerBlock(def) {
+				// Ensure top/bottom fall back to side if not provided
+				if (def.draw?.side) {
+					def.draw.top    = def.draw.top    || def.draw.side
+					def.draw.bottom = def.draw.bottom || def.draw.side
+				}
+				_registerBlockNow(def)
+			},
 
-			// Register a GUI tab in the in-game inventory panel.
+			/**
+			 * Load a PNG into the atlas for the given block id.
+			 * face: 'side' | 'top' | 'bottom' | 'all'  (default: 'all')
+			 */
+			loadBlockTexture(blockId, url, face = 'all') {
+				const colMap = { side: [0], top: [1], bottom: [2], all: [0, 1, 2] }
+				const cols = colMap[face] ?? [0, 1, 2]
+				const img = new Image()
+				img.crossOrigin = 'anonymous'
+				img.onload = () => {
+					const row = blockAtlasRow[blockId]
+					if (row === undefined) {
+						console.warn(`[plugin] loadBlockTexture: block ${blockId} not registered`)
+						return
+					}
+					for (const col of cols) {
+						const tx = col * TILE_SIZE
+						const ty = row * TILE_SIZE
+						atlasCtx.clearRect(tx, ty, TILE_SIZE, TILE_SIZE)
+						atlasCtx.drawImage(img, tx, ty, TILE_SIZE, TILE_SIZE)
+					}
+					atlasTexture.needsUpdate = true
+					api.rebuildAllChunks()
+				}
+				img.onerror = () => console.warn(`[plugin] Failed to load texture: ${url}`)
+				img.src = url
+			},
+
 			registerGuiTab: (id, label, fn) => registerGuiTab(id, label, fn),
 
-			// Read-only reference to core block IDs.
 			get BLOCK() { return BLOCK },
 
-			// Rebuild all currently loaded chunks (e.g. after adding terrain-generated blocks).
 			rebuildAllChunks() {
 				for (const [k] of chunks) {
 					const [cx, cz] = k.split('_').map(Number)
@@ -518,6 +597,7 @@ window.VoxelWorld = {
 				}
 			},
 		}
+		return api
 	},
 }
 
@@ -2674,6 +2754,51 @@ function handleCommand(raw) {
 		showToast(`Nickname set to "${myNickname}"`)
 		return
 	}
+	// /remove <blockname> <radius>
+	// Removes all modified blocks of the given type within radius blocks of the player.
+	const removeMatch = v.match(/^\/remove\s+(\S+)\s+(\d+)$/i)
+	if (removeMatch) {
+		const blockName = removeMatch[1].toUpperCase()
+		const radius    = Math.min(parseInt(removeMatch[2], 10), 500)
+
+		// Find block ID by name — check BLOCK map and BLOCK_REGISTRY
+		let targetId = BLOCK[blockName] ?? null
+		if (targetId === null) {
+			const reg = BLOCK_REGISTRY.find(r => r.name.toUpperCase() === blockName)
+			targetId = reg?.id ?? null
+		}
+		if (targetId === null) {
+			showToast(`Unknown block: ${removeMatch[1]}`)
+			return
+		}
+
+		const px = Math.floor(player.pos.x), pz = Math.floor(player.pos.z)
+		const r2 = radius * radius
+		let removed = 0
+		const affectedChunks = new Set()
+
+		for (const [k, v2] of [...modified.entries()]) {
+			if (v2 !== targetId && !(v2 === BLOCK.AIR && targetId === BLOCK.AIR)) {
+				if (v2 !== targetId) continue
+			}
+			const parts = k.split('_')
+			const bx = parseInt(parts[0], 10)
+			const bz = parseInt(parts[2], 10)
+			const dx = bx - px, dz = bz - pz
+			if (dx*dx + dz*dz > r2) continue
+			modified.delete(k)
+			removed++
+			affectedChunks.add(chunkKey(Math.floor(bx / CHUNK_SIZE), Math.floor(bz / CHUNK_SIZE)))
+		}
+
+		for (const ck of affectedChunks) {
+			const [cx2, cz2] = ck.split('_').map(Number)
+			rebuildChunk(cx2, cz2)
+		}
+
+		showToast(`Removed ${removed} ${removeMatch[1]} block${removed !== 1 ? 's' : ''} within ${radius} blocks`)
+		return
+	}
 	showToast('Unknown command: ' + v)
 }
 
@@ -2807,6 +2932,16 @@ function handleServerMessage(msg) {
 		}
 		case 'chat': {
 			handleChatMessage(msg)
+			break
+		}
+		case 'plugin_added': {
+			// Server dropped a new plugin file — load it immediately without rejoining
+			loadPluginScript(msg.url)
+				.then(() => {
+					addChatMessage('', `🧩 Plugin loaded: ${msg.url.split('/').pop()}`, true)
+					showToast('New plugin loaded!')
+				})
+				.catch(err => console.warn('[plugin_added] Failed:', err.message))
 			break
 		}
 	}
