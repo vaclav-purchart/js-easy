@@ -2045,6 +2045,210 @@ function tickRemotePlayers(dt) {
 }
 
 /* ============================================================
+   MOBS  — server-authoritative animals (chickens, …)
+   The server owns position, HP and AI; clients spawn the right
+   model from MOB_MODELS, smoothly lerp toward the latest server
+   pose, and animate locally based on whether the mob is moving.
+   To add a new species: add an entry to MOB_MODELS here AND a
+   matching MOB_TYPES entry in voxel-world.mjs.
+============================================================ */
+const mobs = new Map()      // id → { model, hitBox, data }
+const mobPickMeshes = []    // invisible bounding boxes for combat raycasting
+
+// ── Shared materials (cheap to share — every chicken uses the same set) ──
+const _MAT_MOB_YELLOW = new THREE.MeshLambertMaterial({ color: 0xfff060 })
+const _MAT_MOB_ORANGE = new THREE.MeshLambertMaterial({ color: 0xff8a00 })
+const _MAT_MOB_BLACK  = new THREE.MeshLambertMaterial({ color: 0x111111 })
+const _MAT_MOB_WHITE  = new THREE.MeshLambertMaterial({ color: 0xffffff })
+const _MAT_MOB_WING   = new THREE.MeshLambertMaterial({ color: 0xfff060, side: THREE.DoubleSide })
+
+// ── Chicken model ─────────────────────────────────────────────────────────
+// Local axes: +Z = forward (beak direction), +Y = up.
+// Total height ~0.8 blocks; sits on its feet at y=0.
+function makeChickenModel() {
+	const root = new THREE.Group()
+
+	const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.6), _MAT_MOB_YELLOW)
+	body.position.y = 0.45
+	root.add(body)
+
+	// Head pivot — animated for bobbing while idle and walking
+	const headPivot = new THREE.Group()
+	headPivot.position.set(0, 0.6, 0.28)
+	root.add(headPivot)
+
+	const head = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), _MAT_MOB_YELLOW)
+	head.position.y = 0.18
+	headPivot.add(head)
+
+	const beak = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.18), _MAT_MOB_ORANGE)
+	beak.position.set(0, 0.16, 0.23)
+	headPivot.add(beak)
+
+	for (const sx of [-1, 1]) {
+		const w = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.05), _MAT_MOB_WHITE)
+		w.position.set(sx * 0.13, 0.22, 0.15)
+		headPivot.add(w)
+		const p = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.05), _MAT_MOB_BLACK)
+		p.position.set(sx * 0.13, 0.22, 0.18)
+		headPivot.add(p)
+	}
+
+	// Wings — small planes pivoted at the body, rotating around Z to flap
+	const wingGeo = new THREE.PlaneGeometry(0.4, 0.3)
+	function makeWing(sx) {
+		const pivot = new THREE.Group()
+		pivot.position.set(sx * 0.27, 0.5, 0)
+		const wing = new THREE.Mesh(wingGeo, _MAT_MOB_WING)
+		wing.rotation.y = sx > 0 ? -Math.PI / 2 : Math.PI / 2
+		pivot.add(wing)
+		root.add(pivot)
+		return pivot
+	}
+	const leftWing  = makeWing(-1)
+	const rightWing = makeWing( 1)
+
+	// Legs — pivoted at the hip so they swing like a walking animal
+	function makeLeg(sx) {
+		const pivot = new THREE.Group()
+		pivot.position.set(sx * 0.12, 0.3, 0)
+		const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08), _MAT_MOB_ORANGE)
+		leg.position.y = -0.15
+		pivot.add(leg)
+		root.add(pivot)
+		return pivot
+	}
+	const leftLeg  = makeLeg(-1)
+	const rightLeg = makeLeg( 1)
+
+	const hpBar = makeMobHpBar()
+	hpBar.position.y = 1.1
+	root.add(hpBar)
+
+	let phase = 0
+	root.userData.tickAnim = (dt, isMoving) => {
+		if (isMoving) {
+			phase += dt * 8
+			leftLeg.rotation.x  =  Math.sin(phase) * 0.7
+			rightLeg.rotation.x = -Math.sin(phase) * 0.7
+			leftWing.rotation.z   =  Math.sin(phase * 1.5) * 0.3 - 0.15
+			rightWing.rotation.z  = -Math.sin(phase * 1.5) * 0.3 + 0.15
+			headPivot.position.z  = 0.28 + Math.sin(phase * 2) * 0.02
+		} else {
+			leftLeg.rotation.x  *= 0.85
+			rightLeg.rotation.x *= 0.85
+			leftWing.rotation.z  *= 0.85
+			rightWing.rotation.z *= 0.85
+			phase += dt * 1.5
+			headPivot.position.y = 0.6 + Math.sin(phase) * 0.015
+		}
+	}
+	root.userData.hpBar = hpBar
+	return root
+}
+
+// Mob HP bar — tiny floating sprite, hidden until the mob takes damage.
+function makeMobHpBar() {
+	const W = 64, H = 8
+	const c = document.createElement('canvas'); c.width = W; c.height = H
+	const ctx = c.getContext('2d')
+	const tex = new THREE.CanvasTexture(c)
+	tex.minFilter = THREE.LinearFilter
+	const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false })
+	const sprite = new THREE.Sprite(mat)
+	sprite.scale.set(0.7, 0.09, 1)
+	sprite.visible = false
+	sprite.userData.draw = (frac) => {
+		ctx.clearRect(0, 0, W, H)
+		ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(0, 0, W, H)
+		const r = Math.floor(255 * (1 - frac)), g = Math.floor(255 * frac)
+		ctx.fillStyle = `rgb(${r},${g},0)`
+		ctx.fillRect(1, 1, (W - 2) * frac, H - 2)
+		tex.needsUpdate = true
+	}
+	return sprite
+}
+
+const MOB_MODELS = {
+	chicken: makeChickenModel,
+}
+
+function addMob(data) {
+	if (mobs.has(data.id)) return
+	const factory = MOB_MODELS[data.type]
+	if (!factory) { console.warn('[mob] unknown type:', data.type); return }
+	const model = factory()
+	model.position.set(data.x, data.y, data.z)
+	model.rotation.y = data.yaw || 0
+
+	// Invisible hit box for combat raycasting (slightly larger than the body)
+	const hitBox = new THREE.Mesh(
+		new THREE.BoxGeometry(0.7, 0.9, 0.8),
+		new THREE.MeshBasicMaterial({ visible: false }),
+	)
+	hitBox.position.y = 0.45
+	hitBox.userData.mobId = data.id
+	model.add(hitBox)
+	mobPickMeshes.push(hitBox)
+	scene.add(model)
+
+	mobs.set(data.id, {
+		model, hitBox,
+		data: { ...data, tx: data.x, ty: data.y, tz: data.z, tyaw: data.yaw || 0 },
+	})
+
+	// Damaged on join? Show the bar straight away.
+	if (data.hp < data.maxHp) {
+		const bar = model.userData.hpBar
+		bar.visible = true
+		bar.userData.draw(data.hp / data.maxHp)
+	}
+}
+
+function removeMob(id) {
+	const m = mobs.get(id)
+	if (!m) return
+	scene.remove(m.model)
+	const i = mobPickMeshes.indexOf(m.hitBox); if (i !== -1) mobPickMeshes.splice(i, 1)
+	mobs.delete(id)
+}
+
+function updateMobTarget(id, x, y, z, yaw) {
+	const m = mobs.get(id); if (!m) return
+	m.data.tx = x; m.data.ty = y; m.data.tz = z
+	if (yaw !== undefined) m.data.tyaw = yaw
+}
+
+function updateMobHp(id, hp) {
+	const m = mobs.get(id); if (!m) return
+	m.data.hp = hp
+	const bar = m.model.userData.hpBar
+	if (!bar) return
+	const frac = hp / m.data.maxHp
+	bar.userData.draw(frac)
+	bar.visible = hp < m.data.maxHp
+}
+
+function tickMobs(dt) {
+	const alpha = Math.min(dt * 8, 1)
+	for (const { model, data } of mobs.values()) {
+		const oldX = model.position.x, oldZ = model.position.z
+		model.position.x += (data.tx - model.position.x) * alpha
+		model.position.y += (data.ty - model.position.y) * alpha
+		model.position.z += (data.tz - model.position.z) * alpha
+		// Yaw: shortest-arc lerp so we don't take the long way round
+		let dy = data.tyaw - model.rotation.y
+		while (dy >  Math.PI) dy -= 2 * Math.PI
+		while (dy < -Math.PI) dy += 2 * Math.PI
+		model.rotation.y += dy * alpha
+
+		const dx = model.position.x - oldX, dz = model.position.z - oldZ
+		const speed = dt > 0 ? Math.hypot(dx, dz) / dt : 0
+		model.userData.tickAnim?.(dt, speed > 0.05)
+	}
+}
+
+/* ============================================================
    PLAYER & CAMERA
 ============================================================ */
 const player = {
@@ -2081,7 +2285,7 @@ let currentTarget = null   // cached raycast result
 
 addEventListener('mousedown', (e) => {
 	if (document.pointerLockElement !== renderer.domElement) return
-	if (e.button === 0) { mining = true; tryHitPlayer() }
+	if (e.button === 0) { mining = true; tryHitTarget() }
 	if (e.button === 2) { placeBlock(); triggerSwing() }
 })
 addEventListener('mouseup', () => {
@@ -2196,7 +2400,7 @@ function setupTouchBtn(id, key) {
 		touchState[key] = true
 		el.classList.add('pressed')
 		if (key === 'place') placeBlock()
-		if (key === 'mine') { mining = true; tryHitPlayer() }
+		if (key === 'mine') { mining = true; tryHitTarget() }
 	}, { passive:false })
 	el.addEventListener('touchend', (e) => {
 		e.preventDefault()
@@ -2277,18 +2481,24 @@ function placeBlock() {
 // ── Tool definitions ─────────────────────────────────────────────────────
 // Each entry: { name, url }  OR  { name, draw(ctx,W,H) } for canvas-drawn tools.
 // Non-transparent pixels in the 16×16 bitmap become flat voxel slabs in 3D.
+// Per-tool damage is sent with each hit so the server stays a dumb arbiter and
+// new weapons (axes, hammers, …) can tweak their damage without touching the
+// server. The server still clamps to a sane max to avoid abuse.
+const DEFAULT_TOOL_DAMAGE = 5
 const TOOL_DEFS = [
 	{
 		name: 'Sword',
 		url: 'https://purchart.cloud/images?file=2026-03-25--06-32-44---luky13---dia-mec.png',
+		damage: 20,
 	},
 	{
 		name: 'Pickaxe',
 		url: 'https://purchart.cloud/images?file=2026-03-25--19-33-18---luky15---kamenny-krumpac.png',
+		damage: 5,
 	},
 	// To add more tools, append here:
-	// { name: 'Axe', url: '...' },
-	// { name: 'Shovel', draw(ctx,W,H){ ... } },
+	// { name: 'Axe', url: '...', damage: 12 },
+	// { name: 'Shovel', draw(ctx,W,H){ ... }, damage: 4 },
 ]
 
 // ── Build a 3D voxel model from a 16×16 RGBA pixel array ─────────────────
@@ -2368,7 +2578,7 @@ function loadTool(def) {
 			const pixels = ctx.getImageData(0, 0, W, H).data
 			const model = buildToolModel(pixels, W, H)
 			const iconDataURL = offscreen.toDataURL()
-			resolve({ name: def.name, model, iconDataURL })
+			resolve({ name: def.name, model, iconDataURL, damage: def.damage ?? DEFAULT_TOOL_DAMAGE })
 		}
 
 		if (def.draw) {
@@ -2917,6 +3127,7 @@ function connect() {
 	ws.onclose = () => {
 		connected = false; myId = null
 		for (const id of [...remotePlayers.keys()]) removeRemotePlayer(id)
+		for (const id of [...mobs.keys()]) removeMob(id)
 		setStatus('offline', 'OFFLINE')
 		scheduleReconnect()
 	}
@@ -2939,7 +3150,23 @@ function handleServerMessage(msg) {
 				rebuildChunk(cx2, cz2)
 			}
 			for (const p of msg.players) addRemotePlayer(p)
+			if (msg.mobs) for (const m of msg.mobs) addMob(m)
 			updatePlayerList()
+			break
+		}
+		case 'mob_spawn':   addMob(msg.mob); break
+		case 'mob_despawn': removeMob(msg.id); break
+		case 'mob_updates': {
+			for (const m of msg.mobs) updateMobTarget(m.id, m.x, m.y, m.z, m.yaw)
+			break
+		}
+		case 'mob_hp':  updateMobHp(msg.id, msg.hp); break
+		case 'mob_die': {
+			// Server already removes the mob and (after a delay) spawns a fresh one.
+			const rec = mobs.get(msg.id)
+			const typeLabel = rec?.data.type ?? 'mob'
+			removeMob(msg.id)
+			addChatMessage('', `🪶 A ${typeLabel} was killed by ${msg.killerName}`, true)
 			break
 		}
 		case 'player_join': addRemotePlayer(msg.player); updatePlayerList(); break
@@ -3065,18 +3292,28 @@ const _combatRaycaster = new THREE.Raycaster()
 _combatRaycaster.far = 4   // melee range in blocks
 let _lastHitSendTime = 0
 
-function tryHitPlayer() {
-	if (!equippedTool()) return   // only tools can hit players
+// Raycast against both player and mob hit-boxes; closest hit wins. Tools only.
+// Damage is taken from the equipped tool and sent with the message so future
+// weapons can tweak their values without server changes.
+function tryHitTarget() {
+	const tool = equippedTool()
+	if (!tool) return
 	const now = performance.now()
 	if (now - _lastHitSendTime < 500) return   // client-side cooldown matches server
 	_combatRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
-	const hits = _combatRaycaster.intersectObjects(playerPickMeshes)
+	const hits = _combatRaycaster.intersectObjects([...playerPickMeshes, ...mobPickMeshes])
 	if (!hits.length) return
-	const targetId = hits[0].object.userData.playerId
-	if (!targetId) return
-	_lastHitSendTime = now
-	netSend({ type: 'hit_player', targetId })
-	triggerSwing()
+	const ud = hits[0].object.userData
+	const damage = tool.damage ?? DEFAULT_TOOL_DAMAGE
+	if (ud.playerId) {
+		_lastHitSendTime = now
+		netSend({ type: 'hit_player', targetId: ud.playerId, damage })
+		triggerSwing()
+	} else if (ud.mobId) {
+		_lastHitSendTime = now
+		netSend({ type: 'hit_mob', mobId: ud.mobId, damage })
+		triggerSwing()
+	}
 }
 
 function netSend(obj) {
@@ -3616,6 +3853,7 @@ function animate() {
 
 	netSendMove(player.pos.x, player.pos.y, player.pos.z, yawObject.rotation.y, pitch)
 	tickRemotePlayers(dt)
+	tickMobs(dt)
 	tickClouds(dt)
 
 	// Chunk loading/unloading

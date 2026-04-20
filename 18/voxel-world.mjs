@@ -80,6 +80,10 @@ function getWorld(name) {
 			modifiedBlocks: new Map(),
 			players: new Map(),
 			nextId: 1,
+			// Mobs (chickens, future cows/pigs/…) are server-authoritative but
+			// not persisted — they respawn dynamically around active players.
+			mobs: new Map(),
+			nextMobId: 1,
 		})
 		console.log(`[voxel-world] Created world "${name}"`)
 	}
@@ -205,6 +209,281 @@ if (saveArg) {
 	loadWorldFile(saveArg, nameArg, range)
 }
 
+// ── Server-side terrain (mirrors client worker so mobs can walk on ground) ─
+// Keep these formulas in sync with `_workerTerrain` in index.html.
+const SEA_LEVEL  = 8
+const BEDROCK_Y  = 0
+const CHUNK_SIZE = 16
+const BLOCK_AIR  = 0
+const BLOCK_WATER = 4
+
+function _hash(n) { return Math.abs(Math.sin(n) * 43758.5453) % 1 }
+
+function _smoothNoise(seed, x, z, scale, offset) {
+	const x0 = Math.floor(x / scale), z0 = Math.floor(z / scale)
+	const xf = x / scale - x0,        zf = z / scale - z0
+	const n00 = _hash(x0 * 57.13       + z0       + offset + seed)
+	const n10 = _hash((x0 + 1) * 57.13 + z0       + offset + seed)
+	const n01 = _hash(x0 * 57.13       + (z0 + 1) + offset + seed)
+	const n11 = _hash((x0 + 1) * 57.13 + (z0 + 1) + offset + seed)
+	const u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf)
+	return n00 * (1 - u) * (1 - v) + n10 * u * (1 - v) + n01 * (1 - u) * v + n11 * u * v
+}
+
+function terrainHeight(seed, x, z) {
+	let h = _smoothNoise(seed, x, z, 40, 0) * 8 + _smoothNoise(seed, x, z, 120, 100) * 12
+	h = Math.floor(SEA_LEVEL + h - 6)
+	if (_smoothNoise(seed, x, z, 60, 200) < 0.28) h -= 3
+	if (Math.abs(_smoothNoise(seed, x, z, 200, 500) - 0.5) < 0.03) h = SEA_LEVEL - 2
+	return Math.max(h, BEDROCK_Y + 1)
+}
+
+function isSolidAt(world, x, y, z) {
+	const k = `${x}_${y}_${z}`
+	if (world.modifiedBlocks.has(k)) {
+		const v = world.modifiedBlocks.get(k)
+		return v !== BLOCK_AIR && v !== BLOCK_WATER
+	}
+	return y >= 0 && y <= terrainHeight(world.seed, x, z)
+}
+
+// Y of the surface (= 1 above the topmost solid block) at integer column (x, z).
+// Search starts well above the natural terrain so player towers up to ~24
+// blocks above the original surface still register.
+function getGroundY(world, x, z) {
+	const startY = Math.max(terrainHeight(world.seed, x, z) + 8, 32)
+	for (let y = startY; y >= 0; y--) {
+		if (isSolidAt(world, x, y, z)) return y + 1
+	}
+	return 1
+}
+
+// Sanitise a client-supplied damage value. Clients send the damage they want
+// to deal (computed from the equipped tool) so weapons can be tweaked without
+// server changes — but we still clamp to a sane range to prevent abuse.
+const MAX_HIT_DAMAGE = 50
+function clampHitDamage(value, fallback) {
+	const n = Number(value)
+	if (!Number.isFinite(n) || n <= 0) return fallback
+	return Math.min(Math.floor(n), MAX_HIT_DAMAGE)
+}
+
+// ── Mob system ────────────────────────────────────────────────────────────
+// Server-authoritative animals/mobs. Position, HP and AI all live here so
+// every connected client sees identical movement. Clients receive
+// spawn/despawn events plus batched position updates and animate locally.
+//
+// To add a new mob species:
+//   1. Append a config entry to MOB_TYPES below.
+//   2. Add a matching model factory to MOB_MODELS in index.html.
+//
+// All numeric knobs (density, speed, ranges) are settable per type.
+const MOB_TYPES = {
+	chicken: {
+		maxHp:           10,
+		damage:          5,     // damage per player hit (2 hits = death)
+		speed:           1.8,   // blocks/sec
+		regionSize:      5,     // chunks; XZ size of a "spawn region"
+		countPerRegion:  2,     // target mob count per regionSize×regionSize chunk area
+		spawnMinRadius:  10,    // don't spawn closer than this to a player (blocks)
+		spawnRadius:     32,    // max spawn distance from a player (blocks)
+		despawnRadius:   160,   // despawn if no player within this many blocks
+		wanderMin:       4,     // pick wander targets between [min,max] blocks away
+		wanderMax:       10,
+		idleMinMs:       800,   // pause this long between targets
+		idleMaxMs:       2500,
+		stepMaxClimb:    1,     // max ±block step per move (chickens hop 1 block)
+		respawnDelayMs:  1500,  // delay before another spawns to replace a kill
+	},
+}
+
+function makeMob(world, type, x, y, z) {
+	const cfg = MOB_TYPES[type]
+	const id  = world.nextMobId++
+	const mob = {
+		id, type,
+		x, y, z,
+		yaw:       Math.random() * Math.PI * 2,
+		hp:        cfg.maxHp,
+		maxHp:     cfg.maxHp,
+		tx:        x, tz: z,    // current wander target (XZ)
+		idleUntil: 0,
+		dirty:     true,
+	}
+	pickWanderTarget(world, mob, null)
+	return mob
+}
+
+function serializeMob(m) {
+	return {
+		id: m.id, type: m.type,
+		x: m.x, y: m.y, z: m.z, yaw: m.yaw,
+		hp: m.hp, maxHp: m.maxHp,
+	}
+}
+
+// Pick a new wander destination. If awayFrom is provided (e.g. the attacker)
+// the mob heads roughly in the opposite direction.
+function pickWanderTarget(world, mob, awayFrom) {
+	const cfg  = MOB_TYPES[mob.type]
+	const dist = cfg.wanderMin + Math.random() * (cfg.wanderMax - cfg.wanderMin)
+	let angle
+	if (awayFrom) {
+		const dx = mob.x - awayFrom.x, dz = mob.z - awayFrom.z
+		angle = Math.atan2(dz, dx) + (Math.random() - 0.5) * 0.6
+	} else {
+		angle = Math.random() * Math.PI * 2
+	}
+	mob.tx = Math.round(mob.x + Math.cos(angle) * dist)
+	mob.tz = Math.round(mob.z + Math.sin(angle) * dist)
+	mob.idleUntil = 0
+}
+
+function updateMobAI(world, mob, dt) {
+	const cfg = MOB_TYPES[mob.type]
+	const now = Date.now()
+	if (now < mob.idleUntil) return
+
+	const dx = mob.tx - mob.x
+	const dz = mob.tz - mob.z
+	const distSq = dx * dx + dz * dz
+
+	// Reached target — idle, then pick a new one
+	if (distSq < 0.25) {
+		mob.idleUntil = now + cfg.idleMinMs + Math.random() * (cfg.idleMaxMs - cfg.idleMinMs)
+		pickWanderTarget(world, mob, null)
+		return
+	}
+
+	const dist    = Math.sqrt(distSq)
+	const stepLen = Math.min(cfg.speed * dt, dist)
+	const nx      = mob.x + (dx / dist) * stepLen
+	const nz      = mob.z + (dz / dist) * stepLen
+
+	// Check ground at the next step. Mobs only hop ±stepMaxClimb blocks.
+	const groundY = getGroundY(world, Math.floor(nx), Math.floor(nz))
+	if (Math.abs(groundY - mob.y) > cfg.stepMaxClimb || groundY <= SEA_LEVEL) {
+		// Obstacle (cliff/wall/water) — give up and pick somewhere else.
+		pickWanderTarget(world, mob, null)
+		return
+	}
+
+	mob.x = nx
+	mob.z = nz
+	mob.y = groundY
+	// Face direction of motion. yaw=0 means facing +Z; +yaw rotates toward +X.
+	mob.yaw  = Math.atan2(dx, dz)
+	mob.dirty = true
+}
+
+function nearestPlayerDist(world, mob) {
+	let best = Infinity
+	for (const p of world.players.values()) {
+		const dx = p.x - mob.x, dz = p.z - mob.z
+		const d2 = dx * dx + dz * dz
+		if (d2 < best) best = d2
+	}
+	return Math.sqrt(best)
+}
+
+// Region key for a position — used to count mobs per `regionSize×regionSize`
+// chunk area when enforcing density caps.
+function regionKey(x, z, regionSize) {
+	const cx = Math.floor(x / CHUNK_SIZE)
+	const cz = Math.floor(z / CHUNK_SIZE)
+	return Math.floor(cx / regionSize) + ',' + Math.floor(cz / regionSize)
+}
+
+function attemptSpawnMob(world, type, near) {
+	const cfg = MOB_TYPES[type]
+	for (let attempt = 0; attempt < 10; attempt++) {
+		const angle = Math.random() * Math.PI * 2
+		const r = cfg.spawnMinRadius + Math.random() * (cfg.spawnRadius - cfg.spawnMinRadius)
+		const x = Math.round(near.x + Math.cos(angle) * r)
+		const z = Math.round(near.z + Math.sin(angle) * r)
+		const y = getGroundY(world, x, z)
+		if (y <= SEA_LEVEL) continue   // don't spawn in/under water
+		const mob = makeMob(world, type, x, y, z)
+		world.mobs.set(mob.id, mob)
+		broadcastWorld(world, { type: 'mob_spawn', mob: serializeMob(mob) })
+		console.log(`[mob spawn] ${type}#${mob.id} in "${world.name}" @ ${x},${y},${z}`)
+		return mob
+	}
+	return null
+}
+
+// Top up each player's spawn region to the configured density. Runs on a
+// slow timer (every few seconds) to avoid spawning storms.
+function maintainMobPopulation(world) {
+	if (world.players.size === 0) return
+	for (const [type, cfg] of Object.entries(MOB_TYPES)) {
+		const counts = new Map()
+		for (const mob of world.mobs.values()) {
+			if (mob.type !== type) continue
+			const key = regionKey(mob.x, mob.z, cfg.regionSize)
+			counts.set(key, (counts.get(key) || 0) + 1)
+		}
+		for (const p of world.players.values()) {
+			const key  = regionKey(p.x, p.z, cfg.regionSize)
+			const have = counts.get(key) || 0
+			if (have < cfg.countPerRegion) {
+				if (attemptSpawnMob(world, type, p)) counts.set(key, have + 1)
+			}
+		}
+	}
+}
+
+function despawnDistantMobs(world) {
+	for (const mob of [...world.mobs.values()]) {
+		const cfg = MOB_TYPES[mob.type]
+		if (nearestPlayerDist(world, mob) > cfg.despawnRadius) {
+			world.mobs.delete(mob.id)
+			broadcastWorld(world, { type: 'mob_despawn', id: mob.id })
+		}
+	}
+}
+
+// AI tick — moves every mob a small step, marks dirty ones for broadcast.
+// Worlds with no players are skipped: no observers means no point simulating
+// (and the mob_updates broadcast would have no recipients anyway). When the
+// last player leaves we just freeze the mobs in place; they'll be despawned
+// later by the maintenance tick.
+const MOB_TICK_MS = 100
+let _lastMobTick = Date.now()
+setInterval(() => {
+	const now = Date.now()
+	const dt  = (now - _lastMobTick) / 1000
+	_lastMobTick = now
+	for (const world of worlds.values()) {
+		if (world.players.size === 0) continue
+		for (const mob of world.mobs.values()) updateMobAI(world, mob, dt)
+	}
+}, MOB_TICK_MS)
+
+// Broadcast tick — batch all dirty mobs into one update message per world.
+const MOB_BROADCAST_MS = 200
+setInterval(() => {
+	for (const world of worlds.values()) {
+		if (world.players.size === 0) continue
+		const dirty = []
+		for (const mob of world.mobs.values()) {
+			if (!mob.dirty) continue
+			dirty.push({ id: mob.id, x: mob.x, y: mob.y, z: mob.z, yaw: mob.yaw })
+			mob.dirty = false
+		}
+		if (dirty.length) broadcastWorld(world, { type: 'mob_updates', mobs: dirty })
+	}
+}, MOB_BROADCAST_MS)
+
+// Spawn-maintenance tick — keeps populations topped up around active players.
+const MOB_MAINTAIN_MS = 3000
+setInterval(() => {
+	for (const world of worlds.values()) {
+		maintainMobPopulation(world)
+		despawnDistantMobs(world)
+	}
+}, MOB_MAINTAIN_MS)
+
 // ── 20 Hz move broadcast tick (all worlds) ─────────────────────────────────
 setInterval(() => {
 	for (const world of worlds.values()) {
@@ -245,12 +524,40 @@ export default function attachVoxelWorld(httpServer) {
 						type:'init', id, seed:world.seed, world:worldName,
 						blocks: [...world.modifiedBlocks.entries()].map(([k,v])=>({k,v})),
 						players: [...world.players.values()].filter(p=>p.id!==id).map(serializePlayer),
+						mobs:    [...world.mobs.values()].map(serializeMob),
 					})
 					broadcastWorld(world, { type:'player_join', player:serializePlayer(player) }, id)
 					console.log(`[+] "${nickname}" -> "${worldName}" (${id})  online=${world.players.size}`)
 					break
 				}
 
+				case 'hit_mob': {
+					if (!player) return
+					const mob = world.mobs.get(msg.mobId)
+					if (!mob) return
+					// Distance check matches player combat (max 4 blocks).
+					const dx = player.x - mob.x, dy = player.y - mob.y, dz = player.z - mob.z
+					if (dx*dx + dy*dy + dz*dz > 16) return
+					const cfg = MOB_TYPES[mob.type]
+					const damage = clampHitDamage(msg.damage, cfg.damage)
+					mob.hp = Math.max(0, mob.hp - damage)
+					broadcastWorld(world, { type:'mob_hp', id:mob.id, hp:mob.hp, damage })
+					// Hit → flee in the opposite direction.
+					pickWanderTarget(world, mob, { x: player.x, z: player.z })
+					console.log(`[mob hit] ${player.nickname} → ${mob.type}#${mob.id}  dmg=${damage}  hp=${mob.hp}`)
+					if (mob.hp <= 0) {
+						world.mobs.delete(mob.id)
+						broadcastWorld(world, { type:'mob_die',
+							id: mob.id, killerName: player.nickname })
+						console.log(`[mob kill] ${player.nickname} killed ${mob.type}#${mob.id}`)
+						// Replacement spawn after a short delay (random spot near killer).
+						const killer = { x: player.x, z: player.z }
+						setTimeout(() => {
+							if (world.players.size > 0) attemptSpawnMob(world, mob.type, killer)
+						}, cfg.respawnDelayMs + Math.random() * 1000)
+					}
+					break
+				}
 				case 'hit_player': {
 					if (!player) return
 					const target = world.players.get(msg.targetId)
@@ -263,10 +570,10 @@ export default function attachVoxelWorld(httpServer) {
 					if (now - target.lastHitTime < 500) return
 					target.lastHitTime = now
 
-					const damage = 20   // 5 hits to kill
+					const damage = clampHitDamage(msg.damage, 20)
 					target.hp = Math.max(0, target.hp - damage)
-					broadcastWorld(world, { type:'hp_update', id:target.id, hp:target.hp })
-					console.log(`[hit] ${player.nickname} → ${target.nickname}  hp=${target.hp}`)
+					broadcastWorld(world, { type:'hp_update', id:target.id, hp:target.hp, damage })
+					console.log(`[hit] ${player.nickname} → ${target.nickname}  dmg=${damage}  hp=${target.hp}`)
 
 					if (target.hp <= 0) {
 						target.hp = 100

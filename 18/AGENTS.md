@@ -48,7 +48,7 @@ sections such as:
 RENDERER SETUP / CLOUDS / CONSTANTS / BLOCK REGISTRY & PLUGIN API /
 TEXTURE ATLAS / MATERIALS / NOISE-TERRAIN / PLANTS / BLOCK WORLD /
 CHUNK GEOMETRY / CHUNK WORKER POOL / RAYCASTING / HITBOX OUTLINE /
-REMOTE PLAYERS / PLAYER & CAMERA / MINING-BUILDING / TOUCH CONTROLS /
+REMOTE PLAYERS / MOBS / PLAYER & CAMERA / MINING-BUILDING / TOUCH CONTROLS /
 TOOLS / HOTBAR / TOAST / BLOCK REGISTRY / GAME GUI / NICK-COMMAND /
 NETWORKING / HEALTH SYSTEM / CHAT SYSTEM / MAIN LOOP
 ```
@@ -72,6 +72,9 @@ landmarks when editing — keep them when adding new sections.
   of player-modified blocks (`"x_y_z"` keys, plant overrides use
   `"plant_x_z"`).
 - `remotePlayers` (`Map`) — interpolated remote player models.
+- `mobs` (`Map`) and `mobPickMeshes` — server-authoritative animals (chickens,
+  …) and their combat hit-boxes. `MOB_MODELS[type]` returns a factory function
+  for each species (see *Mobs* below).
 
 ### Chunks & workers
 
@@ -183,6 +186,63 @@ broadcast across worlds. Use `broadcastWorld(world, obj, excludeId?)`; only use
   all worlds. **`process.on('exit')` only allows synchronous I/O** — keep
   `saveWorld` synchronous (`writeFileSync`).
 
+### Mobs (server-authoritative)
+
+Mobs are simulated entirely on the server so every client sees the same
+position and HP. The server replicates the client's terrain noise function
+(`terrainHeight`) so chickens can walk on procedurally-generated ground —
+**keep `_smoothNoise` / `terrainHeight` in `voxel-world.mjs` in sync with
+`_workerTerrain` in `index.html`**.
+
+`MOB_TYPES` is the per-species config (HP, speed, AI knobs, density caps):
+
+```js
+const MOB_TYPES = {
+  chicken: {
+    maxHp, damage, speed,
+    regionSize,        // chunks; XZ size of a "spawn region"
+    countPerRegion,    // density cap (e.g. 2 chickens per 5x5 chunks)
+    spawnMinRadius, spawnRadius, despawnRadius,
+    wanderMin, wanderMax, idleMinMs, idleMaxMs,
+    stepMaxClimb,      // chickens hop ±1 block
+    respawnDelayMs,
+  },
+}
+```
+
+Each world has `mobs: Map<id, mob>` and `nextMobId`. Three timers drive the
+system, all module-level `setInterval`s:
+
+- **AI tick** (`MOB_TICK_MS = 100`) — each mob steps toward its current target;
+  when it reaches the target (or hits an obstacle / a >1-block step / water)
+  it picks a new wander destination. Every move marks the mob `dirty`.
+- **Broadcast tick** (`MOB_BROADCAST_MS = 200`) — flushes all `dirty` mobs
+  per world into one batched `mob_updates` message.
+- **Maintenance tick** (`MOB_MAINTAIN_MS = 3000`) — for each player, ensures
+  the player's spawn region has `countPerRegion` mobs of every type;
+  despawns mobs farther than `despawnRadius` from any player.
+
+When a player hits a mob (`hit_mob`), the server validates distance (max
+4 blocks, same as PvP), deducts `cfg.damage`, broadcasts `mob_hp`, and points
+the mob's wander target *away* from the attacker (flee). On death it sends
+`mob_die`, removes the mob, and schedules a replacement spawn near the killer.
+
+**Adding a new mob species** (cow, pig, …):
+
+1. Server (`voxel-world.mjs`) — append a config entry to `MOB_TYPES`.
+2. Client (`index.html`) — add a model factory to `MOB_MODELS` returning a
+   `THREE.Group`. The group should:
+   - have its feet at local `y = 0` (so `model.position.y = serverY` rests
+     it on the ground),
+   - face `+Z` by default (yaw `0` ⇒ facing `+Z`; yaw rotation matches
+     `Math.atan2(dx, dz)` from the server),
+   - assign `userData.tickAnim = (dt, isMoving) => …` for legs/wings/etc.,
+   - assign `userData.hpBar` if you want the floating HP sprite (see
+     `makeMobHpBar()`).
+
+Mobs are **not persisted**. They respawn dynamically from active player
+positions when the server starts.
+
 ### Plugin hot-loading
 
 - `watchPluginsFolder()` watches `./plugins` for new/changed `.js` files and
@@ -201,7 +261,8 @@ Inbound (client → server):
 | `move`           | `x, y, z, yaw, pitch, held?, swing?`                     |
 | `block_update`   | `k, v` (key `"x_y_z"` or `"plant_x_z"`, value = block id)|
 | `remove_blocks`  | `blockId|null, px, py, pz, radius`                       |
-| `hit_player`     | `targetId`                                               |
+| `hit_player`     | `targetId, damage` (clamped 1..50 server-side)           |
+| `hit_mob`        | `mobId, damage` (clamped 1..50 server-side)              |
 | `set_nickname`   | `nickname`                                               |
 | `world_reset`    | —                                                        |
 | `chat`           | `text`                                                   |
@@ -210,15 +271,20 @@ Outbound (server → client):
 
 | `type`          | payload                                                   |
 |-----------------|-----------------------------------------------------------|
-| `init`          | `id, seed, world, blocks:[{k,v}], players:[…]`            |
+| `init`          | `id, seed, world, blocks:[{k,v}], players:[…], mobs:[…]`  |
 | `player_join`   | `player`                                                  |
 | `player_leave`  | `id`                                                      |
 | `moves`         | `players: [{ id, x, y, z, yaw, pitch, held, swing, hp }]` |
 | `block_update`  | `k, v`                                                    |
 | `player_rename` | `id, nickname`                                            |
 | `world_reset`   | —                                                         |
-| `hp_update`     | `id, hp`                                                  |
+| `hp_update`     | `id, hp, damage` (damage = applied amount this hit)       |
 | `player_died`   | `id, killerName, hp`                                      |
+| `mob_spawn`     | `mob: { id, type, x, y, z, yaw, hp, maxHp }`              |
+| `mob_despawn`   | `id`                                                      |
+| `mob_updates`   | `mobs: [{ id, x, y, z, yaw }]` (batched, ~5 Hz)           |
+| `mob_hp`        | `id, hp, damage` (damage = applied amount this hit)       |
+| `mob_die`       | `id, killerName`                                          |
 | `chat`          | `nickname, text`                                          |
 | `plugin_added`  | `url, filename`                                           |
 
@@ -282,7 +348,11 @@ Follow what's already in the files:
   `ALL_BLOCK_IDS` (or just rely on the existing `Object.values(BLOCK)` init if
   you add at module load), add to `BLOCK_REGISTRY`, mark as transparent if
   needed. For external-only blocks prefer the plugin API.
-- **Add a new tool:** push to `TOOL_DEFS` (`{ name, url }` or `{ name, draw }`).
+- **Add a new tool:** push to `TOOL_DEFS` (`{ name, url, damage? }` or
+  `{ name, draw, damage? }`). `damage` defaults to `DEFAULT_TOOL_DAMAGE` and
+  is sent with every `hit_player` / `hit_mob` (server clamps to 1..50).
+- **Add a new mob species:** add an entry to `MOB_TYPES` in `voxel-world.mjs`
+  and a matching `MOB_MODELS[type]` factory in `index.html`. See *Mobs* above.
 - **Add a new server message:** see *Message protocol* above.
 - **Add a new chat command:** add a branch in `handleCommand()`; if it needs
   server state, also handle it in the server `switch`.
