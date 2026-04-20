@@ -2754,49 +2754,56 @@ function handleCommand(raw) {
 		showToast(`Nickname set to "${myNickname}"`)
 		return
 	}
-	// /remove <blockname> <radius>
-	// Removes all modified blocks of the given type within radius blocks of the player.
+	// /remove <blockname|ALL> <radius>
+	// Tells the server to remove all modified blocks of the given type within
+	// radius blocks of the player. Server broadcasts the changes to everyone.
 	const removeMatch = v.match(/^\/remove\s+(\S+)\s+(\d+)$/i)
 	if (removeMatch) {
 		const blockName = removeMatch[1].toUpperCase()
 		const radius    = Math.min(parseInt(removeMatch[2], 10), 500)
 
-		// Find block ID by name — check BLOCK map and BLOCK_REGISTRY
-		let targetId = BLOCK[blockName] ?? null
-		if (targetId === null) {
-			const reg = BLOCK_REGISTRY.find(r => r.name.toUpperCase() === blockName)
-			targetId = reg?.id ?? null
-		}
-		if (targetId === null) {
-			showToast(`Unknown block: ${removeMatch[1]}`)
-			return
-		}
-
-		const px = Math.floor(player.pos.x), pz = Math.floor(player.pos.z)
-		const r2 = radius * radius
-		let removed = 0
-		const affectedChunks = new Set()
-
-		for (const [k, v2] of [...modified.entries()]) {
-			if (v2 !== targetId && !(v2 === BLOCK.AIR && targetId === BLOCK.AIR)) {
-				if (v2 !== targetId) continue
+		let blockId = null   // null = ALL
+		if (blockName !== 'ALL') {
+			// Find block ID by name — check BLOCK map and BLOCK_REGISTRY
+			blockId = BLOCK[blockName] ?? null
+			if (blockId === null) {
+				const reg = BLOCK_REGISTRY.find(r => r.name.toUpperCase() === blockName)
+				blockId = reg?.id ?? null
 			}
-			const parts = k.split('_')
-			const bx = parseInt(parts[0], 10)
-			const bz = parseInt(parts[2], 10)
-			const dx = bx - px, dz = bz - pz
-			if (dx*dx + dz*dz > r2) continue
-			modified.delete(k)
-			removed++
-			affectedChunks.add(chunkKey(Math.floor(bx / CHUNK_SIZE), Math.floor(bz / CHUNK_SIZE)))
+			if (blockId === null) {
+				showToast(`Unknown block: ${removeMatch[1]}`)
+				return
+			}
 		}
 
-		for (const ck of affectedChunks) {
-			const [cx2, cz2] = ck.split('_').map(Number)
-			rebuildChunk(cx2, cz2)
-		}
+		const px = Math.floor(player.pos.x)
+		const py = Math.floor(player.pos.y)
+		const pz = Math.floor(player.pos.z)
 
-		showToast(`Removed ${removed} ${removeMatch[1]} block${removed !== 1 ? 's' : ''} within ${radius} blocks`)
+		if (offlineMode) {
+			// Offline: apply locally (no server to tell)
+			const r2 = radius * radius
+			let removed = 0
+			const affectedChunks = new Set()
+			for (const [k, val] of [...modified.entries()]) {
+				if (blockId !== null && val !== blockId) continue
+				const parts = k.split('_')
+				const bx = parseInt(parts[0], 10), bz = parseInt(parts[2], 10)
+				if ((bx-px)**2 + (bz-pz)**2 > r2) continue
+				modified.delete(k)
+				removed++
+				affectedChunks.add(chunkKey(Math.floor(bx/CHUNK_SIZE), Math.floor(bz/CHUNK_SIZE)))
+			}
+			for (const ck of affectedChunks) {
+				const [cx2, cz2] = ck.split('_').map(Number)
+				rebuildChunk(cx2, cz2)
+			}
+			showToast(`Removed ${removed} block${removed !== 1 ? 's' : ''} (offline)`)
+		} else {
+			// Online: send to server — it will broadcast block_update messages to everyone
+			netSend({ type: 'remove_blocks', blockId, px, py, pz, radius })
+			showToast(`Removing ${blockName} within ${radius} blocks…`)
+		}
 		return
 	}
 	showToast('Unknown command: ' + v)
@@ -2935,11 +2942,18 @@ function handleServerMessage(msg) {
 			break
 		}
 		case 'plugin_added': {
-			// Server dropped a new plugin file — load it immediately without rejoining
-			loadPluginScript(msg.url)
+			// Server detected a new or updated plugin file.
+			// Remove any previously loaded script for the same filename so the
+			// updated code is executed fresh (not served from browser cache).
+			const filename = msg.filename || msg.url.split('/').pop().split('?')[0]
+			const existing = document.head.querySelector(`script[data-plugin="${filename}"]`)
+			if (existing) existing.remove()
+
+			loadPluginScript(msg.url, filename)
 				.then(() => {
-					addChatMessage('', `🧩 Plugin loaded: ${msg.url.split('/').pop()}`, true)
-					showToast('New plugin loaded!')
+					const label = filename.replace(/^plugin---\w+---/, '').replace(/\.js$/, '')
+					addChatMessage('', `🧩 Plugin ${existing ? 'updated' : 'loaded'}: ${label}`, true)
+					showToast(`Plugin ${existing ? 'updated' : 'loaded'}: ${label}`)
 				})
 				.catch(err => console.warn('[plugin_added] Failed:', err.message))
 			break
@@ -3141,14 +3155,12 @@ fetch(PLUGINS_API)
 // export it as window.VoxelWorldPlugin (fallback). The convention is:
 //   VoxelWorld.registerPlugin('PluginName', { init(api) { const ID = api.allocateBlockId(); ... } })
 // We detect the newly added global by diffing window keys before/after load.
-function loadPluginScript(url) {
+function loadPluginScript(url, filename) {
 	return new Promise((resolve, reject) => {
-		// const keysBefore = new Set(Object.keys(window))
 		const s = document.createElement('script')
 		s.src = url
-		s.onload = () => {
-			resolve()
-		}
+		if (filename) s.dataset.plugin = filename
+		s.onload = () => { resolve() }
 		s.onerror = () => reject(new Error('Failed to load: ' + url))
 		document.head.appendChild(s)
 	})
@@ -3173,7 +3185,8 @@ async function startGame(online) {
 
 		for (const cb of checked) {
 			try {
-				await loadPluginScript(cb.dataset.url)
+				const filename = cb.dataset.url.split('/').pop().split('?')[0]
+				await loadPluginScript(cb.dataset.url, filename)
 				console.log('[lobby] Loaded plugin:', cb.dataset.url)
 			} catch (e) {
 				console.warn('[lobby] Plugin failed to load:', e.message)
