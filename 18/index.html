@@ -425,6 +425,81 @@ sun.position.set(100, 200, 100)
 scene.add(sun)   // no shadow maps — huge GPU cost for voxel scenes
 
 /* ============================================================
+   CLOUDS
+   Ultra-cheap cloud system tuned for low-end GPUs:
+     • one shared PlaneGeometry  (1 buffer on the GPU)
+     • one shared MeshBasicMaterial + tiny 64×32 procedural texture
+     • ~16 flat quads, each just scaled/positioned differently
+     • fog is enabled so clouds fade into the sky near the wrap
+       boundary (no visible pop-in / pop-out)
+============================================================ */
+const CLOUD_COUNT  = 16
+const CLOUD_Y      = 55       // altitude above terrain
+const CLOUD_RANGE  = 130      // half-size of the cloud field around player
+const CLOUD_WIND_X = 1.2      // drift speed in world units / second
+
+const cloudCanvas = document.createElement('canvas')
+cloudCanvas.width = 64; cloudCanvas.height = 32
+{
+	const c = cloudCanvas.getContext('2d')
+	c.clearRect(0, 0, 64, 32)
+	c.fillStyle = 'rgba(255,255,255,0.95)'
+	// A few overlapping soft puffs → one fluffy cloud shape
+	const puffs = [[20, 17, 13], [31, 14, 15], [42, 18, 12], [13, 19, 8], [49, 15, 9], [36, 10, 8]]
+	for (const [x, y, r] of puffs) {
+		c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill()
+	}
+}
+const cloudTexture = new THREE.CanvasTexture(cloudCanvas)
+cloudTexture.minFilter = THREE.LinearFilter
+cloudTexture.magFilter = THREE.LinearFilter
+
+const cloudMaterial = new THREE.MeshBasicMaterial({
+	map:         cloudTexture,
+	transparent: true,
+	depthWrite:  false,       // clouds don't occlude each other
+	opacity:     0.9,
+	side:        THREE.DoubleSide,
+})
+
+// Shared unit quad lying flat on the XZ plane — all clouds reuse it.
+const cloudGeo = new THREE.PlaneGeometry(1, 1)
+cloudGeo.rotateX(-Math.PI / 2)
+
+const clouds = []
+for (let i = 0; i < CLOUD_COUNT; i++) {
+	const m = new THREE.Mesh(cloudGeo, cloudMaterial)
+	m.scale.set(
+		36 + Math.random() * 28,   // width
+		1,
+		22 + Math.random() * 18,   // depth
+	)
+	m.position.set(
+		(Math.random() * 2 - 1) * CLOUD_RANGE,
+		CLOUD_Y + Math.random() * 8,
+		(Math.random() * 2 - 1) * CLOUD_RANGE,
+	)
+	m.renderOrder = -1           // draw before opaque chunks so they sit "behind" them
+	scene.add(m)
+	clouds.push(m)
+}
+
+function tickClouds(dt) {
+	const px = yawObject.position.x
+	const pz = yawObject.position.z
+	for (const c of clouds) {
+		c.position.x += CLOUD_WIND_X * dt
+		// Wrap around the player so the field is effectively infinite.
+		const dx = c.position.x - px
+		const dz = c.position.z - pz
+		if (dx >  CLOUD_RANGE) c.position.x -= CLOUD_RANGE * 2
+		if (dx < -CLOUD_RANGE) c.position.x += CLOUD_RANGE * 2
+		if (dz >  CLOUD_RANGE) c.position.z -= CLOUD_RANGE * 2
+		if (dz < -CLOUD_RANGE) c.position.z += CLOUD_RANGE * 2
+	}
+}
+
+/* ============================================================
    CONSTANTS
 ============================================================ */
 const CHUNK_SIZE = 16
@@ -3541,6 +3616,7 @@ function animate() {
 
 	netSendMove(player.pos.x, player.pos.y, player.pos.z, yawObject.rotation.y, pitch)
 	tickRemotePlayers(dt)
+	tickClouds(dt)
 
 	// Chunk loading/unloading
 	const cx = Math.floor(player.pos.x / CHUNK_SIZE)
