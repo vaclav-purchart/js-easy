@@ -663,6 +663,60 @@ window.VoxelWorld = {
 
 			registerGuiTab: (id, label, fn) => registerGuiTab(id, label, fn),
 
+			/**
+			 * Register a server-authoritative mob (chicken, bunny, wolf, …).
+			 *
+			 * Plugins run **only in the browser**. The renderer keeps the
+			 * model factory and hitbox locally; the AI fields are JSON and
+			 * are forwarded to the server (which validates + clamps them) so
+			 * the simulation knows about the new type. No plugin code ever
+			 * runs on the server.
+			 *
+			 *   {
+			 *     type:           string  — unique key (e.g. 'bunny')
+			 *
+			 *     // —— AI fields (JSON-only; sent to the server) ——————————
+			 *     maxHp, damage, speed,
+			 *     regionSize, countPerRegion,
+			 *     spawnMinRadius, spawnRadius, despawnRadius,
+			 *     wanderMin, wanderMax, idleMinMs, idleMaxMs,
+			 *     stepMaxClimb, respawnDelayMs,
+			 *     behavior:       'passive' | 'hostile' (default 'passive')
+			 *
+			 *     // passive-specific
+			 *     fleeBoostMs:    number  — speed boost duration after hit
+			 *     fleeBoostMul:   number  — speed multiplier during flee
+			 *
+			 *     // hostile-specific
+			 *     aggroRadius:    number  — start chasing within this XZ distance
+			 *     deaggroRadius:  number  — drop chase past this distance
+			 *     aggroDurationMs:number  — keep chasing this long after being hit
+			 *     attackRange:    number  — XZ distance at which it bites
+			 *     attackDamage:   number  — damage per bite
+			 *     attackCooldownMs:number — between bites
+			 *     chaseMul:       number  — speed multiplier while chasing
+			 *
+			 *     // —— Renderer-only fields (stay in the browser) ————————
+			 *     makeModel:      () => THREE.Group  — feet at y=0, faces +Z
+			 *     hitBox:         { sx, sy, sz, oy } — invisible click target
+			 *   }
+			 */
+			registerMob(cfg) {
+				if (!cfg?.type)         { console.warn('[plugin] registerMob: missing type'); return }
+				if (typeof cfg.makeModel !== 'function') {
+					console.warn(`[plugin] registerMob "${cfg.type}": makeModel must be a function`)
+					return
+				}
+				// Renderer-side: stash the model + hitbox.
+				MOB_MODELS[cfg.type] = cfg.makeModel
+				if (cfg.hitBox) MOB_HITBOXES[cfg.type] = { ..._DEFAULT_MOB_HITBOX, ...cfg.hitBox }
+				// Server-side: send the JSON-safe AI subset. The server
+				// re-validates + clamps every field; we just have to make
+				// sure no functions or stray references go on the wire.
+				queueMobTypeRegistration(_pickMobAiFields(cfg))
+				console.log(`[plugin] Registered mob "${cfg.type}"`)
+			},
+
 			get BLOCK() { return BLOCK },
 
 			rebuildAllChunks() {
@@ -2169,8 +2223,57 @@ function makeMobHpBar() {
 	return sprite
 }
 
+// Per-type registries — plugins extend these via api.registerMob().
+// MOB_HITBOXES keys: { sx, sy, sz, oy } — box size + Y offset of its centre.
 const MOB_MODELS = {
 	chicken: makeChickenModel,
+}
+const MOB_HITBOXES = {
+	chicken: { sx: 0.7, sy: 0.9, sz: 0.8, oy: 0.45 },
+}
+const _DEFAULT_MOB_HITBOX = { sx: 0.7, sy: 0.9, sz: 0.8, oy: 0.45 }
+
+// AI fields a plugin may set. These are forwarded to the server (which
+// re-validates + clamps); anything else stays in the browser. Keep this
+// list aligned with MOB_FIELD_RANGES in voxel-world.mjs.
+const _MOB_AI_FIELDS = [
+	'maxHp', 'damage', 'speed',
+	'regionSize', 'countPerRegion',
+	'spawnMinRadius', 'spawnRadius', 'despawnRadius',
+	'wanderMin', 'wanderMax', 'idleMinMs', 'idleMaxMs',
+	'stepMaxClimb', 'respawnDelayMs',
+	'fleeBoostMs', 'fleeBoostMul',
+	'aggroRadius', 'deaggroRadius', 'aggroDurationMs',
+	'attackRange', 'attackDamage', 'attackCooldownMs', 'chaseMul',
+]
+
+function _pickMobAiFields(cfg) {
+	const out = { type: cfg.type }
+	if (cfg.behavior === 'passive' || cfg.behavior === 'hostile') {
+		out.behavior = cfg.behavior
+	}
+	for (const k of _MOB_AI_FIELDS) {
+		if (cfg[k] !== undefined && Number.isFinite(Number(cfg[k]))) {
+			out[k] = Number(cfg[k])
+		}
+	}
+	return out
+}
+
+// Plugins can register mobs before we've connected (or while reconnecting).
+// We hold onto every config and (re)flush after each `init` from the server.
+const _pendingMobRegistrations = new Map()   // type → config
+function queueMobTypeRegistration(config) {
+	_pendingMobRegistrations.set(config.type, config)
+	if (ws && ws.readyState === 1 && myId !== null) {
+		ws.send(JSON.stringify({ type: 'register_mob_type', config }))
+	}
+}
+function flushMobTypeRegistrations() {
+	if (!ws || ws.readyState !== 1) return
+	for (const cfg of _pendingMobRegistrations.values()) {
+		ws.send(JSON.stringify({ type: 'register_mob_type', config: cfg }))
+	}
 }
 
 function addMob(data) {
@@ -2181,12 +2284,14 @@ function addMob(data) {
 	model.position.set(data.x, data.y, data.z)
 	model.rotation.y = data.yaw || 0
 
-	// Invisible hit box for combat raycasting (slightly larger than the body)
+	// Invisible hit box for combat raycasting (slightly larger than the body).
+	// Sized per-type so a small bunny isn't as easy to click as a wolf.
+	const hb = MOB_HITBOXES[data.type] || _DEFAULT_MOB_HITBOX
 	const hitBox = new THREE.Mesh(
-		new THREE.BoxGeometry(0.7, 0.9, 0.8),
+		new THREE.BoxGeometry(hb.sx, hb.sy, hb.sz),
 		new THREE.MeshBasicMaterial({ visible: false }),
 	)
-	hitBox.position.y = 0.45
+	hitBox.position.y = hb.oy
 	hitBox.userData.mobId = data.id
 	model.add(hitBox)
 	mobPickMeshes.push(hitBox)
@@ -3152,6 +3257,10 @@ function handleServerMessage(msg) {
 			for (const p of msg.players) addRemotePlayer(p)
 			if (msg.mobs) for (const m of msg.mobs) addMob(m)
 			updatePlayerList()
+			// Tell the server about every mob type plugins have registered so
+			// far. Done here (not on socket open) because the server only
+			// accepts non-`join` messages from authenticated players.
+			flushMobTypeRegistrations()
 			break
 		}
 		case 'mob_spawn':   addMob(msg.mob); break

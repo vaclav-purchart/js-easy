@@ -121,8 +121,18 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
 - `registerBlock(def)` — `{ id, name, category, transparent?, draw:{ side, top?, bottom? } }`
 - `loadBlockTexture(id, url, face?)` — `'side' | 'top' | 'bottom' | 'all'`
 - `registerGuiTab(id, label, renderFn)`
+- `registerMob(cfg)` — model + hitbox stay client-side; the AI fields are
+  shipped to the server as JSON (see *Mobs* below)
 - `BLOCK` (read-only core map)
 - `rebuildAllChunks()`
+
+**Plugin code only ever runs in the browser** — the server never executes
+plugin JS. `api.registerMob(cfg)` keeps the model/hitbox locally and ships
+the JSON-safe AI subset of the config to the server via the
+`register_mob_type` message; the server validates fields against an
+allow-list and clamps numerics into safe ranges before storing them in
+`MOB_TYPES`. This means a malicious or buggy plugin cannot run code on the
+server, only nudge a few numbers within tight bounds.
 
 Plugin filenames follow `plugin---<author>---<name>.js`; this is parsed by
 `parsePluginMeta()` for the lobby UI.
@@ -194,6 +204,20 @@ position and HP. The server replicates the client's terrain noise function
 **keep `_smoothNoise` / `terrainHeight` in `voxel-world.mjs` in sync with
 `_workerTerrain` in `index.html`**.
 
+The AI is split into a *type config* (`MOB_TYPES`) and a *behavior* (`MOB_BEHAVIORS`).
+Two behaviors ship by default:
+
+- `passive` — wanders aimlessly; on hit, flees away from the attacker and
+  gets a temporary speed boost (`fleeBoostMs` × `fleeBoostMul`). Used by
+  chickens and bunnies.
+- `hostile` — chases the nearest player within `aggroRadius` and bites in
+  melee on `attackCooldownMs`. Drops aggro past `deaggroRadius` when the
+  post-hit `aggroDurationMs` window has elapsed. Used by the example wolf.
+
+A type's `behavior: 'passive'|'hostile'` field selects which one runs each
+tick. Plugins can also call `api.registerMobBehavior(name, { onTick, onHit })`
+to define an entirely new one.
+
 `MOB_TYPES` is the per-species config (HP, speed, AI knobs, density caps):
 
 ```js
@@ -206,6 +230,12 @@ const MOB_TYPES = {
     wanderMin, wanderMax, idleMinMs, idleMaxMs,
     stepMaxClimb,      // chickens hop ±1 block
     respawnDelayMs,
+    behavior:        'passive',
+    fleeBoostMs,       // speed-up duration after a hit
+    fleeBoostMul,
+    // Hostile-only fields (see MOB_BEHAVIORS.hostile):
+    // aggroRadius, deaggroRadius, aggroDurationMs,
+    // attackRange, attackDamage, attackCooldownMs, chaseMul,
   },
 }
 ```
@@ -229,16 +259,58 @@ the mob's wander target *away* from the attacker (flee). On death it sends
 
 **Adding a new mob species** (cow, pig, …):
 
-1. Server (`voxel-world.mjs`) — append a config entry to `MOB_TYPES`.
-2. Client (`index.html`) — add a model factory to `MOB_MODELS` returning a
-   `THREE.Group`. The group should:
-   - have its feet at local `y = 0` (so `model.position.y = serverY` rests
-     it on the ground),
-   - face `+Z` by default (yaw `0` ⇒ facing `+Z`; yaw rotation matches
-     `Math.atan2(dx, dz)` from the server),
-   - assign `userData.tickAnim = (dt, isMoving) => …` for legs/wings/etc.,
-   - assign `userData.hpBar` if you want the floating HP sprite (see
-     `makeMobHpBar()`).
+The preferred path is a plugin — one `.js` file, one `api.registerMob(...)`
+call. Plugins run only in the browser; the AI fields travel to the server
+as JSON via the `register_mob_type` message and are validated/clamped there.
+Renderer-only fields (`makeModel`, `hitBox`) stay local.
+
+```js
+VoxelWorld.registerPlugin('Cow', {
+  init(api) {
+    api.registerMob({
+      type: 'cow',
+      // AI fields (sent to the server as JSON):
+      maxHp: 14, damage: 0, speed: 1.4,
+      regionSize: 6, countPerRegion: 2,
+      spawnMinRadius: 12, spawnRadius: 32, despawnRadius: 160,
+      wanderMin: 3, wanderMax: 9, idleMinMs: 800, idleMaxMs: 2500,
+      stepMaxClimb: 1, respawnDelayMs: 2000,
+      behavior: 'passive',
+      fleeBoostMs: 1500, fleeBoostMul: 1.6,
+
+      // Renderer-only fields (stay in the browser):
+      hitBox:    { sx: 0.9, sy: 1.0, sz: 1.2, oy: 0.55 },
+      makeModel: makeCowModel,
+    })
+  },
+})
+
+function makeCowModel() { /* … return new THREE.Group() … */ }
+```
+
+The server's allow-list lives in `MOB_FIELD_RANGES` in `voxel-world.mjs`;
+keep `_MOB_AI_FIELDS` in `index.html` in sync so the client doesn't waste
+bytes sending fields the server will discard. Adding a new behavior or
+behavior-specific field requires editing both files (the server still has
+to know what `behavior: 'foo'` means).
+
+The `makeModel` function must return a `THREE.Group` that:
+- has its feet at local `y = 0` (so `model.position.y = serverY` rests it on
+  the ground),
+- faces `+Z` by default (yaw `0` ⇒ facing `+Z`; yaw rotation matches
+  `Math.atan2(dx, dz)` from the server),
+- assigns `userData.tickAnim = (dt, isMoving) => …` for legs/wings/etc.,
+- assigns `userData.hpBar` to a `makeMobHpBar()` sprite if you want the
+  floating HP indicator.
+
+For a *hostile* mob, set `behavior: 'hostile'` and supply at minimum
+`aggroRadius`, `attackRange`, `attackDamage`, `attackCooldownMs`. See
+`plugins/plugin---vasik---wolf.js` for a full example. A peaceful example
+lives at `plugins/plugin---vasik---bunny.js`.
+
+To add a brand-new core species (built into the engine rather than a plugin),
+the older path still works: append a config entry to `MOB_TYPES` in
+`voxel-world.mjs` and a matching `MOB_MODELS[type]` factory in `index.html`.
 
 Mobs are **not persisted**. They respawn dynamically from active player
 positions when the server starts.
@@ -250,6 +322,12 @@ positions when the server starts.
   player. The URL is `${PLUGINS_URL_BASE}/${filename}?t=${Date.now()}` to bust
   the browser cache. Update `PLUGINS_URL_BASE` if you change deployment domain.
 - Watch events are debounced 500 ms per filename.
+- The server **never executes plugin JS**. When the browser loads a plugin
+  and that plugin calls `api.registerMob(...)`, the renderer keeps the model
+  factory locally and sends a `register_mob_type` JSON message to the server.
+  The server validates the payload (allow-list + numeric clamps in
+  `validateMobConfig`) before storing the type in `MOB_TYPES`. Hot-reloading
+  works because reconnects flush every queued mob registration on `init`.
 
 ### Message protocol (client ↔ server)
 
@@ -266,6 +344,7 @@ Inbound (client → server):
 | `set_nickname`   | `nickname`                                               |
 | `world_reset`    | —                                                        |
 | `chat`           | `text`                                                   |
+| `register_mob_type` | `config: { type, behavior?, …allow-listed AI fields }` |
 
 Outbound (server → client):
 
@@ -351,8 +430,11 @@ Follow what's already in the files:
 - **Add a new tool:** push to `TOOL_DEFS` (`{ name, url, damage? }` or
   `{ name, draw, damage? }`). `damage` defaults to `DEFAULT_TOOL_DAMAGE` and
   is sent with every `hit_player` / `hit_mob` (server clamps to 1..50).
-- **Add a new mob species:** add an entry to `MOB_TYPES` in `voxel-world.mjs`
-  and a matching `MOB_MODELS[type]` factory in `index.html`. See *Mobs* above.
+- **Add a new mob species:** preferred — drop a plugin in `./plugins/` calling
+  `api.registerMob({ type, behavior, …, makeModel })`. The same file
+  registers the AI on the server and the model on the client. See
+  `plugins/plugin---vasik---bunny.js` (peaceful) and
+  `plugins/plugin---vasik---wolf.js` (hostile) for templates.
 - **Add a new server message:** see *Message protocol* above.
 - **Add a new chat command:** add a branch in `handleCommand()`; if it needs
   server state, also handle it in the server `switch`.

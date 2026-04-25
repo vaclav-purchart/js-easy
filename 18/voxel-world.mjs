@@ -278,10 +278,17 @@ function clampHitDamage(value, fallback) {
 //   2. Add a matching model factory to MOB_MODELS in index.html.
 //
 // All numeric knobs (density, speed, ranges) are settable per type.
+//
+// `behavior` selects one of MOB_BEHAVIORS below. Two are built-in:
+//   • 'passive' — wanders, flees after being hit (chicken, bunny, …)
+//   • 'hostile' — chases and bites players within aggro range (wolves, zombies…)
+//
+// Plugins extend this map at runtime via api.registerMob({ type, …config }).
+// Anything missing falls back to passive defaults.
 const MOB_TYPES = {
 	chicken: {
 		maxHp:           10,
-		damage:          5,     // damage per player hit (2 hits = death)
+		damage:          5,     // damage per player hit (2 hits = death) — used by hostile mobs
 		speed:           1.8,   // blocks/sec
 		regionSize:      5,     // chunks; XZ size of a "spawn region"
 		countPerRegion:  2,     // target mob count per regionSize×regionSize chunk area
@@ -294,6 +301,9 @@ const MOB_TYPES = {
 		idleMaxMs:       2500,
 		stepMaxClimb:    1,     // max ±block step per move (chickens hop 1 block)
 		respawnDelayMs:  1500,  // delay before another spawns to replace a kill
+		behavior:        'passive',
+		fleeBoostMs:     2000,  // when hit, boost speed for this long
+		fleeBoostMul:    1.8,   // multiplier on speed during the flee window
 	},
 }
 
@@ -339,51 +349,237 @@ function pickWanderTarget(world, mob, awayFrom) {
 	mob.idleUntil = 0
 }
 
-function updateMobAI(world, mob, dt) {
-	const cfg = MOB_TYPES[mob.type]
-	const now = Date.now()
-	if (now < mob.idleUntil) return
-
-	const dx = mob.tx - mob.x
-	const dz = mob.tz - mob.z
-	const distSq = dx * dx + dz * dz
-
-	// Reached target — idle, then pick a new one
-	if (distSq < 0.25) {
-		mob.idleUntil = now + cfg.idleMinMs + Math.random() * (cfg.idleMaxMs - cfg.idleMinMs)
-		pickWanderTarget(world, mob, null)
-		return
-	}
-
+// One physics step toward (mob.tx, mob.tz). Returns true on success.
+// On failure (cliff/wall/water) the caller decides whether to repick a target.
+function stepMobToward(world, mob, dt) {
+	const cfg     = MOB_TYPES[mob.type]
+	const speed   = cfg.speed * (mob.speedMul || 1)
+	const dx      = mob.tx - mob.x
+	const dz      = mob.tz - mob.z
+	const distSq  = dx * dx + dz * dz
+	if (distSq < 0.0025) return false
 	const dist    = Math.sqrt(distSq)
-	const stepLen = Math.min(cfg.speed * dt, dist)
+	const stepLen = Math.min(speed * dt, dist)
 	const nx      = mob.x + (dx / dist) * stepLen
 	const nz      = mob.z + (dz / dist) * stepLen
-
-	// Check ground at the next step. Mobs only hop ±stepMaxClimb blocks.
 	const groundY = getGroundY(world, Math.floor(nx), Math.floor(nz))
-	if (Math.abs(groundY - mob.y) > cfg.stepMaxClimb || groundY <= SEA_LEVEL) {
-		// Obstacle (cliff/wall/water) — give up and pick somewhere else.
-		pickWanderTarget(world, mob, null)
-		return
-	}
-
+	if (Math.abs(groundY - mob.y) > cfg.stepMaxClimb || groundY <= SEA_LEVEL) return false
 	mob.x = nx
 	mob.z = nz
 	mob.y = groundY
 	// Face direction of motion. yaw=0 means facing +Z; +yaw rotates toward +X.
-	mob.yaw  = Math.atan2(dx, dz)
+	mob.yaw   = Math.atan2(dx, dz)
 	mob.dirty = true
+	return true
 }
 
-function nearestPlayerDist(world, mob) {
-	let best = Infinity
+// Default wander loop shared by every behavior — march toward (tx,tz),
+// idle a bit when arrived, repick. Honours mob.idleUntil.
+function tickWander(world, mob, dt, now) {
+	const cfg = MOB_TYPES[mob.type]
+	if (now < mob.idleUntil) return
+
+	const dx = mob.tx - mob.x, dz = mob.tz - mob.z
+	if (dx * dx + dz * dz < 0.25) {
+		mob.idleUntil = now + cfg.idleMinMs + Math.random() * (cfg.idleMaxMs - cfg.idleMinMs)
+		pickWanderTarget(world, mob, null)
+		return
+	}
+	if (!stepMobToward(world, mob, dt)) {
+		// Obstacle — repick a target.
+		pickWanderTarget(world, mob, null)
+	}
+}
+
+function nearestPlayer(world, mob) {
+	let best = null, bestD2 = Infinity
 	for (const p of world.players.values()) {
 		const dx = p.x - mob.x, dz = p.z - mob.z
 		const d2 = dx * dx + dz * dz
-		if (d2 < best) best = d2
+		if (d2 < bestD2) { best = p; bestD2 = d2 }
 	}
-	return Math.sqrt(best)
+	return best ? { player: best, distSq: bestD2 } : null
+}
+
+// ── Mob behaviors ─────────────────────────────────────────────────────────
+// Each behavior is { onTick(world, mob, dt, now), onHit(world, mob, attacker) }.
+// Mobs reference one via cfg.behavior. Plugins can register their own type by
+// supplying a `behavior` string that matches an existing entry, or by adding
+// a fresh behavior in their server-side init via api.registerMobBehavior().
+const MOB_BEHAVIORS = {
+	// Wanders aimlessly. After being hit it flees in the opposite direction
+	// and gets a temporary speed boost (configurable per type).
+	passive: {
+		onTick(world, mob, dt, now) {
+			mob.speedMul = (now < (mob.fleeUntil || 0))
+				? (MOB_TYPES[mob.type].fleeBoostMul || 1.6)
+				: 1
+			tickWander(world, mob, dt, now)
+		},
+		onHit(world, mob, attacker) {
+			const cfg = MOB_TYPES[mob.type]
+			mob.fleeUntil = Date.now() + (cfg.fleeBoostMs || 1500)
+			pickWanderTarget(world, mob, { x: attacker.x, z: attacker.z })
+		},
+	},
+
+	// Chases the nearest player within `aggroRadius`, attacking when within
+	// `attackRange`. Drops aggro when the player exits `deaggroRadius` and
+	// the post-hit aggro window has elapsed.
+	hostile: {
+		onTick(world, mob, dt, now) {
+			const cfg = MOB_TYPES[mob.type]
+
+			// Resolve target — persistent attacker first, else nearest player in range.
+			let target = mob.targetPlayerId ? world.players.get(mob.targetPlayerId) : null
+			if (!target) mob.targetPlayerId = null
+			if (!target) {
+				const np = nearestPlayer(world, mob)
+				if (np && np.distSq <= (cfg.aggroRadius || 12) ** 2) target = np.player
+			}
+
+			if (target) {
+				const dx = target.x - mob.x, dz = target.z - mob.z
+				const d2 = dx * dx + dz * dz
+				const deaggro = (cfg.deaggroRadius || (cfg.aggroRadius || 12) + 8) ** 2
+
+				// Lost interest? Out of range AND past the post-hit aggro window.
+				if (d2 > deaggro && now > (mob.aggroUntil || 0)) {
+					mob.targetPlayerId = null
+					target = null
+				}
+			}
+
+			if (target) {
+				const dx = target.x - mob.x, dz = target.z - mob.z
+				const d2 = dx * dx + dz * dz
+				const reach2 = (cfg.attackRange || 1.6) ** 2
+
+				if (d2 <= reach2) {
+					// In melee range — face the player and bite on cooldown.
+					mob.yaw   = Math.atan2(dx, dz)
+					mob.dirty = true
+					if (now >= (mob.attackCooldownUntil || 0)) {
+						mob.attackCooldownUntil = now + (cfg.attackCooldownMs || 1000)
+						const dmg = cfg.attackDamage ?? cfg.damage ?? 5
+						// Reuse the same 500ms invincibility window as PvP so combat feels consistent.
+						if (now - (target.lastHitTime || 0) >= 500) {
+							target.lastHitTime = now
+							target.hp = Math.max(0, target.hp - dmg)
+							broadcastWorld(world, { type: 'hp_update', id: target.id, hp: target.hp, damage: dmg })
+							console.log(`[mob bite] ${mob.type}#${mob.id} → ${target.nickname}  dmg=${dmg}  hp=${target.hp}`)
+							if (target.hp <= 0) {
+								target.hp = 100
+								target.x = 0; target.y = 20; target.z = 0
+								broadcastWorld(world, { type: 'player_died',
+									id: target.id, killerName: mob.type, hp: target.hp })
+							}
+						}
+					}
+					return
+				}
+
+				// Chase — point wander target at the player and step.
+				mob.tx        = target.x
+				mob.tz        = target.z
+				mob.idleUntil = 0
+				mob.speedMul  = cfg.chaseMul || 1.4
+				stepMobToward(world, mob, dt)
+				return
+			}
+
+			// No target — wander like a passive mob.
+			mob.speedMul = 1
+			tickWander(world, mob, dt, now)
+		},
+		onHit(world, mob, attacker) {
+			const cfg = MOB_TYPES[mob.type]
+			mob.targetPlayerId = attacker.id
+			mob.aggroUntil     = Date.now() + (cfg.aggroDurationMs || 8000)
+		},
+	},
+}
+
+function getMobBehavior(mob) {
+	const name = MOB_TYPES[mob.type]?.behavior || 'passive'
+	return MOB_BEHAVIORS[name] || MOB_BEHAVIORS.passive
+}
+
+function updateMobAI(world, mob, dt) {
+	getMobBehavior(mob).onTick(world, mob, dt, Date.now())
+}
+
+// ── Plugin mob registration (untrusted, validated) ────────────────────────
+// Plugins live in the browser. The client parses the plugin JS, takes the
+// numeric/AI portion of the mob config, and ships it to us as JSON via the
+// `register_mob_type` message. We never execute plugin code server-side —
+// what we accept here is *only* a flat object of whitelisted, range-clamped
+// fields.
+//
+// Two protections:
+//   • allow-list of fields → unknown keys are dropped silently
+//   • numeric range clamps → bad values can't crash AI / DoS spawn caps
+//   • behavior is a string enum, not a function reference
+
+// type names: short lowercase identifiers, must not collide with built-ins.
+const MOB_TYPE_NAME_RE = /^[a-z][a-z0-9_-]{0,23}$/
+const BUILTIN_MOB_TYPES = new Set(['chicken'])
+
+// [min, max] for every numeric field a plugin may set. Anything outside the
+// range is clamped (not rejected) so a typo never breaks the world.
+const MOB_FIELD_RANGES = {
+	maxHp:            [1, 200],
+	damage:           [0, 50],
+	speed:            [0, 10],
+	regionSize:       [1, 16],
+	countPerRegion:   [0, 20],
+	spawnMinRadius:   [0, 200],
+	spawnRadius:      [1, 500],
+	despawnRadius:    [1, 1000],
+	wanderMin:        [0, 50],
+	wanderMax:        [0, 50],
+	idleMinMs:        [0, 30000],
+	idleMaxMs:        [0, 30000],
+	stepMaxClimb:     [0, 3],
+	respawnDelayMs:   [0, 60000],
+	fleeBoostMs:      [0, 30000],
+	fleeBoostMul:     [1, 5],
+	aggroRadius:      [0, 50],
+	deaggroRadius:    [0, 100],
+	aggroDurationMs:  [0, 60000],
+	attackRange:      [0, 10],
+	attackDamage:     [0, 50],
+	attackCooldownMs: [100, 30000],
+	chaseMul:         [1, 5],
+}
+
+const MOB_BEHAVIOR_NAMES = new Set(['passive', 'hostile'])
+
+function clampNum(v, [lo, hi], fallback) {
+	const n = Number(v)
+	if (!Number.isFinite(n)) return fallback
+	return Math.max(lo, Math.min(hi, n))
+}
+
+// Returns a validated copy of cfg or null on hard rejection (bad name).
+function validateMobConfig(cfg) {
+	if (!cfg || typeof cfg !== 'object') return null
+	const type = String(cfg.type || '')
+	if (!MOB_TYPE_NAME_RE.test(type)) return null
+	if (BUILTIN_MOB_TYPES.has(type))   return null   // never overwrite core mobs
+
+	const out = { type }
+	out.behavior = MOB_BEHAVIOR_NAMES.has(cfg.behavior) ? cfg.behavior : 'passive'
+	for (const [field, range] of Object.entries(MOB_FIELD_RANGES)) {
+		if (cfg[field] === undefined) continue
+		out[field] = clampNum(cfg[field], range, undefined)
+	}
+	return out
+}
+
+function nearestPlayerDist(world, mob) {
+	const np = nearestPlayer(world, mob)
+	return np ? Math.sqrt(np.distSq) : Infinity
 }
 
 // Region key for a position — used to count mobs per `regionSize×regionSize`
@@ -531,6 +727,22 @@ export default function attachVoxelWorld(httpServer) {
 					break
 				}
 
+				case 'register_mob_type': {
+					if (!player) return
+					// JSON-only registration — every field passes through
+					// validateMobConfig (allow-list + numeric clamps). Plugin
+					// code never runs server-side. Reuses the same mob_type
+					// across worlds, since MOB_TYPES is a global registry.
+					const safe = validateMobConfig(msg.config)
+					if (!safe) {
+						console.warn(`[register_mob_type] rejected from ${player.nickname}: ${JSON.stringify(msg.config?.type)}`)
+						return
+					}
+					const before = MOB_TYPES[safe.type]
+					MOB_TYPES[safe.type] = { ...before, ...safe }
+					console.log(`[register_mob_type] ${before ? 'updated' : 'added'} "${safe.type}" (behavior=${safe.behavior}) by ${player.nickname}`)
+					break
+				}
 				case 'hit_mob': {
 					if (!player) return
 					const mob = world.mobs.get(msg.mobId)
@@ -542,8 +754,8 @@ export default function attachVoxelWorld(httpServer) {
 					const damage = clampHitDamage(msg.damage, cfg.damage)
 					mob.hp = Math.max(0, mob.hp - damage)
 					broadcastWorld(world, { type:'mob_hp', id:mob.id, hp:mob.hp, damage })
-					// Hit → flee in the opposite direction.
-					pickWanderTarget(world, mob, { x: player.x, z: player.z })
+					// Behavior decides how to react (passive→flee, hostile→aggro, etc.).
+					getMobBehavior(mob).onHit(world, mob, player)
 					console.log(`[mob hit] ${player.nickname} → ${mob.type}#${mob.id}  dmg=${damage}  hp=${mob.hp}`)
 					if (mob.hp <= 0) {
 						world.mobs.delete(mob.id)
