@@ -247,9 +247,10 @@
     text-align:center; line-height:1.2;
   }
   .touch-btn.pressed { background:rgba(255,255,255,.38); border-color:white; }
-  #btn-jump  { background:rgba(100,220,100,.25); border-color:rgba(100,220,100,.8); }
-  #btn-mine  { background:rgba(220,80,80,.25);   border-color:rgba(220,80,80,.8);   }
-  #btn-place { background:rgba(80,160,220,.25);  border-color:rgba(80,160,220,.8);  }
+  #btn-jump     { background:rgba(100,220,100,.25); border-color:rgba(100,220,100,.8); }
+  #btn-mine     { background:rgba(220,80,80,.25);   border-color:rgba(220,80,80,.8);   }
+  #btn-place    { background:rgba(80,160,220,.25);  border-color:rgba(80,160,220,.8);  }
+  #btn-fly-down { background:rgba(180,140,255,.25); border-color:rgba(180,140,255,.8); display:none; }
 
   /* ── Underwater overlay ── */
   #underwater-overlay {
@@ -390,6 +391,7 @@
       <div class="touch-btn" id="btn-place">Place</div>
     </div>
     <div class="row">
+      <div class="touch-btn" id="btn-fly-down">Down</div>
       <div class="touch-btn" id="btn-jump">Jump</div>
       <div class="touch-btn" id="btn-gui">🎒</div>
     </div>
@@ -692,6 +694,7 @@ window.VoxelWorld = {
 			 *     deaggroRadius:  number  — drop chase past this distance
 			 *     aggroDurationMs:number  — keep chasing this long after being hit
 			 *     attackRange:    number  — XZ distance at which it bites
+			 *     attackVerticalReach: number — feet-to-feet vertical bite limit (default 2)
 			 *     attackDamage:   number  — damage per bite
 			 *     attackCooldownMs:number — between bites
 			 *     chaseMul:       number  — speed multiplier while chasing
@@ -2244,7 +2247,7 @@ const _MOB_AI_FIELDS = [
 	'stepMaxClimb', 'respawnDelayMs',
 	'fleeBoostMs', 'fleeBoostMul',
 	'aggroRadius', 'deaggroRadius', 'aggroDurationMs',
-	'attackRange', 'attackDamage', 'attackCooldownMs', 'chaseMul',
+	'attackRange', 'attackVerticalReach', 'attackDamage', 'attackCooldownMs', 'chaseMul',
 ]
 
 function _pickMobAiFields(cfg) {
@@ -2377,11 +2380,19 @@ function tickMobs(dt) {
 /* ============================================================
    PLAYER & CAMERA
 ============================================================ */
+const G = 9.8 // gravity
 const player = {
 	pos: new THREE.Vector3(0, 20, 0),
 	vel: new THREE.Vector3(),
 	height: 1.7, speed: 6, onGround: false,
+	// Game mode is purely client-side: 'survival' (default — gravity, jumps)
+	// or 'creative' (double-tap Space → toggle flying). Switched via the
+	// /creative and /survival chat commands.
+	gameMode: 'survival',
+	flying:   false,
 }
+const FLY_SPEED = 8                 // blocks/sec, vertical thrust while flying
+const FLY_DOUBLE_TAP_MS = 350       // window for double-tap Space → toggle fly
 
 const yawObject = new THREE.Object3D()
 camera.position.y = 0   // player.pos.y is already eye level (feet + height)
@@ -2389,7 +2400,32 @@ yawObject.add(camera)
 scene.add(yawObject)
 
 const keys = {}
-addEventListener('keydown', (e) => keys[e.code] = true)
+
+// Centralised flight toggle so the touch "Down" button visibility stays in
+// sync with state regardless of which path turned flying on/off (chat
+// command, double-tap, ground collision, …).
+function setFlying(on) {
+	player.flying = !!on
+	if (on) player.vel.y = 0
+	const btn = document.getElementById('btn-fly-down')
+	if (btn) btn.style.display = on ? 'flex' : 'none'
+}
+
+let _lastSpacePressMs = 0
+addEventListener('keydown', (e) => {
+	// Double-tap Space → toggle flying. Only in creative; survival ignores it
+	// so a quick "jump-jump" doesn't accidentally launch you. e.repeat skips
+	// the OS auto-repeat so holding Space doesn't keep firing the toggle.
+	if (e.code === 'Space' && !e.repeat && player.gameMode === 'creative') {
+		const now = performance.now()
+		if (now - _lastSpacePressMs < FLY_DOUBLE_TAP_MS) {
+			setFlying(!player.flying)
+			showToast(player.flying ? '✈ Flying' : '🚶 Walking')
+		}
+		_lastSpacePressMs = now
+	}
+	keys[e.code] = true
+})
 addEventListener('keyup', (e) => keys[e.code] = false)
 
 renderer.domElement.addEventListener('click', () => { if (!('ontouchstart' in window)) renderer.domElement.requestPointerLock() })
@@ -2517,7 +2553,7 @@ document.addEventListener('touchend', (e) => {
 }, { passive: true })
 
 // ── Action buttons ──
-const touchState = { jump:false, mine:false, place:false }
+const touchState = { jump:false, mine:false, place:false, flyDown:false }
 
 function setupTouchBtn(id, key) {
 	const el = document.getElementById(id)
@@ -2542,9 +2578,26 @@ function setupTouchBtn(id, key) {
 	}, { passive:false })
 }
 
-setupTouchBtn('btn-jump', 'jump')
-setupTouchBtn('btn-mine', 'mine')
-setupTouchBtn('btn-place', 'place')
+setupTouchBtn('btn-jump',     'jump')
+setupTouchBtn('btn-mine',     'mine')
+setupTouchBtn('btn-place',    'place')
+setupTouchBtn('btn-fly-down', 'flyDown')
+
+// Double-tap the Jump button → toggle fly in creative mode (mirrors the
+// double-Space shortcut on desktop). Sits alongside setupTouchBtn rather
+// than inside it so the held-state behaviour stays exactly the same.
+{
+	let _lastJumpTouchMs = 0
+	document.getElementById('btn-jump').addEventListener('touchstart', (e) => {
+		if (player.gameMode !== 'creative') return
+		const now = performance.now()
+		if (now - _lastJumpTouchMs < FLY_DOUBLE_TAP_MS) {
+			setFlying(!player.flying)
+			showToast(player.flying ? '✈ Flying' : '🚶 Walking')
+		}
+		_lastJumpTouchMs = now
+	}, { passive:false })
+}
 
 function mineBlock(dt) {
 	const result = currentTarget
@@ -3169,6 +3222,19 @@ function handleCommand(raw) {
 		myNickname = v.slice(6).trim().slice(0, 20)
 		netSendNickname(myNickname)
 		showToast(`Nickname set to "${myNickname}"`)
+		return
+	}
+	if (v === '/creative') {
+		player.gameMode = 'creative'
+		showToast('🛠 Creative mode — double-tap Space to fly')
+		return
+	}
+	if (v === '/survival') {
+		player.gameMode = 'survival'
+		// Drop flight on the way out so the player can't keep hovering after
+		// switching back. Gravity will resume on the next frame.
+		setFlying(false)
+		showToast('🗡 Survival mode')
 		return
 	}
 	// /remove <blockname|ALL> <radius>
@@ -3864,8 +3930,23 @@ function animate() {
 		scene.background.set(0x87ceeb)
 	}
 
-	// Gravity / buoyancy
-	if (inWater) {
+	// Gravity / buoyancy / flying
+	if (player.flying) {
+		// Creative-mode flight: Space = up, Shift = down. No gravity, no
+		// buoyancy — overrides the water branch too so flying through a lake
+		// behaves the same as in air. Don't bind Shift down to touchState.mine
+		// here (unlike swim) because mining mid-air would constantly drop the
+		// player.
+		if (keys.Space || touchState.jump) {
+			player.vel.y = FLY_SPEED
+		} else if (keys.ShiftLeft || keys.ShiftRight || touchState.flyDown) {
+			player.vel.y = -FLY_SPEED
+		} else {
+			// No vertical input → damp toward 0 so the player hovers in place.
+			player.vel.y *= 0.6
+			if (Math.abs(player.vel.y) < 0.01) player.vel.y = 0
+		}
+	} else if (inWater) {
 		// In water: replace gravity with drag + direct swim controls.
 		// Horizontal movement speed is reduced underwater.
 		// Space = swim up, Shift = swim down (sink), neither = slowly float up to surface.
@@ -3882,7 +3963,7 @@ function animate() {
 			player.vel.y += (FLOAT_SPEED - player.vel.y) * Math.min(dt * 3, 1)
 		}
 	} else {
-		player.vel.y -= 9.8 * dt
+		player.vel.y -= G * dt
 	}
 
 	// ── Split-axis collision ──────────────────────────────────────────────
@@ -3922,6 +4003,13 @@ function animate() {
 			const feetTarget = Math.floor(player.pos.y - player.height) + 1
 			player.pos.y = feetTarget + player.height
 			if (!inWater) player.onGround = true   // only land on ground when not in water
+			// Touched ground while flying → drop back to walking. Same trigger
+			// as what stops a normal free-fall, so descending with Shift or
+			// drifting onto a placed block both end flight cleanly.
+			if (player.flying) {
+				setFlying(false)
+				showToast('🚶 Walking')
+			}
 		} else {
 			// Rising — hit a ceiling, push down to just below it
 			player.pos.y = Math.ceil(player.pos.y) - 0.001
@@ -3934,7 +4022,7 @@ function animate() {
 	// When swimming up and leaving water, give a small exit boost so the
 	// player can actually step onto shore (water surface → land block).
 	if (!inWater && player.vel.y > 0 && player.onGround) {
-		player.vel.y = Math.sqrt(2 * 9.8 * 0.6)   // small hop to clear the shore edge
+		player.vel.y = Math.sqrt(2 * G * 0.6)   // small hop to clear the shore edge
 		player.onGround = false
 	}
 
@@ -3964,8 +4052,8 @@ function animate() {
 		player.pos.z -= moveZ   // revert only Z
 	}
 
-	if ((keys.Space || touchState.jump) && player.onGround && !inWater) {
-		player.vel.y = Math.sqrt(2 * 9.8 * 1.5)
+	if ((keys.Space || touchState.jump) && player.onGround && !inWater && !player.flying) {
+		player.vel.y = Math.sqrt(2 * G * 1.5)
 		player.onGround = false
 	}
 	if (keys.Escape) document.exitPointerLock?.()

@@ -224,7 +224,8 @@ match `/^[a-z][a-z0-9_-]{0,23}$/`.
 | `aggroRadius`     | 0..50          | hostile: chase trigger distance      |
 | `deaggroRadius`   | 0..100         | hostile: chase exit distance         |
 | `aggroDurationMs` | 0..60000       | hostile: chase persistence after hit |
-| `attackRange`     | 0..10          | hostile: bite distance               |
+| `attackRange`     | 0..10          | hostile: bite XZ distance            |
+| `attackVerticalReach` | 0..10      | hostile: feet-to-feet bite cap (default 2) |
 | `attackDamage`    | 0..50          | hostile: damage per bite             |
 | `attackCooldownMs`| 100..30000     | hostile: between bites               |
 | `chaseMul`        | 1..5           | hostile: speed multiplier on chase   |

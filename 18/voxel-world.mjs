@@ -447,13 +447,24 @@ const MOB_BEHAVIORS = {
 				}
 			}
 
+			// Player.y is eye height; mob.y is feet. Subtract approximate player
+			// height so vertical comparisons are feet-to-feet.
+			const PLAYER_FEET_OFFSET = 1.7
+			// If the player's feet are this many blocks above the mob, the mob
+			// gives up the chase — they can't climb that high anyway and otherwise
+			// they'd pace forever under a flying creative-mode player.
+			const VERTICAL_DEAGGRO = 8
+
 			if (target) {
 				const dx = target.x - mob.x, dz = target.z - mob.z
 				const d2 = dx * dx + dz * dz
+				const dyFeet  = (target.y - PLAYER_FEET_OFFSET) - mob.y
 				const deaggro = (cfg.deaggroRadius || (cfg.aggroRadius || 12) + 8) ** 2
 
-				// Lost interest? Out of range AND past the post-hit aggro window.
-				if (d2 > deaggro && now > (mob.aggroUntil || 0)) {
+				// Lost interest? Out of XZ range OR too far above us, AND past
+				// the post-hit aggro window.
+				const tooFar = d2 > deaggro || Math.abs(dyFeet) > VERTICAL_DEAGGRO
+				if (tooFar && now > (mob.aggroUntil || 0)) {
 					mob.targetPlayerId = null
 					target = null
 				}
@@ -462,9 +473,14 @@ const MOB_BEHAVIORS = {
 			if (target) {
 				const dx = target.x - mob.x, dz = target.z - mob.z
 				const d2 = dx * dx + dz * dz
+				const dyFeet = (target.y - PLAYER_FEET_OFFSET) - mob.y
 				const reach2 = (cfg.attackRange || 1.6) ** 2
+				// Vertical bite reach in feet-to-feet blocks. Default 2 lets a
+				// mob bite a player standing on a single ledge above; bigger
+				// elevation differences need a separate fix (climb-up AI).
+				const vReach = cfg.attackVerticalReach ?? 2
 
-				if (d2 <= reach2) {
+				if (d2 <= reach2 && Math.abs(dyFeet) <= vReach) {
 					// In melee range — face the player and bite on cooldown.
 					mob.yaw   = Math.atan2(dx, dz)
 					mob.dirty = true
@@ -556,10 +572,11 @@ const MOB_FIELD_RANGES = {
 	aggroRadius:      [0, 50],
 	deaggroRadius:    [0, 100],
 	aggroDurationMs:  [0, 60000],
-	attackRange:      [0, 10],
-	attackDamage:     [0, 50],
-	attackCooldownMs: [100, 30000],
-	chaseMul:         [1, 5],
+	attackRange:         [0, 10],
+	attackVerticalReach: [0, 10],
+	attackDamage:        [0, 50],
+	attackCooldownMs:    [100, 30000],
+	chaseMul:            [1, 5],
 }
 
 const MOB_BEHAVIOR_NAMES = new Set(['passive', 'hostile'])
