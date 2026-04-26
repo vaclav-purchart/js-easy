@@ -2336,7 +2336,28 @@ function updateMobHp(id, hp) {
 
 function tickMobs(dt) {
 	const alpha = Math.min(dt * 8, 1)
+	// Cull anything past the loaded chunks — there's no terrain to stand on
+	// out there from this player's perspective, and animating ~50 invisible
+	// mobs is wasted GPU/CPU. Half a chunk of slack so popping is hidden by
+	// fog at the chunk edge.
+	const cullDist   = (RENDER_DISTANCE + 0.5) * CHUNK_SIZE
+	const cullDistSq = cullDist * cullDist
+	const px = player.pos.x, pz = player.pos.z
+
 	for (const { model, data } of mobs.values()) {
+		const ddx = data.tx - px, ddz = data.tz - pz
+		const inRange = ddx * ddx + ddz * ddz <= cullDistSq
+
+		if (!inRange) {
+			// Snap to the latest server pose so when the mob re-enters render
+			// range it doesn't slide in from the previous frozen position.
+			model.position.set(data.tx, data.ty, data.tz)
+			model.rotation.y = data.tyaw
+			if (model.visible) model.visible = false
+			continue
+		}
+		if (!model.visible) model.visible = true
+
 		const oldX = model.position.x, oldZ = model.position.z
 		model.position.x += (data.tx - model.position.x) * alpha
 		model.position.y += (data.ty - model.position.y) * alpha
@@ -3129,6 +3150,12 @@ function handleCommand(raw) {
 	const v = raw.trim()
 	if (!v) return
 	if (v === '/reset') {
+		// Server only honours world_reset from "vasek" — short-circuit on the
+		// client so other players get a clear message instead of a silent no-op.
+		if (myNickname.trim().toLowerCase() !== 'vasek') {
+			showToast('Only admin can reset the world.')
+			return
+		}
 		modified.clear()
 		for (const [k] of chunks) {
 			const [cx2, cz2] = k.split('_').map(Number)

@@ -431,11 +431,20 @@ const MOB_BEHAVIORS = {
 			const cfg = MOB_TYPES[mob.type]
 
 			// Resolve target — persistent attacker first, else nearest player in range.
+			// Crucially, only consider players who have this plugin loaded.
+			// Otherwise an unchecked-wolf player gets killed by an invisible
+			// wolf they have no way to fight back against.
 			let target = mob.targetPlayerId ? world.players.get(mob.targetPlayerId) : null
+			if (target && !target.knownMobTypes?.has(mob.type)) target = null
 			if (!target) mob.targetPlayerId = null
 			if (!target) {
-				const np = nearestPlayer(world, mob)
-				if (np && np.distSq <= (cfg.aggroRadius || 12) ** 2) target = np.player
+				let bestD2 = (cfg.aggroRadius || 12) ** 2
+				for (const p of world.players.values()) {
+					if (!p.knownMobTypes?.has(mob.type)) continue
+					const dx = p.x - mob.x, dz = p.z - mob.z
+					const d2 = dx * dx + dz * dz
+					if (d2 < bestD2) { bestD2 = d2; target = p }
+				}
 			}
 
 			if (target) {
@@ -590,7 +599,29 @@ function regionKey(x, z, regionSize) {
 	return Math.floor(cx / regionSize) + ',' + Math.floor(cz / regionSize)
 }
 
+// Broadcast a mob-related event only to clients that have registered the
+// type. Stops "invisible" plugin mobs from leaking events (and damage) to
+// players who unchecked the plugin.
+function broadcastWorldByMobType(world, mobType, obj, excludeId) {
+	const data = JSON.stringify(obj)
+	for (const p of world.players.values()) {
+		if (excludeId !== undefined && p.id === excludeId) continue
+		if (!p.knownMobTypes?.has(mobType)) continue
+		if (p.ws.readyState === WebSocket.OPEN) p.ws.send(data)
+	}
+}
+
+// World-wide soft cap. Past this many mobs we stop topping up regardless of
+// per-region density — keeps long-running worlds from filling up. Scales
+// with player count so a busy world isn't choked.
+const MAX_MOBS_PER_PLAYER = 14
+const MIN_WORLD_MOB_CAP   = 12
+function worldMobCap(world) {
+	return Math.max(MIN_WORLD_MOB_CAP, world.players.size * MAX_MOBS_PER_PLAYER)
+}
+
 function attemptSpawnMob(world, type, near) {
+	if (world.mobs.size >= worldMobCap(world)) return null
 	const cfg = MOB_TYPES[type]
 	for (let attempt = 0; attempt < 10; attempt++) {
 		const angle = Math.random() * Math.PI * 2
@@ -601,7 +632,8 @@ function attemptSpawnMob(world, type, near) {
 		if (y <= SEA_LEVEL) continue   // don't spawn in/under water
 		const mob = makeMob(world, type, x, y, z)
 		world.mobs.set(mob.id, mob)
-		broadcastWorld(world, { type: 'mob_spawn', mob: serializeMob(mob) })
+		// Spawn event only goes to players who can actually render this type.
+		broadcastWorldByMobType(world, type, { type: 'mob_spawn', mob: serializeMob(mob) })
 		console.log(`[mob spawn] ${type}#${mob.id} in "${world.name}" @ ${x},${y},${z}`)
 		return mob
 	}
@@ -612,7 +644,9 @@ function attemptSpawnMob(world, type, near) {
 // slow timer (every few seconds) to avoid spawning storms.
 function maintainMobPopulation(world) {
 	if (world.players.size === 0) return
+	const cap = worldMobCap(world)
 	for (const [type, cfg] of Object.entries(MOB_TYPES)) {
+		if (world.mobs.size >= cap) break
 		const counts = new Map()
 		for (const mob of world.mobs.values()) {
 			if (mob.type !== type) continue
@@ -620,10 +654,15 @@ function maintainMobPopulation(world) {
 			counts.set(key, (counts.get(key) || 0) + 1)
 		}
 		for (const p of world.players.values()) {
+			// Don't spawn plugin-only types around players who haven't loaded
+			// the plugin — they couldn't see them anyway and would just take
+			// damage from invisible attackers.
+			if (!p.knownMobTypes?.has(type)) continue
 			const key  = regionKey(p.x, p.z, cfg.regionSize)
 			const have = counts.get(key) || 0
 			if (have < cfg.countPerRegion) {
 				if (attemptSpawnMob(world, type, p)) counts.set(key, have + 1)
+				if (world.mobs.size >= cap) break
 			}
 		}
 	}
@@ -634,7 +673,18 @@ function despawnDistantMobs(world) {
 		const cfg = MOB_TYPES[mob.type]
 		if (nearestPlayerDist(world, mob) > cfg.despawnRadius) {
 			world.mobs.delete(mob.id)
-			broadcastWorld(world, { type: 'mob_despawn', id: mob.id })
+			broadcastWorldByMobType(world, mob.type, { type: 'mob_despawn', id: mob.id })
+			continue
+		}
+		// Orphan cleanup: nobody in the world has this plugin loaded. The
+		// mob would otherwise sit there invisibly until despawnRadius kicks in.
+		let knownToAnyone = false
+		for (const p of world.players.values()) {
+			if (p.knownMobTypes?.has(mob.type)) { knownToAnyone = true; break }
+		}
+		if (!knownToAnyone) {
+			world.mobs.delete(mob.id)
+			broadcastWorldByMobType(world, mob.type, { type: 'mob_despawn', id: mob.id })
 		}
 	}
 }
@@ -656,18 +706,35 @@ setInterval(() => {
 	}
 }, MOB_TICK_MS)
 
-// Broadcast tick — batch all dirty mobs into one update message per world.
+// Broadcast tick — batch all dirty mobs into one update message per player.
+// Per-player so we can filter by knownMobTypes (no positions for plugins
+// the client hasn't loaded).
 const MOB_BROADCAST_MS = 200
 setInterval(() => {
 	for (const world of worlds.values()) {
 		if (world.players.size === 0) continue
-		const dirty = []
+		// Group dirty mobs by type once, then per-player skip the ones they don't know.
+		const dirtyByType = new Map()
+		let any = false
 		for (const mob of world.mobs.values()) {
 			if (!mob.dirty) continue
-			dirty.push({ id: mob.id, x: mob.x, y: mob.y, z: mob.z, yaw: mob.yaw })
+			const update = { id: mob.id, x: mob.x, y: mob.y, z: mob.z, yaw: mob.yaw }
+			let arr = dirtyByType.get(mob.type)
+			if (!arr) { arr = []; dirtyByType.set(mob.type, arr) }
+			arr.push(update)
 			mob.dirty = false
+			any = true
 		}
-		if (dirty.length) broadcastWorld(world, { type: 'mob_updates', mobs: dirty })
+		if (!any) continue
+		for (const p of world.players.values()) {
+			if (p.ws.readyState !== WebSocket.OPEN) continue
+			const list = []
+			for (const [type, arr] of dirtyByType) {
+				if (!p.knownMobTypes?.has(type)) continue
+				for (const u of arr) list.push(u)
+			}
+			if (list.length) p.ws.send(JSON.stringify({ type: 'mob_updates', mobs: list }))
+		}
 	}
 }, MOB_BROADCAST_MS)
 
@@ -714,13 +781,21 @@ export default function attachVoxelWorld(httpServer) {
 					world = getWorld(worldName)
 					const id = world.nextId++
 					player = { id, nickname, x:0, y:20, z:0, yaw:0, pitch:0, ws, dirty:false,
-					           hp:100, lastHitTime:0, held:null, swing:false }
+					           hp:100, lastHitTime:0, held:null, swing:false,
+					           // Mob types this client knows about (built-ins + everything
+					           // their loaded plugins have registered). Plugin types arrive
+					           // via register_mob_type after init.
+					           knownMobTypes: new Set(BUILTIN_MOB_TYPES) }
    					world.players.set(id, player)
 					send(ws, {
 						type:'init', id, seed:world.seed, world:worldName,
 						blocks: [...world.modifiedBlocks.entries()].map(([k,v])=>({k,v})),
 						players: [...world.players.values()].filter(p=>p.id!==id).map(serializePlayer),
-						mobs:    [...world.mobs.values()].map(serializeMob),
+						// Only ship mobs the joining player can already render. The rest
+						// are sent on demand when register_mob_type confirms the plugin.
+						mobs:    [...world.mobs.values()]
+							.filter(m => player.knownMobTypes.has(m.type))
+							.map(serializeMob),
 					})
 					broadcastWorld(world, { type:'player_join', player:serializePlayer(player) }, id)
 					console.log(`[+] "${nickname}" -> "${worldName}" (${id})  online=${world.players.size}`)
@@ -738,9 +813,44 @@ export default function attachVoxelWorld(httpServer) {
 						console.warn(`[register_mob_type] rejected from ${player.nickname}: ${JSON.stringify(msg.config?.type)}`)
 						return
 					}
-					const before = MOB_TYPES[safe.type]
-					MOB_TYPES[safe.type] = { ...before, ...safe }
-					console.log(`[register_mob_type] ${before ? 'updated' : 'added'} "${safe.type}" (behavior=${safe.behavior}) by ${player.nickname}`)
+
+					const before    = MOB_TYPES[safe.type]
+					const merged    = { behavior: 'passive', ...before, ...safe }
+					// Detect a real change so we don't recycle mobs every time a
+					// new player joins and re-announces the same plugin config.
+					const beforeKey = JSON.stringify(before || null)
+					const mergedKey = JSON.stringify(merged)
+					const changed   = beforeKey !== mergedKey
+
+					MOB_TYPES[safe.type] = merged
+					player.knownMobTypes.add(safe.type)
+
+					if (changed && before) {
+						// Config update — despawn existing mobs of this type so the
+						// maintenance tick respawns them with the new HP/speed/etc.
+						// (mob.maxHp is baked at spawn, so without this you'd need
+						// to wait for the old generation to die naturally.)
+						let recycled = 0
+						for (const w of worlds.values()) {
+							for (const id of [...w.mobs.keys()]) {
+								const m = w.mobs.get(id)
+								if (m.type !== safe.type) continue
+								w.mobs.delete(id)
+								broadcastWorldByMobType(w, m.type, { type: 'mob_despawn', id })
+								recycled++
+							}
+						}
+						console.log(`[register_mob_type] updated "${safe.type}" (behavior=${merged.behavior}) by ${player.nickname}, recycled ${recycled} mob(s)`)
+					} else if (!before) {
+						console.log(`[register_mob_type] added "${safe.type}" (behavior=${merged.behavior}) by ${player.nickname}`)
+					}
+
+					// Backfill mobs the player didn't get in their `init` because
+					// they hadn't registered this type yet.
+					for (const m of world.mobs.values()) {
+						if (m.type !== safe.type) continue
+						send(ws, { type: 'mob_spawn', mob: serializeMob(m) })
+					}
 					break
 				}
 				case 'hit_mob': {
@@ -753,13 +863,13 @@ export default function attachVoxelWorld(httpServer) {
 					const cfg = MOB_TYPES[mob.type]
 					const damage = clampHitDamage(msg.damage, cfg.damage)
 					mob.hp = Math.max(0, mob.hp - damage)
-					broadcastWorld(world, { type:'mob_hp', id:mob.id, hp:mob.hp, damage })
+					broadcastWorldByMobType(world, mob.type, { type:'mob_hp', id:mob.id, hp:mob.hp, damage })
 					// Behavior decides how to react (passive→flee, hostile→aggro, etc.).
 					getMobBehavior(mob).onHit(world, mob, player)
 					console.log(`[mob hit] ${player.nickname} → ${mob.type}#${mob.id}  dmg=${damage}  hp=${mob.hp}`)
 					if (mob.hp <= 0) {
 						world.mobs.delete(mob.id)
-						broadcastWorld(world, { type:'mob_die',
+						broadcastWorldByMobType(world, mob.type, { type:'mob_die',
 							id: mob.id, killerName: player.nickname })
 						console.log(`[mob kill] ${player.nickname} killed ${mob.type}#${mob.id}`)
 						// Replacement spawn after a short delay (random spot near killer).
@@ -842,6 +952,12 @@ export default function attachVoxelWorld(httpServer) {
 				}
 				case 'world_reset': {
 					if (!player) return
+					// Only "vasek" gets to nuke the world. Authoritative check —
+					// the client also gates this, but treat that as a hint, not security.
+					if (player.nickname.trim().toLowerCase() !== 'vasek') {
+						console.log(`[!] world_reset rejected — ${player.nickname} is not vasek`)
+						return
+					}
 					world.modifiedBlocks.clear()
 					broadcastWorld(world, { type:'world_reset' })
 					console.log(`[!] "${world.name}" reset by ${player.nickname}`)

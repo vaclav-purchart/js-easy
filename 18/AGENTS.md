@@ -134,6 +134,21 @@ allow-list and clamps numerics into safe ranges before storing them in
 `MOB_TYPES`. This means a malicious or buggy plugin cannot run code on the
 server, only nudge a few numbers within tight bounds.
 
+The server also tracks a `knownMobTypes: Set<string>` per player (built-ins
++ everything they've sent via `register_mob_type`). Plugin-only mobs are
+filtered out of every server→client mob event for players who don't have
+the plugin loaded, **and** hostile AI ignores those players when picking
+targets — so a player who unchecks the wolf plugin can't be killed by an
+invisible wolf. Maintenance also won't spawn plugin types around players
+who don't know them, and orphaned mobs (no remaining player knows the type)
+are despawned the next maintenance tick.
+
+When a `register_mob_type` *changes* the merged config (HP/speed/behavior
+etc. — detected by JSON-fingerprinting the merged result against the prior),
+existing mobs of that type are despawned so the maintenance tick respawns
+them with the new config. Without this, `mob.maxHp` stays baked at spawn
+time and live iteration on a plugin's stats appears not to work.
+
 Plugin filenames follow `plugin---<author>---<name>.js`; this is parsed by
 `parsePluginMeta()` for the lobby UI.
 
@@ -247,10 +262,20 @@ system, all module-level `setInterval`s:
   when it reaches the target (or hits an obstacle / a >1-block step / water)
   it picks a new wander destination. Every move marks the mob `dirty`.
 - **Broadcast tick** (`MOB_BROADCAST_MS = 200`) — flushes all `dirty` mobs
-  per world into one batched `mob_updates` message.
+  into one `mob_updates` message **per player**, filtered by their
+  `knownMobTypes`. Most players know all types so this collapses to one
+  payload; clients without a plugin just don't get its mob positions.
 - **Maintenance tick** (`MOB_MAINTAIN_MS = 3000`) — for each player, ensures
-  the player's spawn region has `countPerRegion` mobs of every type;
-  despawns mobs farther than `despawnRadius` from any player.
+  the player's spawn region has `countPerRegion` mobs of every type they
+  know; despawns mobs farther than `despawnRadius` from any player and any
+  whose type isn't loaded by anyone in the world. Soft-capped at
+  `worldMobCap(world) = max(MIN_WORLD_MOB_CAP, players × MAX_MOBS_PER_PLAYER)`.
+
+Client side, `tickMobs` hides any mob more than `(RENDER_DISTANCE + 0.5) ×
+CHUNK_SIZE` blocks away (set `model.visible = false`, snap to the latest
+server pose so it doesn't slide in when it returns). `Three.js` skips both
+rendering and raycasting for hidden objects, and `tickAnim` is gated on
+`model.visible`, so far-away mobs cost essentially nothing.
 
 When a player hits a mob (`hit_mob`), the server validates distance (max
 4 blocks, same as PvP), deducts `cfg.damage`, broadcasts `mob_hp`, and points
