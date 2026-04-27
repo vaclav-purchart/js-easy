@@ -18,6 +18,21 @@ The lobby parses the filename for the UI and the host hot-loads the file in
 the browser. **Plugin code runs only in the browser.** The server never
 executes plugin JS — for mobs, AI numbers travel as a validated JSON message.
 
+**Required file header.** Every plugin file must start with this exact
+comment opening or the listing endpoint will skip it and the lobby won't
+offer it to players:
+
+```js
+/**
+ * Voxel World Plugin
+ …
+ */
+```
+
+So the very first bytes of the file are `/**\n * Voxel World Plugin`. The
+rest of the JSDoc block is free-form (describe what the plugin does); only
+those first two lines are sniffed.
+
 Every plugin has the exact same shape:
 
 ```js
@@ -52,6 +67,9 @@ block gets up to three faces: `'side' | 'top' | 'bottom' | 'all'` (default
 `'all'`). `top` / `bottom` fall back to `side` if not loaded.
 
 ```js
+/**
+ * Voxel World Plugin — Marble block
+ */
 VoxelWorld.registerPlugin('Marble', {
   init(api) {
     const ID = api.allocateBlockId()
@@ -81,6 +99,9 @@ if omitted they fall back to `side`. Set `transparent: true` for glass-like
 blocks (engine routes them through the alpha-blended material).
 
 ```js
+/**
+ * Voxel World Plugin — Red Brick (canvas-drawn)
+ */
 VoxelWorld.registerPlugin('BrickRed', {
   init(api) {
     const ID = api.allocateBlockId()
@@ -138,6 +159,9 @@ Behaviors are a string enum, **not** a callback:
 ### Peaceful example — bunny
 
 ```js
+/**
+ * Voxel World Plugin — Bunny mob (peaceful, hops)
+ */
 VoxelWorld.registerPlugin('Bunny', {
   init(api) {
     api.registerMob({
