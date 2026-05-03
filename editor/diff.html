@@ -100,7 +100,7 @@ require(['vs/editor/editor.main'], function() {
 
 	// left side (optional) - select from saved work
 	const leftSavedSelect = document.getElementById('left-saved-select')
-	fetch('https://purchart.cloud/list')
+	fetch('https://purchart.eu/list')
 		.then((res) => res.text())
 		.then((html) => {
 			const parser = new DOMParser()
@@ -110,7 +110,7 @@ require(['vs/editor/editor.main'], function() {
 				const cells = row.querySelectorAll('td')
 				if (cells.length > 1) { // Assume file name in first cell, URL in second
 					const fileName = cells[0].textContent.trim()
-					const fileUrl = cells[0].querySelector('a')?.href || `https://purchart.cloud/list?file=${fileName}`
+					const fileUrl = cells[0].querySelector('a')?.href || `https://purchart.eu/list?file=${fileName}`
 					const option = document.createElement('option')
 					option.value = fileUrl
 					option.text = fileName
@@ -133,7 +133,7 @@ require(['vs/editor/editor.main'], function() {
 
 	// Right side: select from saved work
 	const rightSelect = document.getElementById('right-select')
-	fetch('https://purchart.cloud/list')
+	fetch('https://purchart.eu/list')
 		.then((res) => res.text())
 		.then((html) => {
 			const parser = new DOMParser()
@@ -143,7 +143,7 @@ require(['vs/editor/editor.main'], function() {
 				const cells = row.querySelectorAll('td')
 				if (cells.length > 1) { // Assume file name in first cell, URL in second
 					const fileName = cells[0].textContent.trim()
-					const fileUrl = cells[0].querySelector('a')?.href || `https://purchart.cloud/list?file=${fileName}`
+					const fileUrl = cells[0].querySelector('a')?.href || `https://purchart.eu/list?file=${fileName}`
 					const option = document.createElement('option')
 					option.value = fileUrl
 					option.text = fileName

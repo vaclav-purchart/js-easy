@@ -136,7 +136,7 @@
   #lobby {
     position:fixed; inset:0; z-index:1000;
     background-color:rgba(10,20,40,0.92);
-    background-image: url("https://purchart.cloud/images?file=voxel-world-lobby.svg");
+    background-image: url("https://purchart.eu/images?file=voxel-world-lobby.svg");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -742,7 +742,7 @@ const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
 // Custom external textures - side, top, bottom
 const TEXTURES = {
 	[BLOCK.GRASS]: {
-		// side: "https://purchart.cloud/images?file=2026-03-16--15-09-10---vasik---grass-block-side.png",
+		// side: "https://purchart.eu/images?file=2026-03-16--15-09-10---vasik---grass-block-side.png",
 		// top: "",
 		// bottom: "",
 	},
@@ -1074,7 +1074,7 @@ function terrainHeight(x, z) {
 const PLANT_DEFS = [
 	{
 		name: 'Flower',
-		url: 'https://purchart.cloud/images?file=2026-03-29--20-01-34---vasek---flower.png',
+		url: 'https://purchart.eu/images?file=2026-03-29--20-01-34---vasek---flower.png',
 	},
 	// { name: 'Tall Grass', draw(ctx, W, H) { ... } },
 ]
@@ -2667,12 +2667,12 @@ const DEFAULT_TOOL_DAMAGE = 5
 const TOOL_DEFS = [
 	{
 		name: 'Sword',
-		url: 'https://purchart.cloud/images?file=2026-03-25--06-32-44---luky13---dia-mec.png',
+		url: 'https://purchart.eu/images?file=2026-03-25--06-32-44---luky13---dia-mec.png',
 		damage: 20,
 	},
 	{
 		name: 'Pickaxe',
-		url: 'https://purchart.cloud/images?file=2026-03-25--19-33-18---luky15---kamenny-krumpac.png',
+		url: 'https://purchart.eu/images?file=2026-03-25--19-33-18---luky15---kamenny-krumpac.png',
 		damage: 5,
 	},
 	// To add more tools, append here:
@@ -3295,7 +3295,7 @@ function handleCommand(raw) {
 /* ============================================================
    NETWORKING
 ============================================================ */
-const WS_URL = 'wss://purchart.cloud/voxel-world'
+const WS_URL = 'wss://purchart.eu/voxel-world'
 
 let ws = null, myId = null, connected = false, reconnectTimer = null
 let offlineMode = false
@@ -3585,7 +3585,7 @@ const _defaultNick = 'Player' + Math.floor(Math.random() * 9000 + 1000)
 lobbyNickEl.value = _defaultNick
 
 // ── Plugin picker ──────────────────────────────────────────────────────────
-const PLUGINS_API   = 'https://purchart.cloud/voxel-world/plugins'
+const PLUGINS_API   = 'https://purchart.eu/voxel-world/plugins'
 const pluginListEl  = document.getElementById('lobby-plugins-list')
 const checkAllBtn   = document.getElementById('lobby-plugins-check-all')
 let availablePlugins = []   // { url, filename, name, author }

@@ -439,7 +439,7 @@ button {
 	<header id="topbar">
 		<div id="tools" role="toolbar" aria-label="Tools">
 			<button class="tool-btn" id="send-btn">✉️ Send</button>
-			<button class="tool-btn" id="list-btn" onclick="window.open(`https:/`+`/purchart.cloud/images`, `_blank`)">🔎 List</button> |
+			<button class="tool-btn" id="list-btn" onclick="window.open(`https:/`+`/purchart.eu/images`, `_blank`)">🔎 List</button> |
 			<button class="tool-btn" data-tool="pencil" id="toolPencil" title="Hotkey: P">✎ Pencil</button>
 			<button class="tool-btn" data-tool="fill" id="toolPicker" title="Hotkey: I">👆 Picker</button>
 			<button class="tool-btn" data-tool="fill" id="toolFill" title="Hotkey: B">🪣 Fill</button>
@@ -619,8 +619,8 @@ button {
 
 import { showNotification } from './notification.js'
 
-const ISO_1x1 = await (await fetch('https://purchart.cloud/images?file=iso1x1.json')).json()
-const ISO_2x2 = await (await fetch('https://purchart.cloud/images?file=iso2x2.json')).json()
+const ISO_1x1 = await (await fetch('https://purchart.eu/images?file=iso1x1.json')).json()
+const ISO_2x2 = await (await fetch('https://purchart.eu/images?file=iso2x2.json')).json()
 
 // --- State ---
 let width = 32,
@@ -2537,7 +2537,7 @@ if (location.search) {
 		if (!fileName) throw new Error('no parameter')
 
 		if (fileName.includes('.json')) {
-			const data = await (await fetch(`https://purchart.cloud/images?file=${fileName}`)).json()
+			const data = await (await fetch(`https://purchart.eu/images?file=${fileName}`)).json()
 			if (!data.width || !data.height || !data.pixelSize || !Array.isArray(data.layers)) {
 				throw new Error("Invalid image file.")
 			}
@@ -2552,7 +2552,7 @@ if (location.search) {
 				})
 			}
 
-			const binaryData = await (await fetch(`https://purchart.cloud/images?file=${fileName}`)).blob()
+			const binaryData = await (await fetch(`https://purchart.eu/images?file=${fileName}`)).blob()
 			applyEditorData({})
 			const base64 = await blobToBase64(binaryData)
 			if (base64.startsWith("data:image")) loadBase64(base64)

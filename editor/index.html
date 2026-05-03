@@ -1072,7 +1072,7 @@ console.log("test")
 				this.updateTimeout = setTimeout(() => {
 					// Check for Voxel World Plugin and switch language
 					const code = this.editor.getValue()
-					const isVoxelPlugin = code.startsWith('/**\n * Voxel World Plugin') || code.startsWith('/** JavaScript */')
+					const isVoxelPlugin = code.replace(/\s/g, '').startsWith('/***VoxelWorldPlugin') || code.startsWith('/** JavaScript */')
 					const currentLanguage = monaco.editor.getModels()[0]?.getLanguageId()
 
 					if (isVoxelPlugin && currentLanguage !== 'javascript') {
@@ -1913,15 +1913,15 @@ console.log("test")
 			}
 
 			showList() {
-				window.open('https://purchart.cloud/list', '_blank')
+				window.open('https://purchart.eu/list', '_blank')
 			}
 
 			showChat() {
-				window.open('https://purchart.cloud/chat', '_blank')
+				window.open('https://purchart.eu/chat', '_blank')
 			}
 
 			showImageEditor() {
-				window.open('https://purchart.cloud/image-editor', '_blank')
+				window.open('https://purchart.eu/image-editor', '_blank')
 			}
 
 			// Fullscreen Methods
@@ -2326,7 +2326,7 @@ ${editorContent}
 
 				try {
 					// Send to AI API
-					const response = await fetch('https://purchart.cloud/api/chat', {
+					const response = await fetch('https://purchart.eu/api/chat', {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',

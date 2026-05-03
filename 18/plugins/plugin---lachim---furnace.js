@@ -25,13 +25,13 @@ VoxelWorld.registerPlugin('Furnace', {
 
 		// Load textures via api â€” no internal globals needed
 		api.loadBlockTexture(BLOCK_ID,
-			'https://purchart.cloud/images?file=2026-03-23--15-14-55---lachim---pec-strana.png',
+			'https://purchart.eu/images?file=2026-03-23--15-14-55---lachim---pec-strana.png',
 			'side')
 		api.loadBlockTexture(BLOCK_ID,
-			'https://purchart.cloud/images?file=2026-03-23--15-18-13---lachim---pec-horn-strana.png',
+			'https://purchart.eu/images?file=2026-03-23--15-18-13---lachim---pec-horn-strana.png',
 			'top')
 		api.loadBlockTexture(BLOCK_ID,
-			'https://purchart.cloud/images?file=2026-03-23--15-16-15---lachim---pec-spodek.png',
+			'https://purchart.eu/images?file=2026-03-23--15-16-15---lachim---pec-spodek.png',
 			'bottom')
 
 		console.log('[Furnace] Registered (id=' + BLOCK_ID + '), textures loadingâ€¦')

@@ -154,7 +154,7 @@ Plugin filenames follow `plugin---<author>---<name>.js`; this is parsed by
 
 ### Networking (client side)
 
-- `WS_URL = 'wss://purchart.cloud/voxel-world'`
+- `WS_URL = 'wss://purchart.eu/voxel-world'`
 - `connect()` opens the WebSocket and sends `{ type:'join', nickname, world }`.
 - `handleServerMessage()` switches on `msg.type` — keep all message handling
   there.

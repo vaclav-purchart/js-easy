@@ -4,7 +4,7 @@ https://docs.google.com/presentation/d/1ZwRTC7aS7IogWoJid2r-NBH6ydSjQqmQnBbqQL11
 
 # IDE
 
-https://purchart.cloud/
+https://purchart.eu/
 
 -- OR --
 

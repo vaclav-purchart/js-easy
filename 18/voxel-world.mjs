@@ -10,7 +10,7 @@ import { join } from 'path'
 
 const WORLDS_DIR  = './worlds'
 const PLUGINS_DIR = './plugins'
-const PLUGINS_URL_BASE = 'https://purchart.cloud/voxel-world'   // adjust to your domain
+const PLUGINS_URL_BASE = 'https://purchart.eu/voxel-world'   // adjust to your domain
 
 // ── Persist a single world to disk ────────────────────────────────────────
 function saveWorld(world) {
