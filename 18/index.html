@@ -2943,6 +2943,9 @@ function makeToolUseCtx() {
 			if (!tool) return
 			if (visual.iconDataURL !== undefined) tool.iconDataURL = visual.iconDataURL
 			if (visual.model !== undefined) tool.model = visual.model
+			// Bump version so netSendMove detects a held-item change and remote
+			// players re-clone the model to show the updated visual.
+			tool._v = (tool._v ?? 0) + 1
 			rebuildHotbarDOM()
 		},
 	}
@@ -3723,7 +3726,7 @@ function netSendMove(x, y, z, yaw, pitch) {
 	let held = null
 	if (tool) {
 		const ti = loadedTools.indexOf(tool)
-		held = { t: 'tool', i: ti }
+		held = { t: 'tool', i: ti, v: tool._v ?? 0 }
 	} else if (blockId) {
 		held = { t: 'block', id: blockId }
 	}
@@ -3774,7 +3777,7 @@ const settingsToggle = document.getElementById('settings-toggle')
 const settingsPanel  = document.getElementById('settings-panel')
 
 const _defaultNick = 'Player' + Math.floor(Math.random() * 9000 + 1000)
-lobbyNickEl.value = _defaultNick
+lobbyNickEl.value = localStorage.getItem('voxelNickname') || _defaultNick
 
 // ── Plugin picker ──────────────────────────────────────────────────────────
 const PLUGINS_API   = 'https://purchart.eu/voxel-world/plugins'
@@ -3875,6 +3878,7 @@ function loadPluginScript(url, filename) {
 // ── startGame — loads selected plugins then launches ──────────────────────
 async function startGame(online) {
 	myNickname = (lobbyNickEl.value.trim() || _defaultNick).slice(0, 20)
+	localStorage.setItem('voxelNickname', myNickname)
 	myWorldName = (lobbyWorldEl.value.trim() || 'default').slice(0, 32)
 	offlineMode = !online
 
