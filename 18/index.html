@@ -2080,6 +2080,9 @@ function updatePlayerLabel(model, nickname) {
    REMOTE PLAYERS
 ============================================================ */
 const remotePlayers = new Map()
+// Per-player tool visual overrides: Map<playerId, Map<toolIndex, THREE.Group>>
+// Populated when we receive a tool_visual broadcast from that player.
+const remoteToolModels = new Map()
 const playerPickMeshes = []   // invisible bounding boxes for combat raycasting
 
 function addRemotePlayer(data) {
@@ -2156,11 +2159,12 @@ function tickRemotePlayers(dt) {
 						const src = makeBlockHandModel(held.id)
 						m = src.clone()
 					} else if (held.t === 'tool') {
-						const tool = loadedTools[held.i]
-						if (tool) {
-							// Clone tool model group
-							m = tool.model.clone()
-						}
+						// Prefer a per-player visual override (set when another player
+						// changes tool state, e.g. fills/empties a bucket) so their
+						// model reflects their actual visual, not our local default.
+						const overrideModel = remoteToolModels.get(data.id)?.get(held.i)
+						const src = overrideModel ?? loadedTools[held.i]?.model
+						if (src) m = src.clone()
 					}
 					if (m) {
 						holder.add(m)
@@ -2994,10 +2998,11 @@ function makeToolUseCtx() {
 			if (!tool) return
 			if (visual.iconDataURL !== undefined) tool.iconDataURL = visual.iconDataURL
 			if (visual.model !== undefined) tool.model = visual.model
-			// Bump version so netSendMove detects a held-item change and remote
-			// players re-clone the model to show the updated visual.
 			tool._v = (tool._v ?? 0) + 1
 			rebuildHotbarDOM()
+			// Broadcast the new iconDataURL so other players rebuild the held
+			// model from our visual state, not from their own local default.
+			netSend({ type: 'tool_visual', toolIndex: item.toolIndex, iconDataURL: tool.iconDataURL })
 		},
 	}
 }
@@ -3618,7 +3623,27 @@ function handleServerMessage(msg) {
 			break
 		}
 		case 'player_join': addRemotePlayer(msg.player); updatePlayerList(); break
-		case 'player_leave': removeRemotePlayer(msg.id); updatePlayerList(); break
+		case 'player_leave': removeRemotePlayer(msg.id); remoteToolModels.delete(msg.id); updatePlayerList(); break
+		case 'tool_visual': {
+			const { id, toolIndex, iconDataURL } = msg
+			if (typeof iconDataURL !== 'string' || !iconDataURL.startsWith('data:image/')) break
+			_loadToolVisual(iconDataURL).then((visual) => {
+				if (!remoteToolModels.has(id)) remoteToolModels.set(id, new Map())
+				remoteToolModels.get(id).set(toolIndex, visual.model)
+				// Force the held-model to be re-cloned on the next tick.
+				const rp = remotePlayers.get(id)
+				if (rp?.model.userData.heldKey !== null &&
+					rp.data.held?.t === 'tool' && rp.data.held.i === toolIndex) {
+					const holder = rp.model.userData.itemHolder
+					if (holder && rp.model.userData.heldModel) {
+						holder.remove(rp.model.userData.heldModel)
+						rp.model.userData.heldModel = null
+					}
+					rp.model.userData.heldKey = null
+				}
+			})
+			break
+		}
 		case 'move': moveRemotePlayer(msg.id, msg.x, msg.y, msg.z, msg.yaw, msg.pitch, msg.held, msg.swing); break
 		case 'moves': {
 			for (const p of msg.players) {

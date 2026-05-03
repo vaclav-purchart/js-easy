@@ -962,6 +962,16 @@ export default function attachVoxelWorld(httpServer) {
 					broadcastWorld(world, { type:'block_update', k:msg.k, v:msg.v }, player.id)
 					break
 				}
+				case 'tool_visual': {
+					if (!player) return
+					const toolIndex = Math.floor(Number(msg.toolIndex))
+					const iconDataURL = String(msg.iconDataURL || '')
+					// Sanity-check: must be a data URL image and stay under 8 KB
+					// (a 16×16 PNG base64 is typically < 600 bytes; 8 KB is generous).
+					if (!iconDataURL.startsWith('data:image/') || iconDataURL.length > 8192) return
+					broadcastWorld(world, { type:'tool_visual', id:player.id, toolIndex, iconDataURL }, player.id)
+					break
+				}
 				case 'set_nickname': {
 					if (!player) return
 					player.nickname = (msg.nickname || '').trim().slice(0, 20) || player.nickname
