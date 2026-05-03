@@ -924,6 +924,54 @@ export default function attachVoxelWorld(httpServer) {
 					}
 					break
 				}
+				case 'ranged_hit_mob': {
+					if (!player) return
+					const mob = world.mobs.get(msg.mobId)
+					if (!mob) return
+					// Allow up to 50 blocks for ranged weapons
+					const dx = player.x - mob.x, dy = player.y - mob.y, dz = player.z - mob.z
+					if (dx * dx + dy * dy + dz * dz > 2500) return
+					const cfg = MOB_TYPES[mob.type]
+					const damage = clampHitDamage(msg.damage, cfg.damage)
+					mob.hp = Math.max(0, mob.hp - damage)
+					broadcastWorldByMobType(world, mob.type, { type:'mob_hp', id:mob.id, hp:mob.hp, damage })
+					getMobBehavior(mob).onHit(world, mob, player)
+					console.log(`[ranged mob hit] ${player.nickname} → ${mob.type}#${mob.id}  dmg=${damage}  hp=${mob.hp}`)
+					if (mob.hp <= 0) {
+						world.mobs.delete(mob.id)
+						broadcastWorldByMobType(world, mob.type, { type:'mob_die',
+							id: mob.id, killerName: player.nickname })
+						console.log(`[mob kill] ${player.nickname} killed ${mob.type}#${mob.id}`)
+						const killer = { x: player.x, z: player.z }
+						setTimeout(() => {
+							if (world.players.size > 0) attemptSpawnMob(world, mob.type, killer)
+						}, cfg.respawnDelayMs + Math.random() * 1000)
+					}
+					break
+				}
+				case 'ranged_hit_player': {
+					if (!player) return
+					const target = world.players.get(msg.targetId)
+					if (!target || target.id === player.id) return
+					// Allow up to 50 blocks for ranged weapons
+					const dx = player.x - target.x, dy = player.y - target.y, dz = player.z - target.z
+					if (dx * dx + dy * dy + dz * dz > 2500) return
+					const now = Date.now()
+					if (now - target.lastHitTime < 500) return
+					target.lastHitTime = now
+					const damage = clampHitDamage(msg.damage, 20)
+					target.hp = Math.max(0, target.hp - damage)
+					broadcastWorld(world, { type:'hp_update', id:target.id, hp:target.hp, damage })
+					console.log(`[ranged hit] ${player.nickname} → ${target.nickname}  dmg=${damage}  hp=${target.hp}`)
+					if (target.hp <= 0) {
+						target.hp = 100
+						target.x = 0; target.y = 20; target.z = 0
+						broadcastWorld(world, { type:'player_died',
+							id: target.id, killerName: player.nickname, hp: target.hp })
+						console.log(`[kill] ${player.nickname} killed ${target.nickname}`)
+					}
+					break
+				}
 				case 'move': {
 					if (!player) return
 					player.x = msg.x; player.y = msg.y; player.z = msg.z

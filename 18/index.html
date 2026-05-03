@@ -2543,7 +2543,7 @@ addEventListener('mousedown', (e) => {
 		const tool = equippedTool()
 		if (tool?.onRightClick) {
 			tool.onRightClick(makeToolUseCtx())
-			triggerSwing()
+			if (!tool.onRightUp) triggerSwing()
 		} else if (!tool) {
 			placeBlock()
 			triggerSwing()
@@ -2667,7 +2667,7 @@ function setupTouchBtn(id, key) {
 		el.classList.add('pressed')
 		if (key === 'place') {
 			const tool = equippedTool()
-			if (tool?.onRightClick) { tool.onRightClick(makeToolUseCtx()); triggerSwing() }
+			if (tool?.onRightClick) { tool.onRightClick(makeToolUseCtx()); if (!tool.onRightUp) triggerSwing() }
 			else if (!tool) { placeBlock(); triggerSwing() }
 		}
 		if (key === 'mine') {
@@ -2925,6 +2925,7 @@ handPivot.add(handOrient)
 // Swing state
 let swingTime = 0
 let swingActive = false
+let _handAimMode = false   // suppresses swing/bob while a tool is held drawn (e.g. bow)
 
 function tickHandModel(dt) {
 	const tool    = equippedTool()
@@ -2943,6 +2944,15 @@ function tickHandModel(dt) {
 		if (handPivot.userData.activeModel) handOrient.remove(handPivot.userData.activeModel)
 		handOrient.add(wantModel)
 		handPivot.userData.activeModel = wantModel
+	}
+
+	// Aim mode (e.g. bow drawn): freeze hand straight, no swing or bob
+	if (_handAimMode) {
+		swingTime = 0
+		swingActive = false
+		handPivot.rotation.x = 0
+		handPivot.rotation.z = 0
+		return
 	}
 
 	// Swing animation: forward-and-back rotation around X when mining/placing
@@ -3004,6 +3014,7 @@ function makeToolUseCtx() {
 			// model from our visual state, not from their own local default.
 			netSend({ type: 'tool_visual', toolIndex: item.toolIndex, iconDataURL: tool.iconDataURL })
 		},
+		setAimMode(on) { _handAimMode = !!on },
 	}
 }
 
@@ -3925,6 +3936,48 @@ checkAllBtn.addEventListener('click', () => {
 })
 pluginListEl.addEventListener('change', updateCheckAllLabel)
 
+// ?plugin= URL params — inject as local test entries at the top of the list
+const _localPluginPaths = new URLSearchParams(location.search).getAll('plugin')
+
+function injectLocalPlugins() {
+	if (_localPluginPaths.length === 0) return
+	// Remove "no plugins" placeholder text if present
+	pluginListEl.classList.remove('loading')
+	for (const path of [..._localPluginPaths].reverse()) {
+		const filename = path.split('/').pop()
+		const m = filename.match(/^plugin---(.+?)---(.+?)\.js$/i)
+		const author = m ? m[1].replace(/-/g, ' ') : 'local'
+		const name = m ? m[2].replace(/-/g, ' ') : filename
+
+		const row = document.createElement('label')
+		row.className = 'plugin-row'
+
+		const cb = document.createElement('input')
+		cb.type = 'checkbox'
+		cb.dataset.url = path
+		cb.checked = true
+
+		const nameEl = document.createElement('span')
+		nameEl.className = 'plugin-name'
+		nameEl.textContent = name
+
+		const badge = document.createElement('span')
+		badge.style.cssText = 'color:#fa4;font-size:10px;margin-left:5px;'
+		badge.textContent = 'local'
+		nameEl.appendChild(badge)
+
+		const authorEl = document.createElement('span')
+		authorEl.className = 'plugin-author'
+		authorEl.textContent = author
+
+		row.appendChild(cb)
+		row.appendChild(nameEl)
+		row.appendChild(authorEl)
+		pluginListEl.insertBefore(row, pluginListEl.firstChild)
+	}
+	updateCheckAllLabel()
+}
+
 // Fetch plugin list on page load
 fetch(PLUGINS_API)
 	.then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json() })
@@ -3934,6 +3987,7 @@ fetch(PLUGINS_API)
 		pluginListEl.classList.add('error')
 		pluginListEl.textContent = 'Could not load plugin list: ' + err.message
 	})
+	.finally(() => injectLocalPlugins())
 
 // Load a plugin script and call its init(api) function.
 // Plugin scripts must assign their object to a well-known global OR
