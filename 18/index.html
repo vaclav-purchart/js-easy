@@ -728,6 +728,34 @@ window.VoxelWorld = {
 					rebuildChunk(cx, cz)
 				}
 			},
+
+			/**
+			 * Register a custom tool. Appears in the Tools tab and hotbar.
+			 *
+			 * {
+			 *   name:         string   — display name, also used as key for swapTool()
+			 *   url?:         string   — 16×16 PNG URL for the item sprite
+			 *   draw?:        (ctx,W,H)=>void  — canvas-draw alternative to url
+			 *   damage?:      number   — damage per hit (default 5, server clamps to 50)
+			 *   onLeftClick?: (ctx)=>void  — fired on left-click / mine button
+			 *   onRightClick?:(ctx)=>void  — fired on right-click / place button
+			 *     ctx: { target, facing, BLOCK, setBlock(x,y,z,v),
+			 *             getBlock(x,y,z), swapTool(name) }
+			 *     target.face: { x,y,z, type, nx,ny,nz } — hit block + face normal
+			 * }
+			 */
+			registerTool(def) {
+				if (!def?.name) { console.warn('[plugin] registerTool: missing name'); return }
+				loadTool(def).then((tool) => {
+					const toolIndex = loadedTools.length
+					loadedTools.push(tool)
+					// Insert after other tools, before blocks
+					const toolCount = HOTBAR_ITEMS.filter((it) => it.type === 'tool').length
+					HOTBAR_ITEMS.splice(toolCount, 0, { type: 'tool', toolIndex, name: tool.name })
+					rebuildHotbarDOM()
+					console.log(`[plugin] Registered tool "${tool.name}"`)
+				})
+			},
 		}
 		return api
 	},
@@ -2447,8 +2475,22 @@ let currentTarget = null   // cached raycast result
 
 addEventListener('mousedown', (e) => {
 	if (document.pointerLockElement !== renderer.domElement) return
-	if (e.button === 0) { mining = true; tryHitTarget() }
-	if (e.button === 2) { placeBlock(); triggerSwing() }
+	if (e.button === 0) {
+		mining = true
+		tryHitTarget()
+		const tool = equippedTool()
+		if (tool?.onLeftClick) tool.onLeftClick(makeToolUseCtx())
+	}
+	if (e.button === 2) {
+		const tool = equippedTool()
+		if (tool?.onRightClick) {
+			tool.onRightClick(makeToolUseCtx())
+			triggerSwing()
+		} else if (!tool) {
+			placeBlock()
+			triggerSwing()
+		}
+	}
 })
 addEventListener('mouseup', () => {
 	mining = false; miningTime = 0
@@ -2561,8 +2603,17 @@ function setupTouchBtn(id, key) {
 		e.preventDefault()
 		touchState[key] = true
 		el.classList.add('pressed')
-		if (key === 'place') placeBlock()
-		if (key === 'mine') { mining = true; tryHitTarget() }
+		if (key === 'place') {
+			const tool = equippedTool()
+			if (tool?.onRightClick) { tool.onRightClick(makeToolUseCtx()); triggerSwing() }
+			else if (!tool) { placeBlock(); triggerSwing() }
+		}
+		if (key === 'mine') {
+			mining = true
+			tryHitTarget()
+			const tool = equippedTool()
+			if (tool?.onLeftClick) tool.onLeftClick(makeToolUseCtx())
+		}
 	}, { passive:false })
 	el.addEventListener('touchend', (e) => {
 		e.preventDefault()
@@ -2745,7 +2796,7 @@ function makeBlockHandModel(blockId) {
 	return mesh
 }
 
-// ── Load one tool def → resolves with { name, model, iconDataURL } ────────
+// ── Load one tool def → resolves with { name, model, iconDataURL, … } ───────
 function loadTool(def) {
 	return new Promise((resolve) => {
 		const W = 16, H = 16
@@ -2757,7 +2808,14 @@ function loadTool(def) {
 			const pixels = ctx.getImageData(0, 0, W, H).data
 			const model = buildToolModel(pixels, W, H)
 			const iconDataURL = offscreen.toDataURL()
-			resolve({ name: def.name, model, iconDataURL, damage: def.damage ?? DEFAULT_TOOL_DAMAGE })
+			resolve({
+				name: def.name,
+				model,
+				iconDataURL,
+				damage: def.damage ?? DEFAULT_TOOL_DAMAGE,
+				onLeftClick: def.onLeftClick ?? null,
+				onRightClick: def.onRightClick ?? null,
+			})
 		}
 
 		if (def.draw) {
@@ -2838,6 +2896,40 @@ function triggerSwing() { swingActive = true; swingTime = 0 }
 
 // ── Loaded tools registry ─────────────────────────────────────────────────
 const loadedTools = []   // filled async; index matches TOOL_DEFS order
+
+// ── Tool use context ──────────────────────────────────────────────────────
+// Passed to onLeftClick / onRightClick. Exposes world-mutation helpers so
+// plugins never need to reach into globals directly.
+function makeToolUseCtx() {
+	return {
+		target: currentTarget,
+		get facing() { return currentTarget?.face ?? null },
+		BLOCK,
+		setBlock(x, y, z, v) {
+			const k = `${x}_${y}_${z}`
+			modified.set(k, v)
+			rebuildChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE))
+			netSendBlockUpdate(k, v)
+		},
+		getBlock,
+		swapTool(toolName) { swapCurrentTool(toolName) },
+	}
+}
+
+// Replace the current hotbar slot's tool with another loaded tool by name.
+function swapCurrentTool(toolName) {
+	const toolIdx = loadedTools.findIndex((t) => t.name === toolName)
+	if (toolIdx === -1) { console.warn('[tool] swapTool: not found:', toolName); return }
+	const name = loadedTools[toolIdx].name
+	if (HOTBAR_ITEMS[selectedSlot]?.type === 'tool') {
+		HOTBAR_ITEMS[selectedSlot] = { type: 'tool', toolIndex: toolIdx, name }
+	} else {
+		const ti = HOTBAR_ITEMS.findIndex((it) => it.type === 'tool')
+		if (ti !== -1) { HOTBAR_ITEMS[ti] = { type: 'tool', toolIndex: toolIdx, name }; selectedSlot = ti }
+		else { HOTBAR_ITEMS.unshift({ type: 'tool', toolIndex: toolIdx, name }); selectedSlot = 0 }
+	}
+	rebuildHotbarDOM()
+}
 
 /* ============================================================
    HOTBAR  — unified blocks + tools
@@ -2933,14 +3025,18 @@ function updateHotbar() {
 // Initial hotbar with blocks
 rebuildHotbarDOM()
 
-// Load all tools asynchronously, then append to hotbar
+// Load all built-in tools, then prepend them to the hotbar so sword is slot 0,
+// pickaxe slot 1, and blocks come after.
 ;(async () => {
+	const newItems = []
 	for (let i = 0; i < TOOL_DEFS.length; i++) {
 		const tool = await loadTool(TOOL_DEFS[i])
 		loadedTools.push(tool)
-		HOTBAR_ITEMS.push({ type: 'tool', toolIndex: i, name: tool.name })
-		rebuildHotbarDOM()
+		newItems.push({ type: 'tool', toolIndex: i, name: tool.name })
 	}
+	HOTBAR_ITEMS.unshift(...newItems)
+	selectedSlot = 0
+	rebuildHotbarDOM()
 })()
 
 addEventListener('keydown', (e) => {
@@ -2948,6 +3044,14 @@ addEventListener('keydown', (e) => {
 	if (e.code === 'KeyM') document.getElementById('debugImg').style.display =
 		document.getElementById('debugImg').style.display === 'none' ? 'block' : 'none'
 })
+
+addEventListener('wheel', (e) => {
+	if (document.pointerLockElement !== renderer.domElement) return
+	e.preventDefault()
+	const delta = e.deltaY > 0 ? 1 : -1
+	selectedSlot = (selectedSlot + delta + HOTBAR_ITEMS.length) % HOTBAR_ITEMS.length
+	updateHotbar()
+}, { passive: false })
 
 
 /* ============================================================
@@ -3158,15 +3262,15 @@ function _pickBlock(blockId, itemEl, grid) {
 		// Replace the first block slot with this block
 		const firstBlockIdx = HOTBAR_ITEMS.findIndex(it => it.type === 'block')
 		if (firstBlockIdx !== -1) {
-			// Shift blocks left, put new one at end of block section
-			const blockItems = HOTBAR_ITEMS.filter(it => it.type === 'block')
-			const toolItems  = HOTBAR_ITEMS.filter(it => it.type === 'tool')
+			// Shift blocks left, put new one at end of block section; keep tools first
+			const blockItems = HOTBAR_ITEMS.filter((it) => it.type === 'block')
+			const toolItems  = HOTBAR_ITEMS.filter((it) => it.type === 'tool')
 			blockItems.shift()
-			const reg = BLOCK_REGISTRY.find(r => r.id === blockId)
+			const reg = BLOCK_REGISTRY.find((r) => r.id === blockId)
 			blockItems.push({ type:'block', blockId, name: reg?.name ?? String(blockId) })
 			HOTBAR_ITEMS.length = 0
-			for (const it of [...blockItems, ...toolItems]) HOTBAR_ITEMS.push(it)
-			selectedSlot = HOTBAR_ITEMS.length - toolItems.length - 1
+			for (const it of [...toolItems, ...blockItems]) HOTBAR_ITEMS.push(it)
+			selectedSlot = toolItems.length + blockItems.length - 1
 		}
 	}
 	// Update selection highlight in grid
@@ -3177,6 +3281,62 @@ function _pickBlock(blockId, itemEl, grid) {
 }
 
 registerGuiTab('blocks', '🧱 Blocks', renderBlockPicker)
+
+// ── Tools tab ─────────────────────────────────────────────────────────────
+function renderToolPicker() {
+	const wrap = document.createElement('div')
+	if (!loadedTools.length) {
+		const msg = document.createElement('div')
+		msg.className = 'gui-coming-soon'
+		msg.textContent = 'No tools loaded yet…'
+		wrap.appendChild(msg)
+		return wrap
+	}
+	const grid = document.createElement('div')
+	grid.className = 'block-grid'
+	for (let i = 0; i < loadedTools.length; i++) {
+		const tool = loadedTools[i]
+		const item = document.createElement('div')
+		item.className = 'block-grid-item'
+		if (HOTBAR_ITEMS.some((it) => it.type === 'tool' && it.toolIndex === i)) item.classList.add('selected')
+
+		const img = document.createElement('img')
+		img.className = 'icon'
+		img.style.imageRendering = 'pixelated'
+		img.style.width = '36px'
+		img.style.height = '36px'
+		img.src = tool.iconDataURL
+		item.appendChild(img)
+
+		const lbl = document.createElement('span')
+		lbl.textContent = tool.name
+		item.appendChild(lbl)
+
+		item.addEventListener('click', () => _pickTool(i))
+		item.addEventListener('touchstart', (e) => { e.preventDefault(); _pickTool(i) }, { passive:false })
+		grid.appendChild(item)
+	}
+	wrap.appendChild(grid)
+	return wrap
+}
+
+function _pickTool(toolIndex) {
+	const name = loadedTools[toolIndex]?.name ?? `Tool ${toolIndex}`
+	const existing = HOTBAR_ITEMS.findIndex((it) => it.type === 'tool' && it.toolIndex === toolIndex)
+	if (existing !== -1) {
+		selectedSlot = existing
+	} else if (HOTBAR_ITEMS[selectedSlot]?.type === 'tool') {
+		HOTBAR_ITEMS[selectedSlot] = { type: 'tool', toolIndex, name }
+	} else {
+		const toolCount = HOTBAR_ITEMS.filter((it) => it.type === 'tool').length
+		HOTBAR_ITEMS.splice(toolCount, 0, { type: 'tool', toolIndex, name })
+		selectedSlot = toolCount
+	}
+	rebuildHotbarDOM()
+	closeGui()
+}
+
+registerGuiTab('tools', '🔧 Tools', renderToolPicker)
 
 // ── Inventory tab (stub — extensible for future) ──────────────────────────
 registerGuiTab('inventory', '🎒 Inventory', () => {
