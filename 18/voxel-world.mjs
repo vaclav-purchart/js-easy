@@ -4,12 +4,13 @@
  * Each world is isolated: own seed, own blocks, own players.
  */
 
+// plugins tags - author, type (block|mob), enabled (true), checked (true)
 import { WebSocketServer, WebSocket } from 'ws'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, watch } from 'fs'
 import { join } from 'path'
 
-const WORLDS_DIR  = './worlds'
-const PLUGINS_DIR = './plugins'
+const WORLDS_DIR = './worlds'
+const PLUGINS_DIR = './saves'
 const PLUGINS_URL_BASE = 'https://purchart.eu/voxel-world'   // adjust to your domain
 
 // ── Persist a single world to disk ────────────────────────────────────────
@@ -35,13 +36,13 @@ function saveAllWorlds() {
 // ── Auto-restore all worlds from the worlds/ folder at startup ────────────
 function restoreAllWorlds() {
 	let files
-	try { files = readdirSync(WORLDS_DIR).filter(f => f.endsWith('.json')) }
+	try { files = readdirSync(WORLDS_DIR).filter((f) => f.endsWith('.json')) }
 	catch { return }
 	for (const file of files) {
 		const filePath = join(WORLDS_DIR, file)
 		try {
-			const data  = JSON.parse(readFileSync(filePath, 'utf8'))
-			const name  = (data.world || file.replace(/\.json$/, ''))
+			const data = JSON.parse(readFileSync(filePath, 'utf8'))
+			const name = (data.world || file.replace(/\.json$/, ''))
 				.slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_')
 			const world = getWorld(name)
 			if (typeof data.seed === 'number') world.seed = data.seed
@@ -63,11 +64,11 @@ function shutdown(label) {
 	console.log('[voxel-world] Done. Goodbye.')
 }
 
-process.on('exit',    ()  => shutdown('exit'))        // Windows shutdown, kill -9, etc.
-process.on('SIGINT',  ()  => { shutdown('SIGINT');  process.exit(0) })
-process.on('SIGTERM', ()  => { shutdown('SIGTERM'); process.exit(0) })
+process.on('exit', () => shutdown('exit'))        // Windows shutdown, kill -9, etc.
+process.on('SIGINT', () => { shutdown('SIGINT'); process.exit(0) })
+process.on('SIGTERM', () => { shutdown('SIGTERM'); process.exit(0) })
 // Windows Ctrl+Break / terminal close
-process.on('SIGHUP',  ()  => { shutdown('SIGHUP');  process.exit(0) })
+process.on('SIGHUP', () => { shutdown('SIGHUP'); process.exit(0) })
 
 // ── World rooms ────────────────────────────────────────────────────────────
 const worlds = new Map()
@@ -137,7 +138,7 @@ function watchPluginsFolder() {
 //   --range -45,-100,30,150   keeps blocks where -45 ≤ x ≤ 30 AND -100 ≤ z ≤ 150
 function loadWorldFile(filePath, worldNameOverride, range) {
 	try {
-		const raw  = readFileSync(filePath, 'utf8')
+		const raw = readFileSync(filePath, 'utf8')
 		const data = JSON.parse(raw)
 		const name = (worldNameOverride || data.world || 'default')
 			.slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -180,20 +181,20 @@ watchPluginsFolder()
 //   node server.mjs save.json worldname
 //   node server.mjs save.json --range x1,z1,x2,z2
 //   node server.mjs save.json worldname --range x1,z1,x2,z2
-const args     = process.argv.slice(2)
-const saveArg  = args.find(a => a.endsWith('.json'))
+const args = process.argv.slice(2)
+const saveArg = args.find((a) => a.endsWith('.json'))
 if (saveArg) {
-	const saveIdx  = args.indexOf(saveArg)
+	const saveIdx = args.indexOf(saveArg)
 	// World name: next arg after the file if it doesn't start with --
-	const nextArg  = args[saveIdx + 1]
-	const nameArg  = (nextArg && !nextArg.startsWith('--')) ? nextArg : undefined
+	const nextArg = args[saveIdx + 1]
+	const nameArg = (nextArg && !nextArg.startsWith('--')) ? nextArg : undefined
 
 	// --range x1,z1,x2,z2
 	let range = null
 	const rangeIdx = args.indexOf('--range')
 	if (rangeIdx !== -1 && args[rangeIdx + 1]) {
 		const nums = args[rangeIdx + 1].split(',').map(Number)
-		if (nums.length === 4 && nums.every(n => !isNaN(n))) {
+		if (nums.length === 4 && nums.every((n) => !isNaN(n))) {
 			range = {
 				x1: Math.min(nums[0], nums[2]),
 				x2: Math.max(nums[0], nums[2]),
@@ -211,20 +212,20 @@ if (saveArg) {
 
 // ── Server-side terrain (mirrors client worker so mobs can walk on ground) ─
 // Keep these formulas in sync with `_workerTerrain` in index.html.
-const SEA_LEVEL  = 8
-const BEDROCK_Y  = 0
+const SEA_LEVEL = 8
+const BEDROCK_Y = 0
 const CHUNK_SIZE = 16
-const BLOCK_AIR  = 0
+const BLOCK_AIR = 0
 const BLOCK_WATER = 4
 
 function _hash(n) { return Math.abs(Math.sin(n) * 43758.5453) % 1 }
 
 function _smoothNoise(seed, x, z, scale, offset) {
 	const x0 = Math.floor(x / scale), z0 = Math.floor(z / scale)
-	const xf = x / scale - x0,        zf = z / scale - z0
-	const n00 = _hash(x0 * 57.13       + z0       + offset + seed)
-	const n10 = _hash((x0 + 1) * 57.13 + z0       + offset + seed)
-	const n01 = _hash(x0 * 57.13       + (z0 + 1) + offset + seed)
+	const xf = x / scale - x0, zf = z / scale - z0
+	const n00 = _hash(x0 * 57.13 + z0 + offset + seed)
+	const n10 = _hash((x0 + 1) * 57.13 + z0 + offset + seed)
+	const n01 = _hash(x0 * 57.13 + (z0 + 1) + offset + seed)
 	const n11 = _hash((x0 + 1) * 57.13 + (z0 + 1) + offset + seed)
 	const u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf)
 	return n00 * (1 - u) * (1 - v) + n10 * u * (1 - v) + n01 * (1 - u) * v + n11 * u * v
@@ -309,7 +310,7 @@ const MOB_TYPES = {
 
 function makeMob(world, type, x, y, z) {
 	const cfg = MOB_TYPES[type]
-	const id  = world.nextMobId++
+	const id = world.nextMobId++
 	const mob = {
 		id, type,
 		x, y, z,
@@ -335,7 +336,7 @@ function serializeMob(m) {
 // Pick a new wander destination. If awayFrom is provided (e.g. the attacker)
 // the mob heads roughly in the opposite direction.
 function pickWanderTarget(world, mob, awayFrom) {
-	const cfg  = MOB_TYPES[mob.type]
+	const cfg = MOB_TYPES[mob.type]
 	const dist = cfg.wanderMin + Math.random() * (cfg.wanderMax - cfg.wanderMin)
 	let angle
 	if (awayFrom) {
@@ -352,23 +353,23 @@ function pickWanderTarget(world, mob, awayFrom) {
 // One physics step toward (mob.tx, mob.tz). Returns true on success.
 // On failure (cliff/wall/water) the caller decides whether to repick a target.
 function stepMobToward(world, mob, dt) {
-	const cfg     = MOB_TYPES[mob.type]
-	const speed   = cfg.speed * (mob.speedMul || 1)
-	const dx      = mob.tx - mob.x
-	const dz      = mob.tz - mob.z
-	const distSq  = dx * dx + dz * dz
+	const cfg = MOB_TYPES[mob.type]
+	const speed = cfg.speed * (mob.speedMul || 1)
+	const dx = mob.tx - mob.x
+	const dz = mob.tz - mob.z
+	const distSq = dx * dx + dz * dz
 	if (distSq < 0.0025) return false
-	const dist    = Math.sqrt(distSq)
+	const dist = Math.sqrt(distSq)
 	const stepLen = Math.min(speed * dt, dist)
-	const nx      = mob.x + (dx / dist) * stepLen
-	const nz      = mob.z + (dz / dist) * stepLen
+	const nx = mob.x + (dx / dist) * stepLen
+	const nz = mob.z + (dz / dist) * stepLen
 	const groundY = getGroundY(world, Math.floor(nx), Math.floor(nz))
 	if (Math.abs(groundY - mob.y) > cfg.stepMaxClimb || groundY <= SEA_LEVEL) return false
 	mob.x = nx
 	mob.z = nz
 	mob.y = groundY
 	// Face direction of motion. yaw=0 means facing +Z; +yaw rotates toward +X.
-	mob.yaw   = Math.atan2(dx, dz)
+	mob.yaw = Math.atan2(dx, dz)
 	mob.dirty = true
 	return true
 }
@@ -458,7 +459,7 @@ const MOB_BEHAVIORS = {
 			if (target) {
 				const dx = target.x - mob.x, dz = target.z - mob.z
 				const d2 = dx * dx + dz * dz
-				const dyFeet  = (target.y - PLAYER_FEET_OFFSET) - mob.y
+				const dyFeet = (target.y - PLAYER_FEET_OFFSET) - mob.y
 				const deaggro = (cfg.deaggroRadius || (cfg.aggroRadius || 12) + 8) ** 2
 
 				// Lost interest? Out of XZ range OR too far above us, AND past
@@ -482,7 +483,7 @@ const MOB_BEHAVIORS = {
 
 				if (d2 <= reach2 && Math.abs(dyFeet) <= vReach) {
 					// In melee range — face the player and bite on cooldown.
-					mob.yaw   = Math.atan2(dx, dz)
+					mob.yaw = Math.atan2(dx, dz)
 					mob.dirty = true
 					if (now >= (mob.attackCooldownUntil || 0)) {
 						mob.attackCooldownUntil = now + (cfg.attackCooldownMs || 1000)
@@ -505,10 +506,10 @@ const MOB_BEHAVIORS = {
 				}
 
 				// Chase — point wander target at the player and step.
-				mob.tx        = target.x
-				mob.tz        = target.z
+				mob.tx = target.x
+				mob.tz = target.z
 				mob.idleUntil = 0
-				mob.speedMul  = cfg.chaseMul || 1.4
+				mob.speedMul = cfg.chaseMul || 1.4
 				stepMobToward(world, mob, dt)
 				return
 			}
@@ -520,7 +521,7 @@ const MOB_BEHAVIORS = {
 		onHit(world, mob, attacker) {
 			const cfg = MOB_TYPES[mob.type]
 			mob.targetPlayerId = attacker.id
-			mob.aggroUntil     = Date.now() + (cfg.aggroDurationMs || 8000)
+			mob.aggroUntil = Date.now() + (cfg.aggroDurationMs || 8000)
 		},
 	},
 }
@@ -592,7 +593,7 @@ function validateMobConfig(cfg) {
 	if (!cfg || typeof cfg !== 'object') return null
 	const type = String(cfg.type || '')
 	if (!MOB_TYPE_NAME_RE.test(type)) return null
-	if (BUILTIN_MOB_TYPES.has(type))   return null   // never overwrite core mobs
+	if (BUILTIN_MOB_TYPES.has(type)) return null   // never overwrite core mobs
 
 	const out = { type }
 	out.behavior = MOB_BEHAVIOR_NAMES.has(cfg.behavior) ? cfg.behavior : 'passive'
@@ -632,7 +633,7 @@ function broadcastWorldByMobType(world, mobType, obj, excludeId) {
 // per-region density — keeps long-running worlds from filling up. Scales
 // with player count so a busy world isn't choked.
 const MAX_MOBS_PER_PLAYER = 14
-const MIN_WORLD_MOB_CAP   = 12
+const MIN_WORLD_MOB_CAP = 12
 function worldMobCap(world) {
 	return Math.max(MIN_WORLD_MOB_CAP, world.players.size * MAX_MOBS_PER_PLAYER)
 }
@@ -675,7 +676,7 @@ function maintainMobPopulation(world) {
 			// the plugin — they couldn't see them anyway and would just take
 			// damage from invisible attackers.
 			if (!p.knownMobTypes?.has(type)) continue
-			const key  = regionKey(p.x, p.z, cfg.regionSize)
+			const key = regionKey(p.x, p.z, cfg.regionSize)
 			const have = counts.get(key) || 0
 			if (have < cfg.countPerRegion) {
 				if (attemptSpawnMob(world, type, p)) counts.set(key, have + 1)
@@ -715,7 +716,7 @@ const MOB_TICK_MS = 100
 let _lastMobTick = Date.now()
 setInterval(() => {
 	const now = Date.now()
-	const dt  = (now - _lastMobTick) / 1000
+	const dt = (now - _lastMobTick) / 1000
 	_lastMobTick = now
 	for (const world of worlds.values()) {
 		if (world.players.size === 0) continue
@@ -794,7 +795,7 @@ export default function attachVoxelWorld(httpServer) {
 			switch (msg.type) {
 				case 'join': {
 					const worldName = (msg.world || 'default').slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_')
-					const nickname  = (msg.nickname || 'Player').slice(0, 20)
+					const nickname = (msg.nickname || 'Player').slice(0, 20)
 					world = getWorld(worldName)
 					const id = world.nextId++
 					player = { id, nickname, x:0, y:20, z:0, yaw:0, pitch:0, ws, dirty:false,
@@ -806,12 +807,12 @@ export default function attachVoxelWorld(httpServer) {
    					world.players.set(id, player)
 					send(ws, {
 						type:'init', id, seed:world.seed, world:worldName,
-						blocks: [...world.modifiedBlocks.entries()].map(([k,v])=>({k,v})),
-						players: [...world.players.values()].filter(p=>p.id!==id).map(serializePlayer),
+						blocks: [...world.modifiedBlocks.entries()].map(([k, v])=>({k, v})),
+						players: [...world.players.values()].filter((p)=>p.id !== id).map(serializePlayer),
 						// Only ship mobs the joining player can already render. The rest
 						// are sent on demand when register_mob_type confirms the plugin.
 						mobs:    [...world.mobs.values()]
-							.filter(m => player.knownMobTypes.has(m.type))
+							.filter((m) => player.knownMobTypes.has(m.type))
 							.map(serializeMob),
 					})
 					broadcastWorld(world, { type:'player_join', player:serializePlayer(player) }, id)
@@ -831,13 +832,13 @@ export default function attachVoxelWorld(httpServer) {
 						return
 					}
 
-					const before    = MOB_TYPES[safe.type]
-					const merged    = { behavior: 'passive', ...before, ...safe }
+					const before = MOB_TYPES[safe.type]
+					const merged = { behavior: 'passive', ...before, ...safe }
 					// Detect a real change so we don't recycle mobs every time a
 					// new player joins and re-announces the same plugin config.
 					const beforeKey = JSON.stringify(before || null)
 					const mergedKey = JSON.stringify(merged)
-					const changed   = beforeKey !== mergedKey
+					const changed = beforeKey !== mergedKey
 
 					MOB_TYPES[safe.type] = merged
 					player.knownMobTypes.add(safe.type)
@@ -876,7 +877,7 @@ export default function attachVoxelWorld(httpServer) {
 					if (!mob) return
 					// Distance check matches player combat (max 4 blocks).
 					const dx = player.x - mob.x, dy = player.y - mob.y, dz = player.z - mob.z
-					if (dx*dx + dy*dy + dz*dz > 16) return
+					if (dx * dx + dy * dy + dz * dz > 16) return
 					const cfg = MOB_TYPES[mob.type]
 					const damage = clampHitDamage(msg.damage, cfg.damage)
 					mob.hp = Math.max(0, mob.hp - damage)
@@ -903,7 +904,7 @@ export default function attachVoxelWorld(httpServer) {
 					if (!target || target.id === player.id) return
 					// Distance check (prevent cheating — max 4 blocks)
 					const dx = player.x - target.x, dy = player.y - target.y, dz = player.z - target.z
-					if (dx*dx + dy*dy + dz*dz > 16) return
+					if (dx * dx + dy * dy + dz * dz > 16) return
 					// Invincibility frames — 500ms between hits on same target
 					const now = Date.now()
 					if (now - target.lastHitTime < 500) return
@@ -925,10 +926,10 @@ export default function attachVoxelWorld(httpServer) {
 				}
 				case 'move': {
 					if (!player) return
-					player.x=msg.x; player.y=msg.y; player.z=msg.z
-					player.yaw=msg.yaw; player.pitch=msg.pitch
-					player.held=msg.held ?? null; player.swing=!!msg.swing
-					player.dirty=true
+					player.x = msg.x; player.y = msg.y; player.z = msg.z
+					player.yaw = msg.yaw; player.pitch = msg.pitch
+					player.held = msg.held ?? null; player.swing = !!msg.swing
+					player.dirty = true
 					break
 				}
 				case 'remove_blocks': {
@@ -946,7 +947,7 @@ export default function attachVoxelWorld(httpServer) {
 						const bx = parseInt(parts[0], 10)
 						const bz = parseInt(parts[2], 10)
 						const dx = bx - px, dz = bz - pz
-						if (dx*dx + dz*dz > r2) continue
+						if (dx * dx + dz * dz > r2) continue
 						world.modifiedBlocks.delete(k)
 						// Broadcast each removal as AIR to all players (including sender)
 						broadcastWorld(world, { type: 'block_update', k, v: 0 })
@@ -963,7 +964,7 @@ export default function attachVoxelWorld(httpServer) {
 				}
 				case 'set_nickname': {
 					if (!player) return
-					player.nickname = (msg.nickname||'').trim().slice(0,20)||player.nickname
+					player.nickname = (msg.nickname || '').trim().slice(0, 20) || player.nickname
 					broadcastWorld(world, { type:'player_rename', id:player.id, nickname:player.nickname })
 					break
 				}
@@ -982,7 +983,7 @@ export default function attachVoxelWorld(httpServer) {
 				}
 				case 'chat': {
 					if (!player) return
-					const text = String(msg.text||'').trim().slice(0,200)
+					const text = String(msg.text || '').trim().slice(0, 200)
 					if (!text) return
 					broadcastWorld(world, { type:'chat', nickname:player.nickname, text })
 					console.log(`[chat/${world.name}] ${player.nickname}: ${text}`)
@@ -998,17 +999,17 @@ export default function attachVoxelWorld(httpServer) {
 				console.log(`[-] ${player.nickname} left "${world.name}"  online=${world.players.size}`)
 			}
 		})
-		ws.on('error', err => console.warn('[ws error]', err.message))
+		ws.on('error', (err) => console.warn('[ws error]', err.message))
 	})
 }
 
-function send(ws, obj) { if (ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify(obj)) }
+function send(ws, obj) { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)) }
 function broadcastWorld(world, obj, excludeId) {
 	const data = JSON.stringify(obj)
 	for (const p of world.players.values())
-		if (p.id!==excludeId && p.ws.readyState===WebSocket.OPEN) p.ws.send(data)
+		if (p.id !== excludeId && p.ws.readyState === WebSocket.OPEN) p.ws.send(data)
 }
 function serializePlayer(p) {
 	return { id:p.id, nickname:p.nickname, x:p.x, y:p.y, z:p.z, yaw:p.yaw, pitch:p.pitch,
-    	         held:p.held??null, swing:!!p.swing, hp:p.hp??100 }
+    	         held:p.held ?? null, swing:!!p.swing, hp:p.hp ?? 100 }
 }
