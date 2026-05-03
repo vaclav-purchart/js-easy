@@ -123,6 +123,9 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
 - `registerGuiTab(id, label, renderFn)`
 - `registerMob(cfg)` — model + hitbox stay client-side; the AI fields are
   shipped to the server as JSON (see *Mobs* below)
+- `registerTool(def)` — registers a custom tool (see *Tools* below)
+- `preloadToolVisual(url) → Promise<{iconDataURL, model}>` — pre-fetches a
+  16×16 PNG sprite so that `ctx.setToolVisual()` can swap visuals instantly
 - `BLOCK` (read-only core map)
 - `rebuildAllChunks()`
 
@@ -340,6 +343,50 @@ the older path still works: append a config entry to `MOB_TYPES` in
 Mobs are **not persisted**. They respawn dynamically from active player
 positions when the server starts.
 
+### Tools
+
+Tools are 16×16 pixel sprites rendered as voxel models in the player's hand.
+The built-in tools live in `TOOL_DEFS` (`index.html`); plugins add their own
+via `api.registerTool(def)`. Built-in tools load first and occupy the first
+hotbar slots (sword = slot 0, pickaxe = slot 1); plugin tools follow.
+
+```js
+api.registerTool({
+  name: 'Bucket',          // also the key used by ctx.swapTool()
+  url:  'https://…/icon.png',   // 16×16 PNG; or use draw(ctx,W,H) instead
+  damage: 0,               // damage per hit (server clamps 0–50, default 5)
+
+  // Called on left-click / Mine touch button.
+  onLeftClick(ctx) { … },
+
+  // Called on right-click / Place touch button.
+  // Only fires for tools — if no handler is defined, right-click does nothing
+  // (it no longer falls back to placing the selected block).
+  onRightClick(ctx) { … },
+})
+```
+
+The `ctx` object passed to both handlers:
+
+| property / method | description |
+|---|---|
+| `ctx.target` | raw raycast result (`null` if nothing in range) |
+| `ctx.facing` | `target.face` shorthand: `{ x, y, z, type, nx, ny, nz }` |
+| `ctx.BLOCK` | core block-ID map |
+| `ctx.getBlock(x,y,z)` | returns current block id or `null` for air |
+| `ctx.setBlock(x,y,z,v)` | mutates, rebuilds chunk, and broadcasts to all players |
+| `ctx.swapTool(name)` | replace current hotbar slot with another loaded tool |
+| `ctx.setToolVisual({iconDataURL, model})` | swap the icon and 3-D hand model of the currently equipped tool — use with `api.preloadToolVisual()` for instant swaps |
+
+**Stateful tools** (e.g. bucket with empty/full states) use a closure variable
+for state and `ctx.setToolVisual()` to update the sprite. Pre-load alternate
+visuals with `api.preloadToolVisual(url)` so the swap is instant. See
+`plugins/plugin---vasek---bucket.js` for a complete example.
+
+Mouse-wheel scrolls through hotbar slots when pointer is locked.
+The `🔧 Tools` GUI tab lists all loaded tools; clicking one assigns it to the
+hotbar (replaces current slot if it is already a tool slot).
+
 ### Plugin hot-loading
 
 - `watchPluginsFolder()` watches `./plugins` for new/changed `.js` files and
@@ -452,9 +499,10 @@ Follow what's already in the files:
   `ALL_BLOCK_IDS` (or just rely on the existing `Object.values(BLOCK)` init if
   you add at module load), add to `BLOCK_REGISTRY`, mark as transparent if
   needed. For external-only blocks prefer the plugin API.
-- **Add a new tool:** push to `TOOL_DEFS` (`{ name, url, damage? }` or
-  `{ name, draw, damage? }`). `damage` defaults to `DEFAULT_TOOL_DAMAGE` and
-  is sent with every `hit_player` / `hit_mob` (server clamps to 1..50).
+- **Add a new core tool:** push to `TOOL_DEFS` (`{ name, url, damage?,
+  onLeftClick?, onRightClick? }`). `damage` defaults to `DEFAULT_TOOL_DAMAGE`
+  and is sent with every `hit_player` / `hit_mob` (server clamps to 1..50).
+  For plugin tools, use `api.registerTool(def)` instead — see *Tools* above.
 - **Add a new mob species:** preferred — drop a plugin in `./plugins/` calling
   `api.registerMob({ type, behavior, …, makeModel })`. The same file
   registers the AI on the server and the model on the client. See

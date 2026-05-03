@@ -1,50 +1,52 @@
 /**
  * Voxel World Plugin — Bucket
  *
- * Adds two tools: an empty bucket and a water bucket.
+ * One tool with two visual states (empty / water-filled).
  *
- * Usage:
- *   Right-click (or touch Place) with empty bucket on a water block → scoops
- *   the water and switches to the water bucket.
+ *   Left-click  on a water block → always scoops water (works empty or full).
+ *   Right-click anywhere          → places water only when the bucket is full.
  *
- *   Right-click (or touch Place) with water bucket on any surface → places a
- *   water block at the adjacent position and switches back to the empty bucket.
- *
- * The block mutation goes through setBlock() so it is broadcast to all
- * connected players exactly like any other block change.
+ * The block change goes through setBlock() so every connected player sees it.
+ * ctx.setToolVisual() swaps the icon and hand model between the two states.
  */
 
 VoxelWorld.registerPlugin('Bucket', {
-	init(api) {
+	async init(api) {
+		const EMPTY_URL = 'https://purchart.eu/images?file=2026-05-03--19-11-00---vasek---bucket-empty.png'
+		const FULL_URL  = 'https://purchart.eu/images?file=2026-05-03--19-11-14---vasek---bucket-water.png'
+
+		// Pre-load both visuals so state swaps are instant.
+		const [emptyV, fullV] = await Promise.all([
+			api.preloadToolVisual(EMPTY_URL),
+			api.preloadToolVisual(FULL_URL),
+		])
+
+		let full = false
+
 		api.registerTool({
 			name: 'Bucket',
-			url: 'https://purchart.eu/images?file=2026-05-03--19-11-00---vasek---bucket-empty.png',
+			url: EMPTY_URL,
 			damage: 0,
-			onRightClick(ctx) {
+
+			onLeftClick(ctx) {
 				const f = ctx.facing
 				if (!f || f.type !== ctx.BLOCK.WATER) return
 				ctx.setBlock(f.x, f.y, f.z, ctx.BLOCK.AIR)
-				ctx.swapTool('Water Bucket')
+				full = true
+				ctx.setToolVisual(fullV)
 			},
-		})
 
-		api.registerTool({
-			name: 'Water Bucket',
-			url: 'https://purchart.eu/images?file=2026-05-03--19-11-14---vasek---bucket-water.png',
-			damage: 0,
 			onRightClick(ctx) {
+				if (!full) return
 				const f = ctx.facing
 				if (!f) return
-				// Place water in the adjacent empty cell
-				const px = f.x + f.nx
-				const py = f.y + f.ny
-				const pz = f.z + f.nz
+				const px = f.x + f.nx, py = f.y + f.ny, pz = f.z + f.nz
 				const existing = ctx.getBlock(px, py, pz)
-				// Only place into air or existing water (no-op for water so the
-				// bucket doesn't drain into an already-wet cell)
+				// Only place into air (null) or an already-water cell
 				if (existing !== null && existing !== ctx.BLOCK.WATER) return
 				ctx.setBlock(px, py, pz, ctx.BLOCK.WATER)
-				ctx.swapTool('Bucket')
+				full = false
+				ctx.setToolVisual(emptyV)
 			},
 		})
 	},

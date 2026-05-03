@@ -756,6 +756,19 @@ window.VoxelWorld = {
 					console.log(`[plugin] Registered tool "${tool.name}"`)
 				})
 			},
+
+			/**
+			 * Pre-fetch a 16×16 PNG so that swapping a tool's visual mid-game
+			 * is instant (image already in browser cache).
+			 * Returns Promise<{ iconDataURL, model }> — pass directly to
+			 * ctx.setToolVisual() inside onLeftClick / onRightClick.
+			 *
+			 * Example:
+			 *   const fullV  = await api.preloadToolVisual(FULL_URL)
+			 *   const emptyV = await api.preloadToolVisual(EMPTY_URL)
+			 *   // then inside onLeftClick: ctx.setToolVisual(fullV)
+			 */
+			preloadToolVisual(url) { return _loadToolVisual(url) },
 		}
 		return api
 	},
@@ -2897,6 +2910,14 @@ function triggerSwing() { swingActive = true; swingTime = 0 }
 // ── Loaded tools registry ─────────────────────────────────────────────────
 const loadedTools = []   // filled async; index matches TOOL_DEFS order
 
+// ── Tool visual helper ────────────────────────────────────────────────────
+// Loads a 16×16 PNG from a URL and returns { model, iconDataURL } without
+// registering the result as a hotbar tool. Used to pre-cache alternate
+// visual states (e.g. empty vs. full bucket) before first use.
+function _loadToolVisual(url) {
+	return loadTool({ name: '_tmp', url }).then((t) => ({ model: t.model, iconDataURL: t.iconDataURL }))
+}
+
 // ── Tool use context ──────────────────────────────────────────────────────
 // Passed to onLeftClick / onRightClick. Exposes world-mutation helpers so
 // plugins never need to reach into globals directly.
@@ -2913,6 +2934,17 @@ function makeToolUseCtx() {
 		},
 		getBlock,
 		swapTool(toolName) { swapCurrentTool(toolName) },
+		// Swap the icon and 3-D hand model of the currently equipped tool.
+		// visual = { iconDataURL, model } as returned by api.preloadToolVisual().
+		setToolVisual(visual) {
+			const item = HOTBAR_ITEMS[selectedSlot]
+			if (item?.type !== 'tool') return
+			const tool = loadedTools[item.toolIndex]
+			if (!tool) return
+			if (visual.iconDataURL !== undefined) tool.iconDataURL = visual.iconDataURL
+			if (visual.model !== undefined) tool.model = visual.model
+			rebuildHotbarDOM()
+		},
 	}
 }
 
