@@ -124,8 +124,16 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
 - `registerMob(cfg)` — model + hitbox stay client-side; the AI fields are
   shipped to the server as JSON (see *Mobs* below)
 - `registerTool(def)` — registers a custom tool (see *Tools* below)
-- `preloadToolVisual(url) → Promise<{iconDataURL, model}>` — pre-fetches a
-  16×16 PNG sprite so that `ctx.setToolVisual()` can swap visuals instantly
+- `preloadToolVisual(urlOrDef) → Promise<{iconDataURL, model}>` — pre-fetches
+  a 16×16 sprite (URL string **or** `{ draw(ctx,W,H) }` object) so that
+  `ctx.setToolVisual()` can swap visuals instantly
+- `scene` — the Three.js `Scene`; add/remove visual objects (arrows, effects)
+- `camera` — the Three.js `PerspectiveCamera`; read position / direction
+- `addTickCallback(fn)` / `removeTickCallback(fn)` — register/unregister a
+  per-frame callback `fn(dt)` (dt in seconds). Called just before each render.
+- `shootRay(maxDist=64) → { type, id, point, distance } | null` — hitscan from
+  camera centre. `type` is `'mob'|'player'|'block'`; `id` is null for blocks.
+- `netSend(obj)` — send a raw message to the server (same as internal `netSend`)
 - `BLOCK` (read-only core map)
 - `rebuildAllChunks()`
 
@@ -356,13 +364,18 @@ api.registerTool({
   url:  'https://…/icon.png',   // 16×16 PNG; or use draw(ctx,W,H) instead
   damage: 0,               // damage per hit (server clamps 0–50, default 5)
 
-  // Called on left-click / Mine touch button.
+  // Called on left-click / Mine touch button press.
   onLeftClick(ctx) { … },
 
-  // Called on right-click / Place touch button.
+  // Called on right-click / Place touch button press (button down).
   // Only fires for tools — if no handler is defined, right-click does nothing
   // (it no longer falls back to placing the selected block).
   onRightClick(ctx) { … },
+
+  // Called on right-click / Place touch button release (button up).
+  // Use together with onRightClick to implement hold-to-charge mechanics
+  // (e.g. a bow: onRightClick starts charging, onRightUp fires the shot).
+  onRightUp(ctx) { … },
 })
 ```
 
@@ -376,7 +389,7 @@ The `ctx` object passed to both handlers:
 | `ctx.getBlock(x,y,z)` | returns current block id or `null` for air |
 | `ctx.setBlock(x,y,z,v)` | mutates, rebuilds chunk, and broadcasts to all players |
 | `ctx.swapTool(name)` | replace current hotbar slot with another loaded tool |
-| `ctx.setToolVisual({iconDataURL, model})` | swap the icon and 3-D hand model of the currently equipped tool — use with `api.preloadToolVisual()` for instant swaps |
+| `ctx.setToolVisual({iconDataURL, model})` | swap the icon and 3-D hand model of the currently equipped tool — use with `api.preloadToolVisual()` for instant swaps. Also bumps an internal version counter so remote players re-clone the model and see the change. |
 
 **Stateful tools** (e.g. bucket with empty/full states) use a closure variable
 for state and `ctx.setToolVisual()` to update the sprite. Pre-load alternate

@@ -768,7 +768,48 @@ window.VoxelWorld = {
 			 *   const emptyV = await api.preloadToolVisual(EMPTY_URL)
 			 *   // then inside onLeftClick: ctx.setToolVisual(fullV)
 			 */
-			preloadToolVisual(url) { return _loadToolVisual(url) },
+			preloadToolVisual(urlOrDef) { return _loadToolVisual(urlOrDef) },
+
+			/** Three.js scene — add / remove visual objects (arrows, effects, …). */
+			get scene() { return scene },
+
+			/** Three.js camera — read position / direction. */
+			get camera() { return camera },
+
+			/**
+			 * Register a per-frame callback: fn(dt) where dt is seconds.
+			 * Safe to call during animation; the loop iterates a snapshot so
+			 * adding/removing callbacks inside fn doesn't cause skips.
+			 */
+			addTickCallback(fn) { _pluginTicks.push(fn) },
+			removeTickCallback(fn) {
+				const i = _pluginTicks.indexOf(fn)
+				if (i !== -1) _pluginTicks.splice(i, 1)
+			},
+
+			/**
+			 * Hitscan from camera centre. Returns the nearest hit or null.
+			 * { type: 'mob'|'player'|'block', id, point: THREE.Vector3, distance }
+			 * id is null for block hits.
+			 */
+			shootRay(maxDist = 64) {
+				const rc = new THREE.Raycaster()
+				rc.far = maxDist
+				rc.setFromCamera(new THREE.Vector2(0, 0), camera)
+				const hits = rc.intersectObjects([...pickMeshes, ...playerPickMeshes, ...mobPickMeshes])
+				if (!hits.length) return null
+				const hit = hits[0]
+				const ud = hit.object.userData
+				return {
+					type: ud.playerId ? 'player' : ud.mobId ? 'mob' : 'block',
+					id: ud.playerId ?? ud.mobId ?? null,
+					point: hit.point.clone(),
+					distance: hit.distance,
+				}
+			},
+
+			/** Send a raw message to the server (same as the internal netSend). */
+			netSend: (obj) => netSend(obj),
 		}
 		return api
 	},
@@ -2505,9 +2546,13 @@ addEventListener('mousedown', (e) => {
 		}
 	}
 })
-addEventListener('mouseup', () => {
+addEventListener('mouseup', (e) => {
 	mining = false; miningTime = 0
 	document.getElementById('progress').style.display = 'none'
+	if (e.button === 2) {
+		const tool = equippedTool()
+		if (tool?.onRightUp) tool.onRightUp(makeToolUseCtx())
+	}
 })
 addEventListener('contextmenu', (e) => e.preventDefault())
 
@@ -2633,12 +2678,14 @@ function setupTouchBtn(id, key) {
 		touchState[key] = false
 		el.classList.remove('pressed')
 		if (key === 'mine') { mining = false; miningTime = 0; document.getElementById('progress').style.display = 'none' }
+		if (key === 'place') { const tool = equippedTool(); if (tool?.onRightUp) tool.onRightUp(makeToolUseCtx()) }
 	}, { passive:false })
 	el.addEventListener('touchcancel', (e) => {
 		e.preventDefault()
 		touchState[key] = false
 		el.classList.remove('pressed')
 		if (key === 'mine') { mining = false; miningTime = 0 }
+		if (key === 'place') { const tool = equippedTool(); if (tool?.onRightUp) tool.onRightUp(makeToolUseCtx()) }
 	}, { passive:false })
 }
 
@@ -2828,6 +2875,7 @@ function loadTool(def) {
 				damage: def.damage ?? DEFAULT_TOOL_DAMAGE,
 				onLeftClick: def.onLeftClick ?? null,
 				onRightClick: def.onRightClick ?? null,
+				onRightUp: def.onRightUp ?? null,
 			})
 		}
 
@@ -2909,13 +2957,16 @@ function triggerSwing() { swingActive = true; swingTime = 0 }
 
 // ── Loaded tools registry ─────────────────────────────────────────────────
 const loadedTools = []   // filled async; index matches TOOL_DEFS order
+const _pluginTicks = []  // per-frame callbacks registered by plugins via api.addTickCallback
 
 // ── Tool visual helper ────────────────────────────────────────────────────
-// Loads a 16×16 PNG from a URL and returns { model, iconDataURL } without
-// registering the result as a hotbar tool. Used to pre-cache alternate
-// visual states (e.g. empty vs. full bucket) before first use.
-function _loadToolVisual(url) {
-	return loadTool({ name: '_tmp', url }).then((t) => ({ model: t.model, iconDataURL: t.iconDataURL }))
+// Returns { model, iconDataURL } without registering a hotbar slot.
+// Accepts a URL string OR a { draw(ctx,W,H) } object for canvas-drawn sprites.
+function _loadToolVisual(urlOrDef) {
+	const def = typeof urlOrDef === 'string'
+		? { name: '_tmp', url: urlOrDef }
+		: { name: '_tmp', ...urlOrDef }
+	return loadTool(def).then((t) => ({ model: t.model, iconDataURL: t.iconDataURL }))
 }
 
 // ── Tool use context ──────────────────────────────────────────────────────
@@ -4318,6 +4369,7 @@ ${ti}
 slot: ${selectedSlot}  id: ${myId ?? 'offline'}  peers: ${remotePlayers.size}
 in water: ${Boolean(inWater).toString()}`
 
+	for (let i = _pluginTicks.length - 1; i >= 0; i--) _pluginTicks[i](dt)
 	renderer.render(scene, camera)
 }
 
