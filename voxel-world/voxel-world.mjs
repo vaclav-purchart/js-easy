@@ -107,7 +107,7 @@ function watchPluginsFolder() {
 		// Track debounce timers per filename to avoid double-firing
 		const debounceTimers = new Map()
 		watch(PLUGINS_DIR, (eventType, filename) => {
-			if (!filename?.endsWith('.js')) return
+			if (!filename?.endsWith('.js') || !filename.startsWith('plugin---')) return
 			// Both 'rename' (new file) and 'change' (updated file) trigger a reload.
 			// Debounce per file — writes can fire multiple events in quick succession.
 			clearTimeout(debounceTimers.get(filename))
