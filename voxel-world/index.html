@@ -3284,6 +3284,7 @@ function closeGui() {
 	if (!guiOpen) return
 	guiOpen = false
 	guiEl.classList.remove('open')
+	if (!('ontouchstart' in window)) renderer.domElement.requestPointerLock()
 }
 
 document.getElementById('gui-close').addEventListener('click', closeGui)
