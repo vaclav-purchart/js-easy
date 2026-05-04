@@ -986,22 +986,18 @@ export default function attachVoxelWorld(httpServer) {
 					// blockId null means ALL blocks (any type)
 					const { blockId, px, py, pz, radius } = msg
 					const r2 = radius * radius
-					let removed = 0
-					for (const [k] of [...world.modifiedBlocks.entries()]) {
-						const v = world.modifiedBlocks.get(k)
-						// Match: specific block ID, or ALL (blockId===null)
+					const keys = []
+					for (const [k, v] of world.modifiedBlocks) {
 						if (blockId !== null && v !== blockId) continue
 						const parts = k.split('_')
-						const bx = parseInt(parts[0], 10)
-						const bz = parseInt(parts[2], 10)
-						const dx = bx - px, dz = bz - pz
+						const dx = parseInt(parts[0], 10) - px
+						const dz = parseInt(parts[2], 10) - pz
 						if (dx * dx + dz * dz > r2) continue
-						world.modifiedBlocks.delete(k)
-						// Broadcast each removal as AIR to all players (including sender)
-						broadcastWorld(world, { type: 'block_update', k, v: 0 })
-						removed++
+						keys.push(k)
 					}
-					console.log(`[/remove] ${player.nickname} removed ${removed} block(s) within r=${radius}`)
+					for (const k of keys) world.modifiedBlocks.delete(k)
+					if (keys.length > 0) broadcastWorld(world, { type: 'blocks_removed', keys })
+					console.log(`[/remove] ${player.nickname} removed ${keys.length} block(s) within r=${radius}`)
 					break
 				}
 				case 'block_update': {

@@ -3583,9 +3583,7 @@ function handleCommand(raw) {
 			}
 			showToast(`Removed ${removed} block${removed !== 1 ? 's' : ''} (offline)`)
 		} else {
-			// Online: send to server — it will broadcast block_update messages to everyone
 			netSend({ type: 'remove_blocks', blockId, px, py, pz, radius })
-			showToast(`Removing ${blockName} within ${radius} blocks…`)
 		}
 		return
 	}
@@ -3704,6 +3702,20 @@ function handleServerMessage(msg) {
 			modified.set(msg.k, msg.v)
 			const [bx,, bz] = msg.k.split('_').map(Number)
 			rebuildChunk(Math.floor(bx / CHUNK_SIZE), Math.floor(bz / CHUNK_SIZE))
+			break
+		}
+		case 'blocks_removed': {
+			const affectedChunks = new Set()
+			for (const k of msg.keys) {
+				modified.delete(k)
+				const [bx,, bz] = k.split('_').map(Number)
+				affectedChunks.add(`${Math.floor(bx / CHUNK_SIZE)}_${Math.floor(bz / CHUNK_SIZE)}`)
+			}
+			for (const ck of affectedChunks) {
+				const [cx2, cz2] = ck.split('_').map(Number)
+				rebuildChunk(cx2, cz2)
+			}
+			showToast(`Removed ${msg.keys.length} block${msg.keys.length !== 1 ? 's' : ''}`)
 			break
 		}
 		case 'player_rename': {
