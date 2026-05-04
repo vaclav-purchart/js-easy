@@ -416,6 +416,7 @@
 </head>
 <body>
 	<div class="toolbar">
+		<button id="voxel-world-btn"><img src="https://purchart.eu/images?file=block32.png" /></button>
 		<button id="send-btn">✉️ Send</button>
 		<button id="keyboard-btn">⌨️ Keyboard</button>
 		<button id="fullscreen-btn">📱 Fullscreen</button>
@@ -700,6 +701,7 @@
 
 			setupEventListeners() {
 				// Toolbar buttons
+				document.getElementById('voxel-world-btn').addEventListener('click', () => this.showVoxelWorld())
 				document.getElementById('send-btn').addEventListener('click', () => this.showSendDialog())
 				document.getElementById('fullscreen-btn').addEventListener('click', () => this.showFullscreen())
 				document.getElementById('list-btn').addEventListener('click', () => this.showList())
@@ -1880,6 +1882,10 @@ console.log("test")
 
 				// Reset the input
 				event.target.value = ''
+			}
+
+			showVoxelWorld() {
+				window.open('https://purchart.eu/list?file=vasek-voxel-world.html', '_blank')
 			}
 
 			// Send Dialog Methods
