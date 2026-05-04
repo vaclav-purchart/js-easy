@@ -251,6 +251,7 @@
   #btn-mine     { background:rgba(220,80,80,.25);   border-color:rgba(220,80,80,.8);   }
   #btn-place    { background:rgba(80,160,220,.25);  border-color:rgba(80,160,220,.8);  }
   #btn-fly-down { background:rgba(180,140,255,.25); border-color:rgba(180,140,255,.8); display:none; }
+  #btn-gamemode { background:rgba(60,180,120,.25); border-color:rgba(80,220,140,.8); font-size:10px; }
 
   /* ── Underwater overlay ── */
   #underwater-overlay {
@@ -386,6 +387,9 @@
     <div id="joystick-knob"></div>
   </div>
   <div id="action-buttons">
+    <div class="row">
+      <div class="touch-btn" id="btn-gamemode">⛏<br>Survival</div>
+    </div>
     <div class="row">
       <div class="touch-btn" id="btn-mine">Mine</div>
       <div class="touch-btn" id="btn-place">Place</div>
@@ -3296,6 +3300,38 @@ document.getElementById('btn-inventory-open').addEventListener('touchstart', (e)
 	}
 })()
 
+// btn-gamemode toggles creative / survival on touch devices
+function syncGamemodeBtn() {
+	const btnGm = document.getElementById('btn-gamemode')
+	if (!btnGm) return
+	if (player.gameMode === 'creative') {
+		btnGm.innerHTML = '✈<br>Creative'
+		btnGm.style.background = 'rgba(80,140,220,.35)'
+		btnGm.style.borderColor = 'rgba(120,180,255,.9)'
+	} else {
+		btnGm.innerHTML = '⛏<br>Survival'
+		btnGm.style.background = 'rgba(60,180,120,.25)'
+		btnGm.style.borderColor = 'rgba(80,220,140,.8)'
+	}
+}
+;(function() {
+	const btnGm = document.getElementById('btn-gamemode')
+	if (!btnGm) return
+	function toggleGamemode() {
+		if (player.gameMode === 'survival') {
+			player.gameMode = 'creative'
+			showToast('🛠 Creative mode — double-tap Jump to fly')
+		} else {
+			player.gameMode = 'survival'
+			setFlying(false)
+			showToast('🗡 Survival mode')
+		}
+		syncGamemodeBtn()
+	}
+	btnGm.addEventListener('touchstart', (e) => { e.preventDefault(); toggleGamemode() }, { passive:false })
+	btnGm.addEventListener('click', () => toggleGamemode())
+})()
+
 // Key handlers for opening / closing the GUI
 addEventListener('keydown', (e) => {
 	if (document.activeElement?.tagName === 'INPUT') return
@@ -3488,6 +3524,7 @@ function handleCommand(raw) {
 	}
 	if (v === '/creative') {
 		player.gameMode = 'creative'
+		syncGamemodeBtn()
 		showToast('🛠 Creative mode — double-tap Space to fly')
 		return
 	}
@@ -3496,6 +3533,7 @@ function handleCommand(raw) {
 		// Drop flight on the way out so the player can't keep hovering after
 		// switching back. Gravity will resume on the next frame.
 		setFlying(false)
+		syncGamemodeBtn()
 		showToast('🗡 Survival mode')
 		return
 	}
