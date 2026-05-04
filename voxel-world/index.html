@@ -4424,8 +4424,10 @@ function animate() {
 				showToast('🚶 Walking')
 			}
 		} else {
-			// Rising — hit a ceiling, push down to just below it
-			player.pos.y = Math.ceil(player.pos.y) - 0.001
+			// Rising — hit a ceiling; push head to just below the block's bottom surface.
+			// Math.ceil was wrong: it placed the head inside the block, letting the
+			// next-frame gravity turn the ceiling into a floor (the "walk on ceiling" bug).
+			player.pos.y = Math.floor(player.pos.y - 0.001) - 0.001
 		}
 		player.vel.y = 0
 	} else if (!inWater) {
