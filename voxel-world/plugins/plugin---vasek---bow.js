@@ -118,6 +118,10 @@ VoxelWorld.registerPlugin('Bow', {
 			function tick(dt) {
 				traveled += ARROW_SPEED * dt
 				if (traveled >= totalDist) {
+					arrow.traverse(obj => {
+						obj.geometry?.dispose()
+						if (obj.material) [].concat(obj.material).forEach(m => m.dispose())
+					})
 					api.scene.remove(arrow)
 					api.removeTickCallback(tick)
 					return

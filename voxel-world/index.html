@@ -1795,6 +1795,12 @@ function flushChunkQueue(playerCx, playerCz) {
 function rebuildChunk(cx, cz) {
 	const k = chunkKey(cx, cz)
 
+	// Ignore chunks outside render range — network block updates can arrive for
+	// distant chunks; building and immediately unloading them wastes CPU + GPU.
+	const pcx = Math.floor(player.pos.x / CHUNK_SIZE)
+	const pcz = Math.floor(player.pos.z / CHUNK_SIZE)
+	if (Math.abs(cx - pcx) > RENDER_DISTANCE + 1 || Math.abs(cz - pcz) > RENDER_DISTANCE + 1) return
+
 	// Mark as in-flight immediately so queueChunk won't re-enqueue this chunk
 	// while the worker is busy. We preserve the old entry so existing meshes
 	// stay visible (no flash) — just tag it so we know a build is pending.
