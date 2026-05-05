@@ -388,6 +388,7 @@ The `ctx` object passed to both handlers:
 | `ctx.BLOCK` | core block-ID map |
 | `ctx.getBlock(x,y,z)` | returns current block id or `null` for air |
 | `ctx.setBlock(x,y,z,v)` | mutates, rebuilds chunk, and broadcasts to all players |
+| `ctx.setBlocks(entries)` | batch variant — `entries` is `[[x,y,z,blockId], …]`; deduplicates chunk rebuilds and sends a single `set_blocks` message. Use this instead of looping `setBlock` when placing multiple blocks at once. |
 | `ctx.swapTool(name)` | replace current hotbar slot with another loaded tool |
 | `ctx.setToolVisual({iconDataURL, model})` | swap the icon and 3-D hand model of the currently equipped tool — use with `api.preloadToolVisual()` for instant swaps. Also bumps an internal version counter so remote players re-clone the model and see the change. |
 
@@ -423,6 +424,7 @@ Inbound (client → server):
 | `join`           | `nickname, world`                                        |
 | `move`           | `x, y, z, yaw, pitch, held?, swing?`                     |
 | `block_update`   | `k, v` (key `"x_y_z"` or `"plant_x_z"`, value = block id)|
+| `set_blocks`     | `blocks: [[k, v], …]` (up to 1024 entries; batch placement)|
 | `remove_blocks`  | `blockId|null, px, py, pz, radius`                       |
 | `hit_player`     | `targetId, damage` (clamped 1..50 server-side)           |
 | `hit_mob`        | `mobId, damage` (clamped 1..50 server-side)              |
@@ -440,6 +442,7 @@ Outbound (server → client):
 | `player_leave`  | `id`                                                      |
 | `moves`         | `players: [{ id, x, y, z, yaw, pitch, held, swing, hp }]` |
 | `block_update`  | `k, v`                                                    |
+| `blocks_set`    | `blocks: [[k, v], …]` (batch; mirrors `blocks_removed`)   |
 | `player_rename` | `id, nickname`                                            |
 | `world_reset`   | —                                                         |
 | `hp_update`     | `id, hp, damage` (damage = applied amount this hit)       |

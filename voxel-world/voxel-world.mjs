@@ -1006,6 +1006,17 @@ export default function attachVoxelWorld(httpServer) {
 					broadcastWorld(world, { type:'block_update', k:msg.k, v:msg.v }, player.id)
 					break
 				}
+				case 'set_blocks': {
+					if (!player) return
+					if (!Array.isArray(msg.blocks)) return
+					const entries = msg.blocks.slice(0, 1024)
+					for (const [k, v] of entries) {
+						if (typeof k !== 'string' || typeof v !== 'number') continue
+						world.modifiedBlocks.set(k, v)
+					}
+					if (entries.length > 0) broadcastWorld(world, { type:'blocks_set', blocks:entries }, player.id)
+					break
+				}
 				case 'tool_visual': {
 					if (!player) return
 					const toolIndex = Math.floor(Number(msg.toolIndex))

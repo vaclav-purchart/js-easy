@@ -3007,6 +3007,21 @@ function makeToolUseCtx() {
 			rebuildChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE))
 			netSendBlockUpdate(k, v)
 		},
+		setBlocks(entries) {
+			const affectedChunks = new Set()
+			const wire = []
+			for (const [x, y, z, v] of entries) {
+				const k = `${x}_${y}_${z}`
+				modified.set(k, v)
+				wire.push([k, v])
+				affectedChunks.add(`${Math.floor(x / CHUNK_SIZE)}_${Math.floor(z / CHUNK_SIZE)}`)
+			}
+			for (const ck of affectedChunks) {
+				const [cx2, cz2] = ck.split('_').map(Number)
+				rebuildChunk(cx2, cz2)
+			}
+			netSend({ type:'set_blocks', blocks:wire })
+		},
 		getBlock,
 		swapTool(toolName) { swapCurrentTool(toolName) },
 		// Swap the icon and 3-D hand model of the currently equipped tool.
@@ -3723,6 +3738,19 @@ function handleServerMessage(msg) {
 				rebuildChunk(cx2, cz2)
 			}
 			showToast(`Removed ${msg.keys.length} block${msg.keys.length !== 1 ? 's' : ''}`)
+			break
+		}
+		case 'blocks_set': {
+			const affectedChunks = new Set()
+			for (const [k, v] of msg.blocks) {
+				modified.set(k, v)
+				const [bx,, bz] = k.split('_').map(Number)
+				affectedChunks.add(`${Math.floor(bx / CHUNK_SIZE)}_${Math.floor(bz / CHUNK_SIZE)}`)
+			}
+			for (const ck of affectedChunks) {
+				const [cx2, cz2] = ck.split('_').map(Number)
+				rebuildChunk(cx2, cz2)
+			}
 			break
 		}
 		case 'player_rename': {
