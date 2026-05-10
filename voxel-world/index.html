@@ -55,7 +55,7 @@
   #mp-status.offline { color:#f80; border-color:#f80; }
   #mp-status.error   { color:#f44; border-color:#f44; }
   #player-list {
-    position:fixed; top:10px; right:130px;
+    position:fixed; top:45px; right:10px;
     background:rgba(0,0,0,.5); color:white;
     padding:5px 8px; font-size:11px; font-family:monospace;
     min-width:100px; display:none;
@@ -68,7 +68,7 @@
   }
   /* ── Claim system ── */
   #claim-overlay {
-    position:fixed; top:12px; right:160px;
+    position:fixed; top:10px; right:150px;
     background:rgba(40,0,70,.82); color:#f0c030; border:1px solid #c8900a;
     padding:4px 10px; font-size:12px; font-family:monospace;
     display:none; pointer-events:none; z-index:200;
@@ -457,6 +457,7 @@
     <div class="row">
       <div class="touch-btn" id="btn-mine">Mine</div>
       <div class="touch-btn" id="btn-place">Place</div>
+      <div class="touch-btn" id="btn-claim" style="display:none">🔒 Inspect</div>
     </div>
     <div class="row">
       <div class="touch-btn" id="btn-fly-down">Down</div>
@@ -2810,6 +2811,15 @@ setupTouchBtn('btn-mine',     'mine')
 setupTouchBtn('btn-place',    'place')
 setupTouchBtn('btn-fly-down', 'flyDown')
 
+document.getElementById('btn-claim').addEventListener('touchstart', (e) => {
+	e.preventDefault()
+	if (currentTarget?.face?.type === BLOCK.CLAIM) {
+		const { x, y, z } = currentTarget.face
+		const c = [...claimsData.values()].find((cl) => cl.blockX === x && cl.blockY === y && cl.blockZ === z)
+		if (c) openClaimUI(c)
+	}
+}, { passive: false })
+
 // Double-tap the Jump button → toggle fly in creative mode (mirrors the
 // double-Space shortcut on desktop). Sits alongside setupTouchBtn rather
 // than inside it so the held-state behaviour stays exactly the same.
@@ -3387,8 +3397,8 @@ const MAX_CLAIM_SIZE = 3
 // Active claims received from server: owner (lowercase) → claim object
 let claimsData = new Map()
 
-// Three.js LineSegments objects for claim area borders
-const _claimBorderObjects = new Map()   // owner → THREE.LineSegments
+// Terrain-hugging flat strip meshes for claim borders
+const _claimBorderObjects = new Map()   // owner → THREE.Mesh
 
 function _claimBounds(claim) {
 	const cx = Math.floor(claim.blockX / CHUNK_SIZE)
@@ -3408,48 +3418,86 @@ function _claimBorderColor(claim) {
 	return 0xff3333
 }
 
-function _buildClaimBorderLines(claim) {
+// Build a terrain-following flat strip mesh along all 4 boundary edges.
+// The strip is W blocks wide (inward from the edge) and sits just above
+// the terrain surface so it looks "painted" on the ground.
+function _buildClaimBorderMesh(claim) {
 	const b = _claimBounds(claim)
-	const minY = 0, maxY = 80
 	const { minX, maxX, minZ, maxZ } = b
-	const x0 = minX, x1 = maxX + 1, z0 = minZ, z1 = maxZ + 1
-	// 12 edges of the bounding box (each pair = one segment)
-	const pts = [
-		x0, minY, z0, x1, minY, z0,
-		x1, minY, z0, x1, minY, z1,
-		x1, minY, z1, x0, minY, z1,
-		x0, minY, z1, x0, minY, z0,
-		x0, maxY, z0, x1, maxY, z0,
-		x1, maxY, z0, x1, maxY, z1,
-		x1, maxY, z1, x0, maxY, z1,
-		x0, maxY, z1, x0, maxY, z0,
-		x0, minY, z0, x0, maxY, z0,
-		x1, minY, z0, x1, maxY, z0,
-		x1, minY, z1, x1, maxY, z1,
-		x0, minY, z1, x0, maxY, z1,
-	]
+	const W = 0.3    // strip width in blocks (inward from the boundary)
+	const LIFT = 0.06  // elevation above the terrain block top
+
+	const positions = []
+	const idxs = []
+	let vi = 0
+
+	// One horizontal edge: iterates along X, boundary at fixed Z.
+	// inward > 0 → strip goes into the claim (toward +Z); < 0 → toward -Z.
+	const addXEdge = (x0, x1, edgeZ, inward) => {
+		for (let x = x0; x < x1; x++) {
+			const ya = terrainHeight(x, Math.round(edgeZ + (inward > 0 ? 0 : -1))) + 1 + LIFT
+			const yb = terrainHeight(x + 1, Math.round(edgeZ + (inward > 0 ? 0 : -1))) + 1 + LIFT
+			const za = edgeZ, zb = edgeZ + W * inward
+			positions.push(
+				x, ya, za,
+				x + 1, yb, za,
+				x, ya, zb,
+				x + 1, yb, zb,
+			)
+			idxs.push(vi, vi + 2, vi + 1, vi + 1, vi + 2, vi + 3)
+			vi += 4
+		}
+	}
+
+	// One vertical edge: iterates along Z, boundary at fixed X.
+	const addZEdge = (z0, z1, edgeX, inward) => {
+		for (let z = z0; z < z1; z++) {
+			const ya = terrainHeight(Math.round(edgeX + (inward > 0 ? 0 : -1)), z) + 1 + LIFT
+			const yb = terrainHeight(Math.round(edgeX + (inward > 0 ? 0 : -1)), z + 1) + 1 + LIFT
+			const xa = edgeX, xb = edgeX + W * inward
+			positions.push(
+				xa, ya, z,
+				xb, ya, z,
+				xa, yb, z + 1,
+				xb, yb, z + 1,
+			)
+			idxs.push(vi, vi + 1, vi + 2, vi + 1, vi + 3, vi + 2)
+			vi += 4
+		}
+	}
+
+	addXEdge(minX, maxX + 1, minZ, 1)       // north edge (z = minZ, strip goes south)
+	addXEdge(minX, maxX + 1, maxZ + 1, -1)  // south edge (z = maxZ+1, strip goes north)
+	addZEdge(minZ, maxZ + 1, minX, 1)       // west edge  (x = minX, strip goes east)
+	addZEdge(minZ, maxZ + 1, maxX + 1, -1)  // east edge  (x = maxX+1, strip goes west)
+
 	const geo = new THREE.BufferGeometry()
-	geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+	geo.setIndex(idxs)
 	const color = _claimBorderColor(claim)
-	const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.55 })
-	return new THREE.LineSegments(geo, mat)
+	const mat = new THREE.MeshBasicMaterial({
+		color, side: THREE.DoubleSide,
+		transparent: true, opacity: 0.82,
+		depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1,
+	})
+	return new THREE.Mesh(geo, mat)
 }
 
 function updateClaimBorders() {
 	for (const obj of _claimBorderObjects.values()) { scene.remove(obj); obj.geometry.dispose() }
 	_claimBorderObjects.clear()
 	for (const [owner, claim] of claimsData) {
-		const lines = _buildClaimBorderLines(claim)
-		_claimBorderObjects.set(owner, lines)
-		scene.add(lines)
+		const mesh = _buildClaimBorderMesh(claim)
+		_claimBorderObjects.set(owner, mesh)
+		scene.add(mesh)
 	}
 }
 
 function updateClaimColors() {
-	// Recolor existing borders (called when nickname changes)
-	for (const [owner, lines] of _claimBorderObjects) {
+	// Recolor existing borders when nickname changes
+	for (const [owner, mesh] of _claimBorderObjects) {
 		const claim = claimsData.get(owner)
-		if (claim) lines.material.color.setHex(_claimBorderColor(claim))
+		if (claim) mesh.material.color.setHex(_claimBorderColor(claim))
 	}
 }
 
@@ -3552,6 +3600,7 @@ function openClaimUI(claim) {
 		}))
 	}
 
+	document.exitPointerLock?.()
 	document.getElementById('claim-modal-overlay').classList.add('open')
 	_claimUIOpen = true
 }
@@ -3563,6 +3612,7 @@ function closeClaimUI() {
 }
 
 document.getElementById('claim-modal-close').addEventListener('click', closeClaimUI)
+document.getElementById('claim-modal-close').addEventListener('touchstart', (e) => { e.preventDefault(); closeClaimUI() }, { passive: false })
 document.getElementById('claim-modal-overlay').addEventListener('click', (e) => {
 	if (e.target === document.getElementById('claim-modal-overlay')) closeClaimUI()
 })
@@ -3682,7 +3732,7 @@ addEventListener('keydown', (e) => {
 		if (currentTarget?.face?.type === BLOCK.CLAIM) {
 			const { x, y, z } = currentTarget.face
 			const c = [...claimsData.values()].find((cl) => cl.blockX === x && cl.blockY === y && cl.blockZ === z)
-			if (c) { document.exitPointerLock(); openClaimUI(c) }
+			if (c) openClaimUI(c)
 		}
 	}
 })
@@ -4888,8 +4938,11 @@ function animate() {
 
 	// Claim system per-frame updates
 	updateClaimOverlay()
+	const _lookingAtClaim = currentTarget?.face?.type === BLOCK.CLAIM
 	const _hintEl = document.getElementById('claim-inspect-hint')
-	if (_hintEl) _hintEl.style.display = (currentTarget?.face?.type === BLOCK.CLAIM) ? 'block' : 'none'
+	if (_hintEl) _hintEl.style.display = _lookingAtClaim ? 'block' : 'none'
+	const _claimBtn = document.getElementById('btn-claim')
+	if (_claimBtn) _claimBtn.style.display = _lookingAtClaim ? '' : 'none'
 
 	netSendMove(player.pos.x, player.pos.y, player.pos.z, yawObject.rotation.y, pitch)
 	tickRemotePlayers(dt)
