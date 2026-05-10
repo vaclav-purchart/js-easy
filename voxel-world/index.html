@@ -4150,6 +4150,11 @@ function handleServerMessage(msg) {
 			showToast('World was reset by another player')
 			break
 		}
+		case 'claims_reset': {
+			claimsData.clear()
+			updateClaimBorders()
+			break
+		}
 		case 'hp_update': {
 			if (msg.id === myId) {
 				updateHpHUD(msg.hp)

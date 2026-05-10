@@ -6,7 +6,7 @@
 
 // plugins tags - author, type (block|mob), enabled (true), checked (true)
 import { WebSocketServer, WebSocket } from 'ws'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, watch } from 'fs'
+import { readFileSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, watch } from 'fs'
 import { join } from 'path'
 
 const WORLDS_DIR = './worlds'
@@ -25,6 +25,20 @@ function saveWorld(world) {
 	}
 	writeFileSync(filePath, JSON.stringify(data), 'utf8')
 	console.log(`[voxel-world] Saved world "${world.name}"  blocks=${world.modifiedBlocks.size}  → ${filePath}`)
+}
+
+// Save current world state to a timestamped backup file before destructive ops.
+function backupWorld(world) {
+	try {
+		saveWorld(world)   // ensure the primary file is up-to-date first
+		const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+		const src  = join(WORLDS_DIR, `${world.name}.json`)
+		const dest = join(WORLDS_DIR, `${world.name}.backup-${ts}.json`)
+		copyFileSync(src, dest)
+		console.log(`[voxel-world] Backup created: ${dest}`)
+	} catch (err) {
+		console.error(`[voxel-world] Backup failed for "${world.name}":`, err.message)
+	}
 }
 
 function saveAllWorlds() {
@@ -1070,7 +1084,21 @@ export default function attachVoxelWorld(httpServer) {
 						if (!canModifyAt(world, player.nickname, rx, rz)) continue
 						keys.push(k)
 					}
-					for (const k of keys) world.modifiedBlocks.delete(k)
+					for (const k of keys) {
+						// If this was a claim block, also remove the claim record
+						if (world.modifiedBlocks.get(k) === CLAIM_BLOCK_ID) {
+							const parts = k.split('_')
+							const bx = parseInt(parts[0], 10), by = parseInt(parts[1], 10), bz = parseInt(parts[2], 10)
+							for (const [owner, claim] of world.claims) {
+								if (claim.blockX === bx && claim.blockY === by && claim.blockZ === bz) {
+									world.claims.delete(owner)
+									broadcastWorld(world, { type: 'claim_removed', owner: claim.owner })
+									break
+								}
+							}
+						}
+						world.modifiedBlocks.delete(k)
+					}
 					if (keys.length > 0) broadcastWorld(world, { type: 'blocks_removed', keys })
 					console.log(`[/remove] ${player.nickname} removed ${keys.length} block(s) within r=${radius}`)
 					break
@@ -1190,8 +1218,11 @@ export default function attachVoxelWorld(httpServer) {
 						console.log(`[!] world_reset rejected — ${player.nickname} is not vasek`)
 						return
 					}
+					backupWorld(world)
 					world.modifiedBlocks.clear()
+					world.claims.clear()
 					broadcastWorld(world, { type:'world_reset' })
+					broadcastWorld(world, { type:'claims_reset' })
 					console.log(`[!] "${world.name}" reset by ${player.nickname}`)
 					break
 				}
