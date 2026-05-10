@@ -66,6 +66,60 @@
     background:rgba(0,0,0,.75); color:#ff8; padding:6px 14px;
     font-size:13px; font-family:monospace; display:none; pointer-events:none;
   }
+  /* ── Claim system ── */
+  #claim-overlay {
+    position:fixed; top:12px; right:160px;
+    background:rgba(40,0,70,.82); color:#f0c030; border:1px solid #c8900a;
+    padding:4px 10px; font-size:12px; font-family:monospace;
+    display:none; pointer-events:none; z-index:200;
+  }
+  #claim-inspect-hint {
+    position:fixed; top:54%; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,.6); color:#ddd; padding:3px 10px;
+    font-size:11px; font-family:monospace; display:none; pointer-events:none;
+  }
+  #claim-modal-overlay {
+    position:fixed; inset:0; z-index:600;
+    background:rgba(0,0,0,.6); display:none;
+    align-items:center; justify-content:center;
+  }
+  #claim-modal-overlay.open { display:flex; }
+  #claim-modal {
+    background:rgba(18,8,38,.97); border:1px solid #c8900a;
+    min-width:340px; max-width:92vw; max-height:80vh;
+    color:white; font-family:monospace; overflow-y:auto;
+  }
+  #claim-modal h3 {
+    margin:0; padding:12px 16px; background:rgba(200,144,10,.18);
+    border-bottom:1px solid #c8900a; color:#f0c030; font-size:14px;
+  }
+  #claim-modal-body { padding:14px 16px; }
+  #claim-modal-body p { margin:4px 0; font-size:13px; }
+  #claim-modal-body b { color:#f0c030; }
+  .claim-section { margin-top:12px; }
+  .claim-section-title { font-size:11px; color:#aaa; text-transform:uppercase; margin-bottom:6px; }
+  .claim-friend-row {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:4px 0; font-size:13px; border-bottom:1px solid rgba(200,144,10,.2);
+  }
+  .claim-friend-row:last-child { border-bottom:none; }
+  .claim-add-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+  .claim-btn {
+    padding:5px 12px; border:1px solid #c8900a; background:rgba(200,144,10,.15);
+    color:#f0c030; cursor:pointer; font-family:monospace; font-size:12px;
+    transition:background .15s;
+  }
+  .claim-btn:hover { background:rgba(200,144,10,.35); }
+  .claim-btn.danger { border-color:#c84040; color:#f08080; background:rgba(200,60,60,.12); }
+  .claim-btn.danger:hover { background:rgba(200,60,60,.3); }
+  .claim-btn.upgrade { border-color:#40c870; color:#80f0a0; background:rgba(60,200,100,.12); }
+  .claim-btn.upgrade:hover { background:rgba(60,200,100,.28); }
+  #claim-modal-close {
+    float:right; margin:12px 14px 0 0; padding:4px 10px;
+    border:1px solid #555; background:rgba(255,255,255,.06);
+    color:#aaa; cursor:pointer; font-family:monospace; font-size:12px;
+  }
+  #claim-modal-close:hover { color:white; background:rgba(255,80,80,.2); }
 
   /* ── Game GUI (inventory / block picker / crafting) ── */
   #game-gui {
@@ -316,6 +370,16 @@
 <div id="mp-status" class="offline">OFFLINE</div>
 <div id="player-list"></div>
 <div id="toast"></div>
+<div id="claim-overlay"></div>
+<div id="claim-inspect-hint">Press F to inspect claim</div>
+
+<!-- Claim management modal -->
+<div id="claim-modal-overlay">
+  <div id="claim-modal">
+    <h3>🔒 Claim Totem <button id="claim-modal-close">✕</button></h3>
+    <div id="claim-modal-body"></div>
+  </div>
+</div>
 
 <!-- Game GUI — block picker / inventory / crafting -->
 <div id="game-gui">
@@ -820,7 +884,7 @@ window.VoxelWorld = {
 }
 
 // Core block IDs — fixed, never change
-const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDROCK:7, SAND:8, GLASS:9 }
+const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDROCK:7, SAND:8, GLASS:9, CLAIM:10 }
 
 // Which blocks are transparent (semi-transparent or see-through)
 const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
@@ -980,6 +1044,44 @@ const BLOCK_DEFS = {
 			ctx.fillStyle = 'rgba(255,255,255,0.15)'
 			ctx.fillRect(x + 1, y + 1, S - 2, 1)
 			ctx.fillRect(x + 1, y + 1, 1, S - 2)
+		},
+	},
+	[BLOCK.CLAIM]: {
+		side(ctx, x, y, S) {
+			// Deep purple base
+			ctx.fillStyle = '#2d0a4e'; ctx.fillRect(x, y, S, S)
+			// Gold border frame
+			ctx.fillStyle = '#c8900a'
+			ctx.fillRect(x, y, S, 2); ctx.fillRect(x, y + S - 2, S, 2)
+			ctx.fillRect(x, y, 2, S); ctx.fillRect(x + S - 2, y, 2, S)
+			// Inner glow border
+			ctx.fillStyle = '#f0c030'
+			ctx.fillRect(x + 2, y + 2, S - 4, 1); ctx.fillRect(x + 2, y + S - 3, S - 4, 1)
+			ctx.fillRect(x + 2, y + 2, 1, S - 4); ctx.fillRect(x + S - 3, y + 2, 1, S - 4)
+			// Lock rune
+			ctx.fillStyle = '#ffe060'
+			// lock body
+			ctx.fillRect(x + 5, y + 9, 6, 5)
+			// lock shackle
+			ctx.fillRect(x + 6, y + 7, 4, 3)
+			ctx.fillStyle = '#2d0a4e'
+			ctx.fillRect(x + 7, y + 7, 2, 2)
+			ctx.fillRect(x + 6, y + 7, 1, 1); ctx.fillRect(x + 9, y + 7, 1, 1)
+		},
+		top(ctx, x, y, S) {
+			ctx.fillStyle = '#1e0636'; ctx.fillRect(x, y, S, S)
+			ctx.fillStyle = '#c8900a'
+			ctx.fillRect(x + 1, y + 1, S - 2, S - 2)
+			ctx.fillStyle = '#1e0636'
+			ctx.fillRect(x + 2, y + 2, S - 4, S - 4)
+			ctx.fillStyle = '#f0c030'
+			ctx.fillRect(x + 4, y + 4, 2, 2)
+			ctx.fillRect(x + 10, y + 4, 2, 2)
+			ctx.fillRect(x + 4, y + 10, 2, 2)
+			ctx.fillRect(x + 10, y + 10, 2, 2)
+			ctx.fillStyle = '#ffe060'
+			ctx.fillRect(x + 7, y + 6, 2, 4)
+			ctx.fillRect(x + 6, y + 7, 4, 2)
 		},
 	},
 }
@@ -2729,6 +2831,14 @@ function mineBlock(dt) {
 	if (!result) return
 	const { face } = result
 	if (face.type === BLOCK.WATER) return
+	// Claim block can only be mined by owner or vasek
+	if (face.type === BLOCK.CLAIM) {
+		const c = [...claimsData.values()].find((cl) => cl.blockX === face.x && cl.blockY === face.y && cl.blockZ === face.z)
+		if (c && c.owner.toLowerCase() !== myNickname.toLowerCase() && myNickname.toLowerCase() !== 'vasek') {
+			showToast('Only the owner can mine a claim block.')
+			return
+		}
+	}
 
 	miningTime += dt
 	const progress = Math.min(miningTime / 0.6, 1)
@@ -2773,6 +2883,20 @@ function placeBlock() {
 		if (py <= ph || py === BEDROCK_Y || (py > ph && py <= SEA_LEVEL)) return
 	}
 	const btype = equippedBlockId() ?? BLOCK.DIRT
+	// Client-side pre-check: disallow placing inside others' claims (server also enforces)
+	if (btype !== BLOCK.CLAIM) {
+		for (const claim of claimsData.values()) {
+			const b = _claimBounds(claim)
+			if (px >= b.minX && px <= b.maxX && pz >= b.minZ && pz <= b.maxZ) {
+				if (claim.owner.toLowerCase() !== myNickname.toLowerCase() &&
+					!claim.friends.includes(myNickname.toLowerCase()) &&
+					myNickname.toLowerCase() !== 'vasek') {
+					showToast(`🔒 ${claim.owner}'s protected area.`)
+					return
+				}
+			}
+		}
+	}
 	modified.set(pk, btype)
 	rebuildChunk(Math.floor(px / CHUNK_SIZE), Math.floor(pz / CHUNK_SIZE))
 	netSendBlockUpdate(pk, btype)
@@ -3209,6 +3333,7 @@ const BLOCK_REGISTRY = [
 	{ id: BLOCK.WATER,  name: 'Water',  category: 'Natural' },
 	{ id: BLOCK.GLASS,  name: 'Glass',  category: 'Crafted' },
 	{ id: BLOCK.BEDROCK,name: 'Bedrock',category: 'Special' },
+	{ id: BLOCK.CLAIM, name: 'Claim Totem', category: 'Special' },
 ]
 
 // ── Core block registration implementation ────────────────────────────────
@@ -3253,6 +3378,194 @@ for (const pluginObj of VoxelWorld._pendingInits) {
 	VoxelWorld._callInit(pluginObj)
 }
 VoxelWorld._pendingInits = []
+
+/* ============================================================
+   CLAIM SYSTEM  — land claiming, borders, UI
+============================================================ */
+const MAX_CLAIM_SIZE = 3
+
+// Active claims received from server: owner (lowercase) → claim object
+let claimsData = new Map()
+
+// Three.js LineSegments objects for claim area borders
+const _claimBorderObjects = new Map()   // owner → THREE.LineSegments
+
+function _claimBounds(claim) {
+	const cx = Math.floor(claim.blockX / CHUNK_SIZE)
+	const cz = Math.floor(claim.blockZ / CHUNK_SIZE)
+	const r = Math.floor((claim.size - 1) / 2)
+	const minCX = cx - r, maxCX = cx + (claim.size - 1 - r)
+	const minCZ = cz - r, maxCZ = cz + (claim.size - 1 - r)
+	return {
+		minX: minCX * CHUNK_SIZE, maxX: (maxCX + 1) * CHUNK_SIZE - 1,
+		minZ: minCZ * CHUNK_SIZE, maxZ: (maxCZ + 1) * CHUNK_SIZE - 1,
+	}
+}
+
+function _claimBorderColor(claim) {
+	if (claim.owner.toLowerCase() === myNickname.toLowerCase()) return 0x00ee44
+	if (claim.friends.includes(myNickname.toLowerCase())) return 0x4488ff
+	return 0xff3333
+}
+
+function _buildClaimBorderLines(claim) {
+	const b = _claimBounds(claim)
+	const minY = 0, maxY = 80
+	const { minX, maxX, minZ, maxZ } = b
+	const x0 = minX, x1 = maxX + 1, z0 = minZ, z1 = maxZ + 1
+	// 12 edges of the bounding box (each pair = one segment)
+	const pts = [
+		x0, minY, z0, x1, minY, z0,
+		x1, minY, z0, x1, minY, z1,
+		x1, minY, z1, x0, minY, z1,
+		x0, minY, z1, x0, minY, z0,
+		x0, maxY, z0, x1, maxY, z0,
+		x1, maxY, z0, x1, maxY, z1,
+		x1, maxY, z1, x0, maxY, z1,
+		x0, maxY, z1, x0, maxY, z0,
+		x0, minY, z0, x0, maxY, z0,
+		x1, minY, z0, x1, maxY, z0,
+		x1, minY, z1, x1, maxY, z1,
+		x0, minY, z1, x0, maxY, z1,
+	]
+	const geo = new THREE.BufferGeometry()
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+	const color = _claimBorderColor(claim)
+	const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.55 })
+	return new THREE.LineSegments(geo, mat)
+}
+
+function updateClaimBorders() {
+	for (const obj of _claimBorderObjects.values()) { scene.remove(obj); obj.geometry.dispose() }
+	_claimBorderObjects.clear()
+	for (const [owner, claim] of claimsData) {
+		const lines = _buildClaimBorderLines(claim)
+		_claimBorderObjects.set(owner, lines)
+		scene.add(lines)
+	}
+}
+
+function updateClaimColors() {
+	// Recolor existing borders (called when nickname changes)
+	for (const [owner, lines] of _claimBorderObjects) {
+		const claim = claimsData.get(owner)
+		if (claim) lines.material.color.setHex(_claimBorderColor(claim))
+	}
+}
+
+function updateClaimOverlay() {
+	const px = Math.floor(player.pos.x), pz = Math.floor(player.pos.z)
+	let inside = null
+	for (const claim of claimsData.values()) {
+		const b = _claimBounds(claim)
+		if (px >= b.minX && px <= b.maxX && pz >= b.minZ && pz <= b.maxZ) { inside = claim; break }
+	}
+	const el = document.getElementById('claim-overlay')
+	if (inside && inside.owner.toLowerCase() !== myNickname.toLowerCase()) {
+		el.style.display = 'block'
+		el.textContent = `🔒 ${inside.owner}'s Property`
+	} else {
+		el.style.display = 'none'
+	}
+}
+
+// ── Claim UI (modal) ─────────────────────────────────────────────────────
+let _claimUIOpen = false
+
+function openClaimUI(claim) {
+	const isOwner = claim.owner.toLowerCase() === myNickname.toLowerCase()
+	const isVasek = myNickname.toLowerCase() === 'vasek'
+	const body = document.getElementById('claim-modal-body')
+	body.innerHTML = ''
+
+	const addP = (html) => { const p = document.createElement('p'); p.innerHTML = html; body.appendChild(p) }
+	const addSection = (title) => {
+		const d = document.createElement('div'); d.className = 'claim-section'
+		const t = document.createElement('div'); t.className = 'claim-section-title'; t.textContent = title
+		d.appendChild(t); body.appendChild(d); return d
+	}
+	const addBtn = (label, cls, fn) => {
+		const b = document.createElement('button'); b.className = `claim-btn ${cls}`
+		b.textContent = label; b.onclick = fn; return b
+	}
+
+	addP(`Owner: <b>${claim.owner}</b>`)
+	addP(`Area: <b>${claim.size}×${claim.size} chunks</b> (${claim.size * 16}×${claim.size * 16} blocks)`)
+
+	// Friends list
+	const friendsSec = addSection('Friends')
+	if (claim.friends.length === 0) {
+		const none = document.createElement('span'); none.style.color = '#888'; none.textContent = 'none'
+		friendsSec.appendChild(none)
+	} else {
+		for (const f of claim.friends) {
+			const row = document.createElement('div'); row.className = 'claim-friend-row'
+			row.innerHTML = `<span>${f}</span>`
+			if (isOwner) {
+				const btn = addBtn('Remove', 'danger', () => {
+					netSend({ type: 'claim_remove_friend', nickname: f })
+				})
+				row.appendChild(btn)
+			}
+			friendsSec.appendChild(row)
+		}
+	}
+
+	if (isOwner) {
+		// Add friend buttons for currently online players
+		const online = [...remotePlayers.values()]
+			.map((rp) => rp.data.nickname)
+			.filter((n) => !claim.friends.includes(n.toLowerCase()) && n.toLowerCase() !== myNickname.toLowerCase())
+		if (online.length > 0) {
+			const addSec = addSection('Add Friend')
+			const row = document.createElement('div'); row.className = 'claim-add-row'
+			for (const n of online) {
+				row.appendChild(addBtn(n, '', () => netSend({ type: 'claim_add_friend', nickname: n })))
+			}
+			addSec.appendChild(row)
+		}
+
+		// Upgrade button
+		const upgSec = addSection('Upgrade')
+		if (claim.size < MAX_CLAIM_SIZE) {
+			const newSize = claim.size + 1
+			upgSec.appendChild(addBtn(
+				`Expand to ${newSize}×${newSize} chunks (${newSize * 16}×${newSize * 16} blocks)`,
+				'upgrade', () => netSend({ type: 'claim_upgrade' }),
+			))
+		} else {
+			const note = document.createElement('span'); note.style.color = '#888'
+			note.textContent = 'Maximum size reached (3×3 chunks)'
+			upgSec.appendChild(note)
+		}
+	}
+
+	if (isOwner || isVasek) {
+		const actSec = addSection('Actions')
+		actSec.appendChild(addBtn('Mine Claim Block', 'danger', () => {
+			closeClaimUI()
+			// Force-set the claim block position to AIR locally and send to server
+			const k = `${claim.blockX}_${claim.blockY}_${claim.blockZ}`
+			modified.set(k, BLOCK.AIR)
+			rebuildChunk(Math.floor(claim.blockX / CHUNK_SIZE), Math.floor(claim.blockZ / CHUNK_SIZE))
+			netSendBlockUpdate(k, BLOCK.AIR)
+		}))
+	}
+
+	document.getElementById('claim-modal-overlay').classList.add('open')
+	_claimUIOpen = true
+}
+
+function closeClaimUI() {
+	document.getElementById('claim-modal-overlay').classList.remove('open')
+	_claimUIOpen = false
+	if (!('ontouchstart' in window)) renderer.domElement.requestPointerLock()
+}
+
+document.getElementById('claim-modal-close').addEventListener('click', closeClaimUI)
+document.getElementById('claim-modal-overlay').addEventListener('click', (e) => {
+	if (e.target === document.getElementById('claim-modal-overlay')) closeClaimUI()
+})
 
 /* ============================================================
    GAME GUI  — tabbed modal panel (block picker / inventory / crafting)
@@ -3363,6 +3676,15 @@ addEventListener('keydown', (e) => {
 		guiOpen ? closeGui() : openGui()
 	}
 	if (e.code === 'Escape' && guiOpen) { e.preventDefault(); closeGui() }
+	if (e.code === 'Escape' && _claimUIOpen) { e.preventDefault(); closeClaimUI() }
+	// F — inspect claim block you're looking at
+	if (e.code === 'KeyF' && document.pointerLockElement === renderer.domElement) {
+		if (currentTarget?.face?.type === BLOCK.CLAIM) {
+			const { x, y, z } = currentTarget.face
+			const c = [...claimsData.values()].find((cl) => cl.blockX === x && cl.blockY === y && cl.blockZ === z)
+			if (c) { document.exitPointerLock(); openClaimUI(c) }
+		}
+	}
 })
 
 // ── Block Picker tab ──────────────────────────────────────────────────────
@@ -3540,8 +3862,13 @@ function handleCommand(raw) {
 	}
 	if (v.startsWith('/nick ')) {
 		myNickname = v.slice(6).trim().slice(0, 20)
+		updateClaimColors()
 		netSendNickname(myNickname)
 		showToast(`Nickname set to "${myNickname}"`)
+		return
+	}
+	if (v === '/plot') {
+		netSend({ type: 'plot_tp' })
 		return
 	}
 	if (v === '/creative') {
@@ -3669,6 +3996,10 @@ function handleServerMessage(msg) {
 			}
 			for (const p of msg.players) addRemotePlayer(p)
 			if (msg.mobs) for (const m of msg.mobs) addMob(m)
+			// Load claims
+			claimsData.clear()
+			for (const c of msg.claims || []) claimsData.set(c.owner.toLowerCase(), c)
+			updateClaimBorders()
 			updatePlayerList()
 			// Tell the server about every mob type plugins have registered so
 			// far. Done here (not on socket open) because the server only
@@ -3806,6 +4137,37 @@ function handleServerMessage(msg) {
 					addChatMessage('', `💀 ${name} was killed by ${msg.killerName}`, true)
 				}
 			}
+			break
+		}
+		case 'claim_added': {
+			claimsData.set(msg.claim.owner.toLowerCase(), msg.claim)
+			updateClaimBorders()
+			break
+		}
+		case 'claim_removed': {
+			claimsData.delete(msg.owner.toLowerCase())
+			updateClaimBorders()
+			break
+		}
+		case 'claim_updated': {
+			claimsData.set(msg.claim.owner.toLowerCase(), msg.claim)
+			updateClaimBorders()
+			// Refresh modal if it is open and showing this claim
+			if (_claimUIOpen) {
+				const modalTitle = document.querySelector('#claim-modal h3')
+				if (modalTitle) openClaimUI(msg.claim)
+			}
+			break
+		}
+		case 'plot_tp': {
+			player.pos.set(msg.x, msg.y, msg.z)
+			player.vel.set(0, 0, 0)
+			player.onGround = false
+			showToast('Teleported to plot!')
+			break
+		}
+		case 'claim_error': {
+			showToast(msg.text)
 			break
 		}
 		case 'chat': {
@@ -4523,6 +4885,11 @@ function animate() {
 	if (mining) mineBlock(dt)
 
 	tickHandModel(dt)
+
+	// Claim system per-frame updates
+	updateClaimOverlay()
+	const _hintEl = document.getElementById('claim-inspect-hint')
+	if (_hintEl) _hintEl.style.display = (currentTarget?.face?.type === BLOCK.CLAIM) ? 'block' : 'none'
 
 	netSendMove(player.pos.x, player.pos.y, player.pos.z, yawObject.rotation.y, pitch)
 	tickRemotePlayers(dt)

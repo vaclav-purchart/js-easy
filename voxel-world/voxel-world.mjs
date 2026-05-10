@@ -21,6 +21,7 @@ function saveWorld(world) {
 		world: world.name,
 		seed:  world.seed,
 		modified: [...world.modifiedBlocks.entries()],
+		claims: [...world.claims.values()].map(serializeClaim),
 	}
 	writeFileSync(filePath, JSON.stringify(data), 'utf8')
 	console.log(`[voxel-world] Saved world "${world.name}"  blocks=${world.modifiedBlocks.size}  → ${filePath}`)
@@ -47,7 +48,15 @@ function restoreAllWorlds() {
 			const world = getWorld(name)
 			if (typeof data.seed === 'number') world.seed = data.seed
 			for (const [k, v] of data.modified || []) world.modifiedBlocks.set(k, v)
-			console.log(`[voxel-world] Restored world "${name}"  blocks=${world.modifiedBlocks.size}`)
+			for (const c of data.claims || []) {
+				if (!c.owner || typeof c.blockX !== 'number') continue
+				world.claims.set(c.owner.toLowerCase(), {
+					owner: c.owner, blockX: c.blockX, blockY: c.blockY, blockZ: c.blockZ,
+					size: Math.min(MAX_CLAIM_SIZE, Math.max(1, c.size || 1)),
+					friends: Array.isArray(c.friends) ? c.friends : [],
+				})
+			}
+			console.log(`[voxel-world] Restored world "${name}"  blocks=${world.modifiedBlocks.size}  claims=${world.claims.size}`)
 		} catch (err) {
 			console.error(`[voxel-world] Failed to restore "${file}":`, err.message)
 		}
@@ -79,6 +88,7 @@ function getWorld(name) {
 			name,
 			seed: Math.floor(Math.random() * 1_000_000),
 			modifiedBlocks: new Map(),
+			claims: new Map(),   // owner (lowercase) → claim object
 			players: new Map(),
 			nextId: 1,
 			// Mobs (chickens, future cows/pigs/…) are server-authoritative but
@@ -158,6 +168,14 @@ function loadWorldFile(filePath, worldNameOverride, range) {
 			}
 			world.modifiedBlocks.set(k, v)
 			loaded++
+		}
+		for (const c of data.claims || []) {
+			if (!c.owner || typeof c.blockX !== 'number') continue
+			world.claims.set(c.owner.toLowerCase(), {
+				owner: c.owner, blockX: c.blockX, blockY: c.blockY, blockZ: c.blockZ,
+				size: Math.min(MAX_CLAIM_SIZE, Math.max(1, c.size || 1)),
+				friends: Array.isArray(c.friends) ? c.friends : [],
+			})
 		}
 
 		const rangeStr = range
@@ -257,6 +275,61 @@ function getGroundY(world, x, z) {
 		if (isSolidAt(world, x, y, z)) return y + 1
 	}
 	return 1
+}
+
+// ── Claim system ──────────────────────────────────────────────────────────
+const CLAIM_BLOCK_ID = 10
+const MAX_CLAIM_SIZE = 3   // max 3×3 chunks
+
+function claimBounds(claim) {
+	const cx = Math.floor(claim.blockX / CHUNK_SIZE)
+	const cz = Math.floor(claim.blockZ / CHUNK_SIZE)
+	// Center the area: odd sizes are symmetrical, even sizes grow right/down
+	const r = Math.floor((claim.size - 1) / 2)
+	const minCX = cx - r,  maxCX = cx + (claim.size - 1 - r)
+	const minCZ = cz - r,  maxCZ = cz + (claim.size - 1 - r)
+	return {
+		minX: minCX * CHUNK_SIZE,
+		maxX: (maxCX + 1) * CHUNK_SIZE - 1,
+		minZ: minCZ * CHUNK_SIZE,
+		maxZ: (maxCZ + 1) * CHUNK_SIZE - 1,
+	}
+}
+
+function isInsideClaim(claim, x, z) {
+	const b = claimBounds(claim)
+	return x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ
+}
+
+function getClaimAt(world, x, z) {
+	for (const claim of world.claims.values()) {
+		if (isInsideClaim(claim, x, z)) return claim
+	}
+	return null
+}
+
+function claimsOverlap(c1, c2) {
+	const b1 = claimBounds(c1), b2 = claimBounds(c2)
+	return !(b1.maxX < b2.minX || b1.minX > b2.maxX || b1.maxZ < b2.minZ || b1.minZ > b2.maxZ)
+}
+
+// Returns true if `nickname` is allowed to modify blocks at (x, z).
+function canModifyAt(world, nickname, x, z) {
+	if (nickname.toLowerCase() === 'vasek') return true
+	const claim = getClaimAt(world, x, z)
+	if (!claim) return true
+	if (claim.owner.toLowerCase() === nickname.toLowerCase()) return true
+	if (claim.friends.includes(nickname.toLowerCase())) return true
+	return false
+}
+
+function serializeClaim(claim) {
+	return {
+		owner: claim.owner,
+		blockX: claim.blockX, blockY: claim.blockY, blockZ: claim.blockZ,
+		size: claim.size,
+		friends: [...claim.friends],
+	}
 }
 
 // Sanitise a client-supplied damage value. Clients send the damage they want
@@ -814,6 +887,7 @@ export default function attachVoxelWorld(httpServer) {
 						mobs:    [...world.mobs.values()]
 							.filter((m) => player.knownMobTypes.has(m.type))
 							.map(serializeMob),
+						claims: [...world.claims.values()].map(serializeClaim),
 					})
 					broadcastWorld(world, { type:'player_join', player:serializePlayer(player) }, id)
 					console.log(`[+] "${nickname}" -> "${worldName}" (${id})  online=${world.players.size}`)
@@ -990,9 +1064,10 @@ export default function attachVoxelWorld(httpServer) {
 					for (const [k, v] of world.modifiedBlocks) {
 						if (blockId !== null && v !== blockId) continue
 						const parts = k.split('_')
-						const dx = parseInt(parts[0], 10) - px
-						const dz = parseInt(parts[2], 10) - pz
+						const rx = parseInt(parts[0], 10), rz = parseInt(parts[2], 10)
+						const dx = rx - px, dz = rz - pz
 						if (dx * dx + dz * dz > r2) continue
+						if (!canModifyAt(world, player.nickname, rx, rz)) continue
 						keys.push(k)
 					}
 					for (const k of keys) world.modifiedBlocks.delete(k)
@@ -1002,19 +1077,93 @@ export default function attachVoxelWorld(httpServer) {
 				}
 				case 'block_update': {
 					if (!player) return
-					world.modifiedBlocks.set(msg.k, msg.v)
-					broadcastWorld(world, { type:'block_update', k:msg.k, v:msg.v }, player.id)
+					const { k: bk, v: bv } = msg
+					if (typeof bk !== 'string' || typeof bv !== 'number') return
+					const bparts = bk.split('_')
+					if (bparts.length !== 3) return
+					const bx = parseInt(bparts[0], 10), by = parseInt(bparts[1], 10), bz = parseInt(bparts[2], 10)
+
+					// ── Placing a claim block ─────────────────────────────────────
+					if (bv === CLAIM_BLOCK_ID) {
+						if (world.claims.has(player.nickname.toLowerCase())) {
+							send(ws, { type: 'claim_error', text: 'You already have a claim block.' })
+							send(ws, { type: 'block_update', k: bk, v: BLOCK_AIR })
+							return
+						}
+						const newClaim = { owner: player.nickname, blockX: bx, blockY: by, blockZ: bz, size: 1, friends: [] }
+						for (const existing of world.claims.values()) {
+							if (claimsOverlap(newClaim, existing)) {
+								send(ws, { type: 'claim_error', text: `This area overlaps with ${existing.owner}'s claim.` })
+								send(ws, { type: 'block_update', k: bk, v: BLOCK_AIR })
+								return
+							}
+						}
+						if (!canModifyAt(world, player.nickname, bx, bz)) {
+							send(ws, { type: 'claim_error', text: 'You cannot place a claim in a protected area.' })
+							send(ws, { type: 'block_update', k: bk, v: BLOCK_AIR })
+							return
+						}
+						world.claims.set(player.nickname.toLowerCase(), newClaim)
+						world.modifiedBlocks.set(bk, bv)
+						broadcastWorld(world, { type: 'block_update', k: bk, v: bv }, player.id)
+						broadcastWorld(world, { type: 'claim_added', claim: serializeClaim(newClaim) })
+						send(ws, { type: 'claim_added', claim: serializeClaim(newClaim) })
+						console.log(`[claim] "${player.nickname}" placed claim @ ${bx},${by},${bz}`)
+						return
+					}
+
+					// ── Mining a claim block ──────────────────────────────────────
+					if (bv === BLOCK_AIR && world.modifiedBlocks.get(bk) === CLAIM_BLOCK_ID) {
+						const claimBlock = [...world.claims.values()].find(
+							(c) => c.blockX === bx && c.blockY === by && c.blockZ === bz)
+						if (claimBlock) {
+							const isOwner = claimBlock.owner.toLowerCase() === player.nickname.toLowerCase()
+							const isVasek = player.nickname.toLowerCase() === 'vasek'
+							if (!isOwner && !isVasek) {
+								send(ws, { type: 'claim_error', text: 'Only the owner can mine a claim block.' })
+								send(ws, { type: 'block_update', k: bk, v: CLAIM_BLOCK_ID })
+								return
+							}
+							world.claims.delete(claimBlock.owner.toLowerCase())
+							broadcastWorld(world, { type: 'claim_removed', owner: claimBlock.owner })
+							console.log(`[claim] "${player.nickname}" removed "${claimBlock.owner}"'s claim`)
+						}
+					}
+
+					// ── Normal block update — check area permission ───────────────
+					if (!canModifyAt(world, player.nickname, bx, bz)) {
+						send(ws, { type: 'claim_error', text: 'This area is protected.' })
+						// Restore the real block value so the client reverts
+						send(ws, { type: 'block_update', k: bk, v: world.modifiedBlocks.get(bk) ?? BLOCK_AIR })
+						return
+					}
+
+					world.modifiedBlocks.set(bk, bv)
+					broadcastWorld(world, { type:'block_update', k:bk, v:bv }, player.id)
 					break
 				}
 				case 'set_blocks': {
 					if (!player) return
 					if (!Array.isArray(msg.blocks)) return
 					const entries = msg.blocks.slice(0, 1024)
+					const allowed = [], reverts = []
 					for (const [k, v] of entries) {
 						if (typeof k !== 'string' || typeof v !== 'number') continue
-						world.modifiedBlocks.set(k, v)
+						const parts = k.split('_')
+						const ex = parseInt(parts[0], 10), ez = parseInt(parts[2], 10)
+						if (canModifyAt(world, player.nickname, ex, ez)) {
+							world.modifiedBlocks.set(k, v)
+							allowed.push([k, v])
+						} else {
+							// Send the original value back so the client reverts
+							reverts.push([k, world.modifiedBlocks.get(k) ?? BLOCK_AIR])
+						}
 					}
-					if (entries.length > 0) broadcastWorld(world, { type:'blocks_set', blocks:entries }, player.id)
+					if (allowed.length > 0) broadcastWorld(world, { type:'blocks_set', blocks:allowed }, player.id)
+					if (reverts.length > 0) {
+						send(ws, { type:'blocks_set', blocks:reverts })
+						send(ws, { type:'claim_error', text:'Some blocks are in a protected area.' })
+					}
 					break
 				}
 				case 'tool_visual': {
@@ -1044,6 +1193,73 @@ export default function attachVoxelWorld(httpServer) {
 					world.modifiedBlocks.clear()
 					broadcastWorld(world, { type:'world_reset' })
 					console.log(`[!] "${world.name}" reset by ${player.nickname}`)
+					break
+				}
+				case 'claim_add_friend': {
+					if (!player) return
+					const claim = world.claims.get(player.nickname.toLowerCase())
+					if (!claim) { send(ws, { type: 'claim_error', text: 'You have no claim.' }); return }
+					const friendName = String(msg.nickname || '').trim().slice(0, 20).toLowerCase()
+					if (!friendName || friendName === player.nickname.toLowerCase()) return
+					if (!claim.friends.includes(friendName)) {
+						claim.friends.push(friendName)
+						const sc = serializeClaim(claim)
+						broadcastWorld(world, { type: 'claim_updated', claim: sc })
+						send(ws, { type: 'claim_updated', claim: sc })
+					}
+					break
+				}
+				case 'claim_remove_friend': {
+					if (!player) return
+					const claim = world.claims.get(player.nickname.toLowerCase())
+					if (!claim) return
+					const friendName = String(msg.nickname || '').trim().slice(0, 20).toLowerCase()
+					claim.friends = claim.friends.filter((f) => f !== friendName)
+					const sc = serializeClaim(claim)
+					broadcastWorld(world, { type: 'claim_updated', claim: sc })
+					send(ws, { type: 'claim_updated', claim: sc })
+					break
+				}
+				case 'claim_upgrade': {
+					if (!player) return
+					const claim = world.claims.get(player.nickname.toLowerCase())
+					if (!claim) { send(ws, { type: 'claim_error', text: 'You have no claim.' }); return }
+					if (claim.size >= MAX_CLAIM_SIZE) {
+						send(ws, { type: 'claim_error', text: 'Claim is already at maximum size (3×3 chunks).' })
+						return
+					}
+					const upgraded = { ...claim, size: claim.size + 1 }
+					for (const other of world.claims.values()) {
+						if (other.owner === claim.owner) continue
+						if (claimsOverlap(upgraded, other)) {
+							send(ws, { type: 'claim_error', text: `Upgrade would overlap with ${other.owner}'s claim.` })
+							return
+						}
+					}
+					claim.size = upgraded.size
+					const sc = serializeClaim(claim)
+					broadcastWorld(world, { type: 'claim_updated', claim: sc })
+					send(ws, { type: 'claim_updated', claim: sc })
+					console.log(`[claim] "${player.nickname}" upgraded claim to size ${claim.size}`)
+					break
+				}
+				case 'plot_tp': {
+					if (!player) return
+					// Own claim first, then first friendly claim
+					const own = world.claims.get(player.nickname.toLowerCase())
+					if (own) {
+						const ty = getGroundY(world, own.blockX, own.blockZ)
+						send(ws, { type: 'plot_tp', x: own.blockX, y: ty, z: own.blockZ })
+						return
+					}
+					for (const claim of world.claims.values()) {
+						if (claim.friends.includes(player.nickname.toLowerCase())) {
+							const ty = getGroundY(world, claim.blockX, claim.blockZ)
+							send(ws, { type: 'plot_tp', x: claim.blockX, y: ty, z: claim.blockZ })
+							return
+						}
+					}
+					send(ws, { type: 'claim_error', text: 'You have no claim or friendly claim to teleport to.' })
 					break
 				}
 				case 'chat': {
