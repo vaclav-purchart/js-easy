@@ -12,6 +12,7 @@ import { join } from 'path'
 const WORLDS_DIR = './worlds'
 const PLUGINS_DIR = './saves'
 const PLUGINS_URL_BASE = 'https://purchart.eu/voxel-world'   // adjust to your domain
+const MAX_CLAIM_SIZE = 3
 
 // ── Persist a single world to disk ────────────────────────────────────────
 function saveWorld(world) {
@@ -293,7 +294,6 @@ function getGroundY(world, x, z) {
 
 // ── Claim system ──────────────────────────────────────────────────────────
 const CLAIM_BLOCK_ID = 10
-const MAX_CLAIM_SIZE = 3   // max 3×3 chunks
 
 function claimBounds(claim) {
 	const cx = Math.floor(claim.blockX / CHUNK_SIZE)
