@@ -2841,7 +2841,22 @@ function mineBlock(dt) {
 	if (!result) return
 	const { face } = result
 	if (face.type === BLOCK.WATER) return
-	// Claim block can only be mined by owner or vasek
+	// Block protection: check claim ownership before mining anything
+	if (face.type >= 0) {
+		for (const claim of claimsData.values()) {
+			const b = _claimBounds(claim)
+			if (face.x >= b.minX && face.x <= b.maxX && face.z >= b.minZ && face.z <= b.maxZ) {
+				if (claim.owner.toLowerCase() !== myNickname.toLowerCase() &&
+					!claim.friends.includes(myNickname.toLowerCase()) &&
+					myNickname.toLowerCase() !== 'vasek') {
+					showToast(`🔒 ${claim.owner}'s protected area.`)
+					return
+				}
+				break
+			}
+		}
+	}
+	// Claim block itself can only be mined by owner or vasek (extra guard)
 	if (face.type === BLOCK.CLAIM) {
 		const c = [...claimsData.values()].find((cl) => cl.blockX === face.x && cl.blockY === face.y && cl.blockZ === face.z)
 		if (c && c.owner.toLowerCase() !== myNickname.toLowerCase() && myNickname.toLowerCase() !== 'vasek') {

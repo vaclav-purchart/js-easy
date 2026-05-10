@@ -1280,13 +1280,13 @@ export default function attachVoxelWorld(httpServer) {
 					const own = world.claims.get(player.nickname.toLowerCase())
 					if (own) {
 						const ty = getGroundY(world, own.blockX, own.blockZ)
-						send(ws, { type: 'plot_tp', x: own.blockX, y: ty, z: own.blockZ })
+						send(ws, { type: 'plot_tp', x: own.blockX, y: ty + 2, z: own.blockZ })
 						return
 					}
 					for (const claim of world.claims.values()) {
 						if (claim.friends.includes(player.nickname.toLowerCase())) {
 							const ty = getGroundY(world, claim.blockX, claim.blockZ)
-							send(ws, { type: 'plot_tp', x: claim.blockX, y: ty, z: claim.blockZ })
+							send(ws, { type: 'plot_tp', x: claim.blockX, y: ty + 2, z: claim.blockZ })
 							return
 						}
 					}
