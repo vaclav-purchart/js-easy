@@ -15,7 +15,7 @@ VoxelWorld.registerPlugin('Wolf', {
 			maxHp:           18,
 			damage:          8,        // legacy / fallback when attackDamage is unset
 			speed:           2.6,
-			regionSize:      8,        // wolves are rarer than chickens/bunnies
+			regionSize:      12,       // wolves are rarer than chickens/bunnies
 			countPerRegion:  1,
 			spawnMinRadius:  16,
 			spawnRadius:     40,

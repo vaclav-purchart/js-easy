@@ -3159,12 +3159,29 @@ function makeToolUseCtx() {
 		setBlocks(entries) {
 			const affectedChunks = new Set()
 			const wire = []
+			let blocked = false
 			for (const [x, y, z, v] of entries) {
+				let denied = false
+				for (const claim of claimsData.values()) {
+					const b = _claimBounds(claim)
+					if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) {
+						if (claim.owner.toLowerCase() !== myNickname.toLowerCase() &&
+							!claim.friends.includes(myNickname.toLowerCase()) &&
+							myNickname.toLowerCase() !== 'vasek') {
+							denied = true
+							blocked = true
+						}
+						break
+					}
+				}
+				if (denied) continue
 				const k = `${x}_${y}_${z}`
 				modified.set(k, v)
 				wire.push([k, v])
 				affectedChunks.add(`${Math.floor(x / CHUNK_SIZE)}_${Math.floor(z / CHUNK_SIZE)}`)
 			}
+			if (blocked) showToast(`🔒 Some blocks are in a protected area.`)
+			if (wire.length === 0) return
 			for (const ck of affectedChunks) {
 				const [cx2, cz2] = ck.split('_').map(Number)
 				rebuildChunk(cx2, cz2)
