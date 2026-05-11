@@ -20,10 +20,10 @@
 VoxelWorld.registerPlugin('Trees', {
 	init(api) {
 		api.registerTerrainBlock(function treeBlockAt(x, y, z) {
-			const TREE_RARITY = 40  // ~1 tree per 40 surface columns
+			const TREE_RARITY = 1500  // ~1 tree per 1500 surface columns
 
 			// A tree rooted at (tx, tz) can have canopy reaching up to 2 blocks
-			// away in X and Z, so we must check that neighbourhood for each query.
+			// away in X and Z, so we must check that neighborhood for each query.
 			for (let tx = x - 2; tx <= x + 2; tx++) {
 				for (let tz = z - 2; tz <= z + 2; tz++) {
 					const h = Math.abs(Math.sin(tx * 213.7 + tz * 157.3 + SEED * 0.0017) * 43758.5453) % 1
@@ -52,6 +52,6 @@ VoxelWorld.registerPlugin('Trees', {
 				}
 			}
 			return null
-		})
+		}, 32)
 	},
 })

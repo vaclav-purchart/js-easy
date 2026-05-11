@@ -954,13 +954,29 @@ window.VoxelWorld = {
 			 *   terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, SEED
 			 * All five are available in both the main-thread and worker environments.
 			 */
-			registerTerrainBlock(fn) {
+			registerTerrainBlock(fn, maxExtraHeight = 0) {
 				if (typeof fn !== 'function') {
 					console.warn('[plugin] registerTerrainBlock: argument must be a function')
 					return
 				}
-				_pluginTerrainLayers.push(fn)
-				_pluginTerrainLayerSources.push(fn.toString())
+				// Plugin files are separate <script> tags and cannot close over engine-scope
+				// `let`/`const` variables (SEED, BLOCK, terrainHeight, etc.).  Mirror the
+				// worker approach: re-evaluate via new Function to inject them at call time,
+				// caching the result until SEED changes.
+				const src = fn.toString()
+				let _wrapSeed = null
+				let _wrapFn = null
+				function boundLayer(x, y, z) {
+					if (_wrapSeed !== SEED) {
+						_wrapSeed = SEED
+						const mk = new Function('terrainHeight', 'BLOCK', 'SEA_LEVEL', 'BEDROCK_Y', 'SEED', 'return (' + src + ')')
+						_wrapFn = mk(terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, SEED)
+					}
+					return _wrapFn(x, y, z)
+				}
+				_pluginTerrainLayers.push(boundLayer)
+				_pluginTerrainLayerSources.push(src)
+				_pluginTerrainLayerMaxExtra = Math.max(_pluginTerrainLayerMaxExtra, maxExtraHeight)
 				for (const [k] of chunks) {
 					const [cx2, cz2] = k.split('_').map(Number)
 					rebuildChunk(cx2, cz2)
@@ -1441,6 +1457,7 @@ const modified = new Map()
 // can inject trees, ores, structures, etc. without touching the modified map.
 const _pluginTerrainLayers = []        // main-thread functions
 const _pluginTerrainLayerSources = []  // .toString() sources sent to workers
+let _pluginTerrainLayerMaxExtra = 0    // max extra Y to scan above natural terrain
 
 function getBlock(x, y, z) {
 	const k = `${x}_${y}_${z}`
@@ -1786,7 +1803,7 @@ function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, s
 
 function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 	CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS, ATLAS_ROWS,
-	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY, blockMap, transparentIds, terrainLayerSources) {
+	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY, blockMap, transparentIds, terrainLayerSources, terrainLayerMaxExtra) {
 
 	const { BLOCK, TRANSPARENT, blockAtlasRow, INV_W, INV_H, FACES } =
 		_workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
@@ -1827,6 +1844,7 @@ function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 				const parts = mk.split('_')
 				if (+parts[0] === wx && +parts[2] === wz) maxY = Math.max(maxY, +parts[1])
 			}
+			if (terrainLayerMaxExtra) maxY += terrainLayerMaxExtra
 
 			for (let y = BEDROCK_Y; y <= maxY; y++) {
 				const t = getBlock(wx, y, wz)
@@ -1892,7 +1910,7 @@ function _workerMain() {
 			d.cx, d.cz, d.seed, d.plantCount, d.modifiedEntries,
 			d.CHUNK_SIZE, d.SEA_LEVEL, d.BEDROCK_Y, d.TILE_SIZE, d.ATLAS_COLS,
 			d.ATLAS_ROWS, d.ALL_BLOCK_IDS, d.PLANT_TILE, d.PLANT_RARITY,
-			d.blockMap, d.transparentIds, d.terrainLayerSources,
+			d.blockMap, d.transparentIds, d.terrainLayerSources, d.terrainLayerMaxExtra,
 		)
 		const { pos, uv, norm, idx, pickFaces } = result
 		const bufs = [], typed = { pos:[], uv:[], norm:[], idx:[] }
@@ -1989,6 +2007,7 @@ function _enqueueChunk(cx, cz) {
 			blockMap: { ...BLOCK },
 			transparentIds: [...TRANSPARENT],
 			terrainLayerSources: [..._pluginTerrainLayerSources],
+			terrainLayerMaxExtra: _pluginTerrainLayerMaxExtra,
 			_bufs: [],
 		}
 		_workerQueue.push(job)
