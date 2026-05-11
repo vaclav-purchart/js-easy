@@ -1963,9 +1963,23 @@ function _enqueueChunk(cx, cz) {
 		const id = ++_jobId
 		_chunkInFlight.set(chunkKey(cx, cz), id)
 		_pendingJobs.set(id, resolve)
+		// Only send blocks within this chunk + 1-block halo (needed for face visibility
+		// at chunk edges). Sending the full world map scales O(world_blocks) per rebuild.
+		const _x0 = cx * CHUNK_SIZE - 1, _x1 = (cx + 1) * CHUNK_SIZE
+		const _z0 = cz * CHUNK_SIZE - 1, _z1 = (cz + 1) * CHUNK_SIZE
+		const modifiedEntries = []
+		for (const [k, v] of modified) {
+			const j = k.lastIndexOf('_')
+			const bz = +k.slice(j + 1)
+			if (bz < _z0 || bz > _z1) continue
+			const bx = k.charCodeAt(0) === 112  // 'p' → "plant_x_z"
+				? +k.slice(6, k.indexOf('_', 6))
+				: +k.slice(0, k.indexOf('_'))
+			if (bx >= _x0 && bx <= _x1) modifiedEntries.push([k, v])
+		}
 		const job = {
 			id, cx, cz, seed: SEED, plantCount: PLANT_DEFS.length,
-			modifiedEntries: [...modified.entries()],
+			modifiedEntries,
 			// Pass constants so the worker doesn't need to import anything
 			CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
 			ATLAS_ROWS: ATLAS_ROWS_MAX,   // must match canvas height, not block count
@@ -2057,6 +2071,19 @@ function rebuildChunk(cx, cz) {
 
 function generateChunk(cx, cz) { rebuildChunk(cx, cz) }
 
+// Rebuild the chunk that contains world-block (bx, bz), plus any adjacent
+// chunks that share a face with it (needed when bx/bz sits on a chunk edge).
+function rebuildChunkAt(bx, bz) {
+	const cx = Math.floor(bx / CHUNK_SIZE)
+	const cz = Math.floor(bz / CHUNK_SIZE)
+	rebuildChunk(cx, cz)
+	const lx = bx - cx * CHUNK_SIZE
+	const lz = bz - cz * CHUNK_SIZE
+	if (lx === 0) rebuildChunk(cx - 1, cz)
+	if (lx === CHUNK_SIZE - 1) rebuildChunk(cx + 1, cz)
+	if (lz === 0) rebuildChunk(cx, cz - 1)
+	if (lz === CHUNK_SIZE - 1) rebuildChunk(cx, cz + 1)
+}
 
 
 /* ============================================================
@@ -2991,7 +3018,7 @@ function mineBlock(dt) {
 			// We store a special key "plant_x_z" in modified to suppress it.
 			const pk = `plant_${x}_${z}`
 			modified.set(pk, BLOCK.AIR)
-			rebuildChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE))
+			rebuildChunkAt(x, z)
 			netSendBlockUpdate(pk, BLOCK.AIR)
 		} else {
 			const k = `${x}_${y}_${z}`
@@ -2999,7 +3026,7 @@ function mineBlock(dt) {
 			// Also remove any plant sitting on top of this block
 			const plantKey = `plant_${x}_${z}`
 			if (plantAt(x, z) >= 0) modified.set(plantKey, BLOCK.AIR)
-			rebuildChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE))
+			rebuildChunkAt(x, z)
 			netSendBlockUpdate(k, BLOCK.AIR)
 		}
 	}
@@ -3034,7 +3061,7 @@ function placeBlock() {
 		}
 	}
 	modified.set(pk, btype)
-	rebuildChunk(Math.floor(px / CHUNK_SIZE), Math.floor(pz / CHUNK_SIZE))
+	rebuildChunkAt(px, pz)
 	netSendBlockUpdate(pk, btype)
 }
 
@@ -3264,7 +3291,7 @@ function makeToolUseCtx() {
 		setBlock(x, y, z, v) {
 			const k = `${x}_${y}_${z}`
 			modified.set(k, v)
-			rebuildChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE))
+			rebuildChunkAt(x, z)
 			netSendBlockUpdate(k, v)
 		},
 		setBlocks(entries) {
@@ -4246,8 +4273,12 @@ function handleServerMessage(msg) {
 		}
 		case 'block_update': {
 			modified.set(msg.k, msg.v)
-			const [bx,, bz] = msg.k.split('_').map(Number)
-			rebuildChunk(Math.floor(bx / CHUNK_SIZE), Math.floor(bz / CHUNK_SIZE))
+			const _j = msg.k.lastIndexOf('_')
+			const _bz = +msg.k.slice(_j + 1)
+			const _bx = msg.k.charCodeAt(0) === 112  // 'p' → "plant_x_z"
+				? +msg.k.slice(6, msg.k.indexOf('_', 6))
+				: +msg.k.slice(0, msg.k.indexOf('_'))
+			rebuildChunkAt(_bx, _bz)
 			break
 		}
 		case 'blocks_removed': {
