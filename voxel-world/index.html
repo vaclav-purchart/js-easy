@@ -877,6 +877,97 @@ window.VoxelWorld = {
 				}
 			},
 
+			/**
+			 * Register a new plant type — a decorative cross-quad sprite that spawns
+			 * deterministically on the terrain surface (above sea level, not in water),
+			 * using the same seeded placement system as the built-in flower.
+			 *
+			 * Handles all internal atlas-canvas bookkeeping (resize, pixel restore,
+			 * texture upload, chunk rebuild) so plugins never need to touch those
+			 * globals directly.
+			 *
+			 * @param {{ name:string, draw?:(ctx,x,y,S)=>void, url?:string }} def
+			 *   name  — unique identifier; used to detect hot-reload duplicates.
+			 *   draw  — canvas draw function (preferred; avoids an async fetch).
+			 *   url   — 16×16 PNG URL (alternative to draw).
+			 * @returns {number} The plant's row index in the atlas (0-based).
+			 */
+			registerPlant(def) {
+				if (!def?.name) { console.warn('[plugin] registerPlant: missing name'); return -1 }
+				const existing = PLANT_DEFS.findIndex((d) => d.name === def.name)
+				if (existing !== -1) {
+					console.warn('[plugin] registerPlant: already registered:', def.name)
+					return existing
+				}
+				const oldLen = PLANT_DEFS.length
+				const imgData = oldLen > 0
+					? plantAtlasCtx.getImageData(0, 0, PLANT_TILE, PLANT_TILE * oldLen)
+					: null
+				PLANT_DEFS.push(def)
+				// Grow the canvas (resize clears content), then restore old rows.
+				plantAtlasCanvas.height = PLANT_TILE * PLANT_DEFS.length
+				plantAtlasCtx.imageSmoothingEnabled = false
+				if (imgData) plantAtlasCtx.putImageData(imgData, 0, 0)
+				const row = PLANT_DEFS.length - 1
+				const ty = row * PLANT_TILE
+				if (def.draw) {
+					def.draw(plantAtlasCtx, 0, ty, PLANT_TILE)
+					plantTexture.needsUpdate = true
+					for (const [k] of chunks) {
+						const [cx2, cz2] = k.split('_').map(Number)
+						rebuildChunk(cx2, cz2)
+					}
+				} else if (def.url) {
+					const img = new Image()
+					img.crossOrigin = 'anonymous'
+					img.onload = () => {
+						plantAtlasCtx.clearRect(0, ty, PLANT_TILE, PLANT_TILE)
+						plantAtlasCtx.drawImage(img, 0, ty, PLANT_TILE, PLANT_TILE)
+						plantTexture.needsUpdate = true
+						for (const [k] of chunks) {
+							const [cx2, cz2] = k.split('_').map(Number)
+							rebuildChunk(cx2, cz2)
+						}
+					}
+					img.onerror = () => console.warn(`[plugin] registerPlant: failed to load ${def.url}`)
+					img.src = def.url
+				}
+				console.log(`[plugin] registerPlant: "${def.name}" at atlas row`, row)
+				return row
+			},
+
+			/**
+			 * Register a terrain-block layer — a function injected into the block
+			 * world so plugins can add blocks above the natural terrain surface
+			 * (trees, ores, structures, …) without storing anything in modified.
+			 *
+			 * fn(x, y, z) → blockId | null
+			 *
+			 * Called by getBlock after the modified-map check, only for positions
+			 * strictly above the natural terrain height. Player removals (stored as
+			 * AIR in modified) therefore always take priority — mining syncs to all
+			 * clients via the normal block_update broadcast.
+			 *
+			 * The function is serialized via .toString() and re-evaluated inside Web
+			 * Workers with new Function so geometry building stays off the main thread.
+			 * It must be self-contained: the only external names it may reference are
+			 *   terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, SEED
+			 * All five are available in both the main-thread and worker environments.
+			 */
+			registerTerrainBlock(fn) {
+				if (typeof fn !== 'function') {
+					console.warn('[plugin] registerTerrainBlock: argument must be a function')
+					return
+				}
+				_pluginTerrainLayers.push(fn)
+				_pluginTerrainLayerSources.push(fn.toString())
+				for (const [k] of chunks) {
+					const [cx2, cz2] = k.split('_').map(Number)
+					rebuildChunk(cx2, cz2)
+				}
+				console.log('[plugin] registerTerrainBlock: terrain layer registered')
+			},
+
 			/** Send a raw message to the server (same as the internal netSend). */
 			netSend: (obj) => netSend(obj),
 		}
@@ -1345,12 +1436,21 @@ function plantAt(wx, wz) {
 ============================================================ */
 const modified = new Map()
 
+// Plugin terrain-layer hooks — fns registered via api.registerTerrainBlock().
+// Called by getBlock for positions above the natural terrain surface so plugins
+// can inject trees, ores, structures, etc. without touching the modified map.
+const _pluginTerrainLayers = []        // main-thread functions
+const _pluginTerrainLayerSources = []  // .toString() sources sent to workers
+
 function getBlock(x, y, z) {
 	const k = `${x}_${y}_${z}`
 	if (modified.has(k)) { const v = modified.get(k); return v === BLOCK.AIR ? null : v }
 	const h = terrainHeight(x, z)
 	if (y === BEDROCK_Y) return BLOCK.BEDROCK
-	if (y > h) return y <= SEA_LEVEL ? BLOCK.WATER : null
+	if (y > h) {
+		for (const lyr of _pluginTerrainLayers) { const b = lyr(x, y, z); if (b != null) return b }
+		return y <= SEA_LEVEL ? BLOCK.WATER : null
+	}
 	if (y === h) return BLOCK.GRASS
 	if (y >= h - 3) return BLOCK.DIRT
 	return BLOCK.STONE
@@ -1653,13 +1753,23 @@ function _workerTerrain(SEED, SEA_LEVEL, BEDROCK_Y, BLOCK) {
 	return { terrainHeight }
 }
 
-function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y) {
+function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources) {
+	// Build plugin terrain-layer functions from their serialized sources.
+	// new Function injects the variables that plugins are allowed to reference
+	// so the same source string works in both main-thread and worker contexts.
+	const _tLayers = (terrainLayerSources || []).map((src) => {
+		const mk = new Function('terrainHeight', 'BLOCK', 'SEA_LEVEL', 'BEDROCK_Y', 'SEED', 'return (' + src + ')')
+		return mk(terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed)
+	})
 	function getBlock(x, y, z) {
 		const k = x + '_' + y + '_' + z
 		if (modified.has(k)) { const v = modified.get(k); return v === BLOCK.AIR ? null : v }
 		const h = terrainHeight(x, z)
 		if (y === BEDROCK_Y) return BLOCK.BEDROCK
-		if (y > h) return y <= SEA_LEVEL ? BLOCK.WATER : null
+		if (y > h) {
+			for (const lyr of _tLayers) { const b = lyr(x, y, z); if (b != null) return b }
+			return y <= SEA_LEVEL ? BLOCK.WATER : null
+		}
 		if (y === h) return BLOCK.GRASS
 		if (y >= h - 3) return BLOCK.DIRT
 		return BLOCK.STONE
@@ -1676,7 +1786,7 @@ function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y) {
 
 function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 	CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS, ATLAS_ROWS,
-	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY, blockMap, transparentIds) {
+	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY, blockMap, transparentIds, terrainLayerSources) {
 
 	const { BLOCK, TRANSPARENT, blockAtlasRow, INV_W, INV_H, FACES } =
 		_workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
@@ -1688,7 +1798,7 @@ function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 
 	const modified = new Map(modifiedEntries)
 	const { terrainHeight } = _workerTerrain(seed, SEA_LEVEL, BEDROCK_Y, BLOCK)
-	const { getBlock, isTransparent, blockBucket } = _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y)
+	const { getBlock, isTransparent, blockBucket } = _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources)
 
 	function plantAt(wx, wz) {
 		if (modified.has('plant_' + wx + '_' + wz)) return -1
@@ -1782,7 +1892,7 @@ function _workerMain() {
 			d.cx, d.cz, d.seed, d.plantCount, d.modifiedEntries,
 			d.CHUNK_SIZE, d.SEA_LEVEL, d.BEDROCK_Y, d.TILE_SIZE, d.ATLAS_COLS,
 			d.ATLAS_ROWS, d.ALL_BLOCK_IDS, d.PLANT_TILE, d.PLANT_RARITY,
-			d.blockMap, d.transparentIds
+			d.blockMap, d.transparentIds, d.terrainLayerSources,
 		)
 		const { pos, uv, norm, idx, pickFaces } = result
 		const bufs = [], typed = { pos:[], uv:[], norm:[], idx:[] }
@@ -1864,6 +1974,7 @@ function _enqueueChunk(cx, cz) {
 			// Dynamic block data — plugins may have added new blocks
 			blockMap: { ...BLOCK },
 			transparentIds: [...TRANSPARENT],
+			terrainLayerSources: [..._pluginTerrainLayerSources],
 			_bufs: [],
 		}
 		_workerQueue.push(job)

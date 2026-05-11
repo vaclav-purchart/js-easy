@@ -123,6 +123,20 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
 - `registerGuiTab(id, label, renderFn)`
 - `registerMob(cfg)` — model + hitbox stay client-side; the AI fields are
   shipped to the server as JSON (see *Mobs* below)
+- `registerPlant(def) → number` — add a plant type to the surface vegetation
+  system. `def`: `{ name, draw?(ctx,x,y,S) }` or `{ name, url }`. Returns the
+  plant's atlas row index. Handles canvas resize, pixel restore, texture upload,
+  and chunk rebuild internally — plugins must not touch `PLANT_DEFS`,
+  `plantAtlasCanvas`, `plantAtlasCtx`, or `plantTexture` directly.
+- `registerTerrainBlock(fn)` — inject blocks above the natural terrain surface
+  without writing to the modified map. `fn(x,y,z) → blockId | null` is called
+  by `getBlock` whenever a position is above the terrain height and has no entry
+  in `modified` (so player removals always win). The function is serialized via
+  `.toString()` and re-evaluated inside Web Workers with `new Function`; it
+  **must be self-contained** — the only external names it may reference are
+  `terrainHeight`, `BLOCK`, `SEA_LEVEL`, `BEDROCK_Y`, `SEED` (available in
+  both environments). Use this for trees, ores, structures, or anything that
+  should be purely computed from the seed and require no network traffic.
 - `registerTool(def)` — registers a custom tool (see *Tools* below)
 - `preloadToolVisual(urlOrDef) → Promise<{iconDataURL, model}>` — pre-fetches
   a 16×16 sprite (URL string **or** `{ draw(ctx,W,H) }` object) so that
@@ -519,6 +533,16 @@ Follow what's already in the files:
   onLeftClick?, onRightClick? }`). `damage` defaults to `DEFAULT_TOOL_DAMAGE`
   and is sent with every `hit_player` / `hit_mob` (server clamps to 1..50).
   For plugin tools, use `api.registerTool(def)` instead — see *Tools* above.
+- **Add a new plant type (e.g. tall grass):** call `api.registerPlant({ name,
+  draw(ctx,x,y,S){…} })` in a plugin. The engine resizes the plant atlas,
+  restores existing rows, and rebuilds chunks. Do not touch `PLANT_DEFS` or the
+  canvas globals directly.
+- **Add seed-derived world features (trees, rocks, …):** call
+  `api.registerTerrainBlock(fn)` where `fn(x,y,z) → blockId|null`. The
+  function runs in both the main thread and Web Workers; keep it self-contained
+  (only `terrainHeight`, `BLOCK`, `SEA_LEVEL`, `BEDROCK_Y`, `SEED` allowed).
+  Player removals (AIR in `modified`) always take priority, and the block_update
+  broadcast ensures all clients stay in sync with no extra code.
 - **Add a new mob species:** preferred — drop a plugin in `./plugins/` calling
   `api.registerMob({ type, behavior, …, makeModel })`. The same file
   registers the AI on the server and the model on the client. See
