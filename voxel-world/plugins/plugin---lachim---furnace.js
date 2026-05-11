@@ -5,6 +5,8 @@
  * No internal engine globals are used â€” everything goes through api.
  */
 
+/* global VoxelWorld */
+
 VoxelWorld.registerPlugin('Furnace', {
 	init(api) {
 		const BLOCK_ID = api.allocateBlockId()

@@ -4,6 +4,8 @@
  * Breaks a 3x3 area depending on the face you're looking at.
  */
 
+/* global VoxelWorld, THREE */
+
 VoxelWorld.registerPlugin('AmethystPickaxe', {
 	async init(api) {
 		const TOOL_URL = 'https://purchart.eu/images?file=2026-05-04--14-48-40---vasik-amethist-pixax---pixaxe.png'

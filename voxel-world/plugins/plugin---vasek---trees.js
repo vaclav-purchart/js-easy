@@ -15,6 +15,8 @@
  * (injected by the engine in both main-thread and Web Worker contexts).
  */
 
+/* global VoxelWorld, THREE */
+
 VoxelWorld.registerPlugin('Trees', {
 	init(api) {
 		api.registerTerrainBlock(function treeBlockAt(x, y, z) {

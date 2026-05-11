@@ -5,6 +5,8 @@
  * in front of you.
  */
 
+/* global VoxelWorld, THREE */
+
 VoxelWorld.registerPlugin('Builder', {
 	init(api) {
 

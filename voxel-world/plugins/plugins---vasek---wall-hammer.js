@@ -7,6 +7,8 @@
  *   - Material: last block selected in the hotbar before equipping the hammer
  */
 
+/* global VoxelWorld, THREE */
+
 VoxelWorld.registerPlugin('Hammer', {
 	init(api) {
 		let lastBlockId = 1  // grass as fallback

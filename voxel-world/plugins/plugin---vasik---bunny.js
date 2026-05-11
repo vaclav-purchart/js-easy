@@ -9,6 +9,8 @@
  * a longer flee window than chickens.
  */
 
+/* global VoxelWorld, THREE */
+
 VoxelWorld.registerPlugin('Bunny', {
 	init(api) {
 		api.registerMob({

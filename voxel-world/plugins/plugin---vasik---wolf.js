@@ -6,6 +6,8 @@
  * the post-hit aggro window even outside aggro range.
  */
 
+/* global VoxelWorld, THREE */
+
 VoxelWorld.registerPlugin('Wolf', {
 	init(api) {
 		api.registerMob({

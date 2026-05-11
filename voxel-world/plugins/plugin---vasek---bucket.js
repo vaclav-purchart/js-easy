@@ -10,6 +10,8 @@
  * ctx.setToolVisual() swaps the icon and hand model between the two states.
  */
 
+/* global VoxelWorld, THREE */
+
 VoxelWorld.registerPlugin('Bucket', {
 	async init(api) {
 		const EMPTY_URL = 'https://purchart.eu/images?file=2026-05-03--19-11-00---vasek---bucket-empty.png'

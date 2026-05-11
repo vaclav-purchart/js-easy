@@ -13,6 +13,8 @@
  * instant. Damage scales linearly from 3 (min charge) to 10 (full charge).
  */
 
+/* global VoxelWorld, THREE */
+
 VoxelWorld.registerPlugin('Bow', {
 	async init(api) {
 

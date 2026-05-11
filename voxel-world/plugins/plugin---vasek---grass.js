@@ -9,6 +9,8 @@
  * Uses api.registerPlant() so no engine internals are touched directly.
  */
 
+/* global VoxelWorld, THREE */
+
 VoxelWorld.registerPlugin('TallGrass', {
 	init(api) {
 		api.registerPlant({
