@@ -10,9 +10,9 @@
  * and take priority over the terrain layer automatically, so mining and
  * multiplayer sync work exactly like any other block.
  *
- * The function passed to registerTerrainBlock must be self-contained:
- * it may only reference terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, SEED
- * (injected by the engine in both main-thread and Web Worker contexts).
+ * The function passed to registerTerrainBlock closes over api on the main
+ * thread and receives an injected api object in Web Workers — the same shape
+ * in both environments, so no special handling is needed here.
  */
 
 /* global VoxelWorld, THREE */
@@ -20,6 +20,7 @@
 VoxelWorld.registerPlugin('Trees', {
 	init(api) {
 		api.registerTerrainBlock(function treeBlockAt(x, y, z) {
+			const { SEED, terrainHeight, SEA_LEVEL, BLOCK } = api.CONST
 			const TREE_RARITY = 1500  // ~1 tree per 1500 surface columns
 
 			// A tree rooted at (tx, tz) can have canopy reaching up to 2 blocks

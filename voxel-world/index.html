@@ -693,6 +693,28 @@ window.VoxelWorld = {
 		const api = {
 			PLUGIN_NAME: pluginObj.PLUGIN_NAME,
 
+			/**
+			 * Engine constants and world-query helpers.  Available everywhere —
+			 * including inside registerTerrainBlock functions, which capture api
+			 * via closure on the main thread and receive an injected api object
+			 * with the same shape in Web Workers.
+			 *
+			 * api.CONST.SEED         → current world seed (updates on world load)
+			 * api.CONST.SEA_LEVEL    → 8
+			 * api.CONST.BEDROCK_Y    → 0
+			 * api.CONST.CHUNK_SIZE   → 16
+			 * api.CONST.BLOCK        → core block-ID map { AIR, GRASS, … }
+			 * api.CONST.terrainHeight(x, z) → natural surface Y at that column
+			 */
+			CONST: {
+				get SEED() { return SEED },
+				SEA_LEVEL,
+				BEDROCK_Y,
+				CHUNK_SIZE,
+				get BLOCK() { return BLOCK },
+				terrainHeight,
+			},
+
 			allocateBlockId: () => VoxelWorld._getBlockId(pluginObj.PLUGIN_NAME),
 
 			registerBlock(def) {
@@ -959,23 +981,10 @@ window.VoxelWorld = {
 					console.warn('[plugin] registerTerrainBlock: argument must be a function')
 					return
 				}
-				// Plugin files are separate <script> tags and cannot close over engine-scope
-				// `let`/`const` variables (SEED, BLOCK, terrainHeight, etc.).  Mirror the
-				// worker approach: re-evaluate via new Function to inject them at call time,
-				// caching the result until SEED changes.
-				const src = fn.toString()
-				let _wrapSeed = null
-				let _wrapFn = null
-				function boundLayer(x, y, z) {
-					if (_wrapSeed !== SEED) {
-						_wrapSeed = SEED
-						const mk = new Function('terrainHeight', 'BLOCK', 'SEA_LEVEL', 'BEDROCK_Y', 'SEED', 'return (' + src + ')')
-						_wrapFn = mk(terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, SEED)
-					}
-					return _wrapFn(x, y, z)
-				}
-				_pluginTerrainLayers.push(boundLayer)
-				_pluginTerrainLayerSources.push(src)
+				// fn closes over api.CONST (on the main thread) and receives an
+				// injected api object in workers — no extra wrapping needed here.
+				_pluginTerrainLayers.push(fn)
+				_pluginTerrainLayerSources.push(fn.toString())
 				_pluginTerrainLayerMaxExtra = Math.max(_pluginTerrainLayerMaxExtra, maxExtraHeight)
 				for (const [k] of chunks) {
 					const [cx2, cz2] = k.split('_').map(Number)
@@ -1770,13 +1779,13 @@ function _workerTerrain(SEED, SEA_LEVEL, BEDROCK_Y, BLOCK) {
 	return { terrainHeight }
 }
 
-function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources) {
-	// Build plugin terrain-layer functions from their serialized sources.
-	// new Function injects the variables that plugins are allowed to reference
-	// so the same source string works in both main-thread and worker contexts.
+function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE) {
+	// Re-create plugin terrain-layer functions from their serialized sources.
+	// We inject a single `api` argument that mirrors the shape of api.CONST on
+	// the main thread, so the same function body works in both environments.
 	const _tLayers = (terrainLayerSources || []).map((src) => {
-		const mk = new Function('terrainHeight', 'BLOCK', 'SEA_LEVEL', 'BEDROCK_Y', 'SEED', 'return (' + src + ')')
-		return mk(terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed)
+		const mk = new Function('api', 'return (' + src + ')')
+		return mk({ CONST: { SEED: seed, SEA_LEVEL, BEDROCK_Y, CHUNK_SIZE, terrainHeight, BLOCK } })
 	})
 	function getBlock(x, y, z) {
 		const k = x + '_' + y + '_' + z
@@ -1815,7 +1824,7 @@ function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 
 	const modified = new Map(modifiedEntries)
 	const { terrainHeight } = _workerTerrain(seed, SEA_LEVEL, BEDROCK_Y, BLOCK)
-	const { getBlock, isTransparent, blockBucket } = _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources)
+	const { getBlock, isTransparent, blockBucket } = _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE)
 
 	function plantAt(wx, wz) {
 		if (modified.has('plant_' + wx + '_' + wz)) return -1

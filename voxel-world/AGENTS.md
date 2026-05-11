@@ -128,15 +128,24 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
   plant's atlas row index. Handles canvas resize, pixel restore, texture upload,
   and chunk rebuild internally — plugins must not touch `PLANT_DEFS`,
   `plantAtlasCanvas`, `plantAtlasCtx`, or `plantTexture` directly.
-- `registerTerrainBlock(fn)` — inject blocks above the natural terrain surface
-  without writing to the modified map. `fn(x,y,z) → blockId | null` is called
-  by `getBlock` whenever a position is above the terrain height and has no entry
-  in `modified` (so player removals always win). The function is serialized via
-  `.toString()` and re-evaluated inside Web Workers with `new Function`; it
-  **must be self-contained** — the only external names it may reference are
-  `terrainHeight`, `BLOCK`, `SEA_LEVEL`, `BEDROCK_Y`, `SEED` (available in
-  both environments). Use this for trees, ores, structures, or anything that
-  should be purely computed from the seed and require no network traffic.
+- `const` — object of read-only engine constants, safe to access anywhere in
+  plugin code (including inside `registerTerrainBlock` callbacks):
+  - `api.CONST.SEED` — current world seed; live getter, always up to date
+  - `api.CONST.SEA_LEVEL` — `8`
+  - `api.CONST.BEDROCK_Y` — `0`
+  - `api.CONST.CHUNK_SIZE` — `16`
+  - `api.CONST.BLOCK` — core block-ID map (same object as `api.BLOCK`)
+  - `api.CONST.terrainHeight(x, z)` — natural surface Y for a column
+- `registerTerrainBlock(fn, maxExtraHeight?)` — inject blocks above the natural
+  terrain surface without writing to the modified map. `fn(x,y,z) → blockId | null`
+  is called by `getBlock` whenever a position is above the terrain height and has
+  no entry in `modified` (so player removals always win). `fn` closes over `api`
+  on the main thread and receives an injected `api` object with the same shape in
+  Web Workers, so **use `api.CONST` for all engine values** — do not rely on
+  other external names. Set `maxExtraHeight` (default `0`) to the tallest
+  structure your layer adds so the worker Y-scan covers it. Use this for trees,
+  ores, structures, or anything purely computed from the seed with no network
+  traffic.
 - `registerTool(def)` — registers a custom tool (see *Tools* below)
 - `preloadToolVisual(urlOrDef) → Promise<{iconDataURL, model}>` — pre-fetches
   a 16×16 sprite (URL string **or** `{ draw(ctx,W,H) }` object) so that
@@ -538,11 +547,13 @@ Follow what's already in the files:
   restores existing rows, and rebuilds chunks. Do not touch `PLANT_DEFS` or the
   canvas globals directly.
 - **Add seed-derived world features (trees, rocks, …):** call
-  `api.registerTerrainBlock(fn)` where `fn(x,y,z) → blockId|null`. The
-  function runs in both the main thread and Web Workers; keep it self-contained
-  (only `terrainHeight`, `BLOCK`, `SEA_LEVEL`, `BEDROCK_Y`, `SEED` allowed).
-  Player removals (AIR in `modified`) always take priority, and the block_update
-  broadcast ensures all clients stay in sync with no extra code.
+  `api.registerTerrainBlock(fn, maxExtraHeight)` where `fn(x,y,z) → blockId|null`.
+  Inside `fn`, access all engine values via `api.CONST` (SEED, terrainHeight,
+  BLOCK, SEA_LEVEL, BEDROCK_Y) — this works identically on the main thread
+  (closure) and in Web Workers (injected api object). Pass `maxExtraHeight` equal
+  to the tallest structure so the worker Y-scan reaches it. Player removals
+  (AIR in `modified`) always take priority; block_update broadcast keeps all
+  clients in sync automatically.
 - **Add a new mob species:** preferred — drop a plugin in `./plugins/` calling
   `api.registerMob({ type, behavior, …, makeModel })`. The same file
   registers the AI on the server and the model on the client. See
