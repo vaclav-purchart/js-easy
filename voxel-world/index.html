@@ -114,6 +114,34 @@
   .claim-btn.danger:hover { background:rgba(200,60,60,.3); }
   .claim-btn.upgrade { border-color:#40c870; color:#80f0a0; background:rgba(60,200,100,.12); }
   .claim-btn.upgrade:hover { background:rgba(60,200,100,.28); }
+  #blocks-modal-overlay {
+    position:fixed; inset:0; z-index:600;
+    background:rgba(0,0,0,.6); display:none;
+    align-items:center; justify-content:center;
+  }
+  #blocks-modal-overlay.open { display:flex; }
+  #blocks-modal {
+    background:rgba(8,18,38,.97); border:1px solid #0a8ac8;
+    width:460px; max-width:92vw; max-height:80vh;
+    color:white; font-family:monospace; display:flex; flex-direction:column;
+  }
+  #blocks-modal h3 {
+    margin:0; padding:10px 14px; background:rgba(10,138,200,.18);
+    border-bottom:1px solid #0a8ac8; color:#80d0ff; font-size:13px; flex-shrink:0;
+  }
+  #blocks-modal-body { padding:10px 14px; overflow-y:auto; font-size:12px; }
+  #blocks-modal-body table { border-collapse:collapse; width:100%; }
+  #blocks-modal-body td { padding:3px 8px 3px 0; vertical-align:top; }
+  #blocks-modal-body td:first-child { color:#80d0ff; white-space:nowrap; }
+  #blocks-modal-body td:nth-child(2) { color:#aaa; }
+  #blocks-modal-body td:last-child { color:#666; }
+  #blocks-modal-body tr:hover td { background:rgba(255,255,255,.04); }
+  #blocks-modal-close {
+    float:right; margin:8px 12px 0 0; padding:3px 9px;
+    border:1px solid #555; background:rgba(255,255,255,.06);
+    color:#aaa; cursor:pointer; font-family:monospace; font-size:12px;
+  }
+  #blocks-modal-close:hover { background:rgba(255,255,255,.14); }
   #claim-modal-close {
     float:right; margin:12px 14px 0 0; padding:4px 10px;
     border:1px solid #555; background:rgba(255,255,255,.06);
@@ -378,6 +406,14 @@
   <div id="claim-modal">
     <h3>🔒 Claim Totem <button id="claim-modal-close">✕</button></h3>
     <div id="claim-modal-body"></div>
+  </div>
+</div>
+
+<!-- /blocks list modal -->
+<div id="blocks-modal-overlay">
+  <div id="blocks-modal">
+    <h3>Known blocks <button id="blocks-modal-close">✕</button></h3>
+    <div id="blocks-modal-body"></div>
   </div>
 </div>
 
@@ -3871,6 +3907,12 @@ document.getElementById('claim-modal-overlay').addEventListener('click', (e) => 
 	if (e.target === document.getElementById('claim-modal-overlay')) closeClaimUI()
 })
 
+function closeBlocksModal() { document.getElementById('blocks-modal-overlay').classList.remove('open') }
+document.getElementById('blocks-modal-close').addEventListener('click', closeBlocksModal)
+document.getElementById('blocks-modal-overlay').addEventListener('click', (e) => {
+	if (e.target === document.getElementById('blocks-modal-overlay')) closeBlocksModal()
+})
+
 /* ============================================================
    GAME GUI  — tabbed modal panel (block picker / inventory / crafting)
    Tabs are registered dynamically so mods can add their own.
@@ -4188,6 +4230,16 @@ function handleCommand(raw) {
 		setFlying(false)
 		syncGamemodeBtn()
 		showToast('🗡 Survival mode')
+		return
+	}
+	if (v === '/blocks') {
+		const builtins = Object.keys(BLOCK).map((name) => ({ id: BLOCK[name], name, category: 'Built-in' }))
+		const all = [...builtins, ...BLOCK_REGISTRY].sort((a, b) => a.name.localeCompare(b.name))
+		const body = document.getElementById('blocks-modal-body')
+		body.innerHTML = '<table>' + all.map((b) =>
+			`<tr><td>${b.name}</td><td>${b.category}</td><td>id=${b.id}</td></tr>`,
+		).join('') + '</table>'
+		document.getElementById('blocks-modal-overlay').classList.add('open')
 		return
 	}
 	// /remove <blockname|ALL> <radius>
