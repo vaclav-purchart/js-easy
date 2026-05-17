@@ -945,6 +945,20 @@ setInterval(() => {
 	}
 }, 50)
 
+// ── Player health regeneration — 1 HP/s, starts 5 s after last hit ───────
+const REGEN_DELAY_MS = 5000
+setInterval(() => {
+	const now = Date.now()
+	for (const world of worlds.values()) {
+		for (const p of world.players.values()) {
+			if (p.hp >= 100) continue
+			if (now - (p.lastHitTime || 0) < REGEN_DELAY_MS) continue
+			p.hp = Math.min(100, p.hp + 1)
+			broadcastWorld(world, { type: 'hp_update', id: p.id, hp: p.hp })
+		}
+	}
+}, 1000)
+
 // ── Exported factory ───────────────────────────────────────────────────────
 export default function attachVoxelWorld(httpServer) {
 	const wss = new WebSocketServer({ server: httpServer })
