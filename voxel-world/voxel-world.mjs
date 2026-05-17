@@ -78,6 +78,19 @@ function restoreAllWorlds() {
 	}
 }
 
+// ── Remove claims whose physical block was lost (e.g. by a plugin before this fix) ─
+function cleanOrphanedClaims() {
+	for (const world of worlds.values()) {
+		for (const [owner, claim] of world.claims) {
+			const bk = `${claim.blockX}_${claim.blockY}_${claim.blockZ}`
+			if (world.modifiedBlocks.get(bk) !== CLAIM_BLOCK_ID) {
+				world.claims.delete(owner)
+				console.log(`[voxel-world] Removed orphaned claim for "${owner}" in "${world.name}" (block missing at ${bk})`)
+			}
+		}
+	}
+}
+
 // ── Graceful shutdown ─────────────────────────────────────────────────────
 // process.on('exit') fires on ALL exits (including Windows shutdown/restart)
 // and supports only synchronous operations — writeFileSync is sync so it works.
@@ -206,6 +219,7 @@ function loadWorldFile(filePath, worldNameOverride, range) {
 
 // ── Startup: restore worlds from disk, watch plugins, then apply CLI override
 restoreAllWorlds()
+cleanOrphanedClaims()
 watchPluginsFolder()
 
 // ── Parse CLI arguments ───────────────────────────────────────────────────
@@ -1180,6 +1194,24 @@ export default function attachVoxelWorld(httpServer) {
 						const parts = k.split('_')
 						const ex = parseInt(parts[0], 10), ez = parseInt(parts[2], 10)
 						if (canModifyAt(world, player.nickname, ex, ez)) {
+							// If a claim block is being overwritten or removed, enforce
+							// owner-only removal — consistent with single-block mining.
+							if (v !== CLAIM_BLOCK_ID && world.modifiedBlocks.get(k) === CLAIM_BLOCK_ID) {
+								const ey = parseInt(parts[1], 10)
+								const claimBlock = [...world.claims.values()].find(
+									(c) => c.blockX === ex && c.blockY === ey && c.blockZ === ez)
+								if (claimBlock) {
+									const isOwner = claimBlock.owner.toLowerCase() === player.nickname.toLowerCase()
+									const isVasek = player.nickname.toLowerCase() === 'vasek'
+									if (!isOwner && !isVasek) {
+										reverts.push([k, CLAIM_BLOCK_ID])
+										continue
+									}
+									world.claims.delete(claimBlock.owner.toLowerCase())
+									broadcastWorld(world, { type: 'claim_removed', owner: claimBlock.owner })
+									console.log(`[claim] "${player.nickname}" removed "${claimBlock.owner}"'s claim via tool`)
+								}
+							}
 							world.modifiedBlocks.set(k, v)
 							allowed.push([k, v])
 						} else {
