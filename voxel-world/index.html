@@ -4250,18 +4250,21 @@ function handleCommand(raw) {
 		const blockName = removeMatch[1].toUpperCase()
 		const radius    = Math.min(parseInt(removeMatch[2], 10), 500)
 
-		let blockId = null   // null = ALL
+		let blockIds = null   // null = ALL; otherwise Set of matching IDs
 		if (blockName !== 'ALL') {
-			// Find block ID by name — check BLOCK map and BLOCK_REGISTRY
-			blockId = BLOCK[blockName] ?? null
-			if (blockId === null) {
-				const reg = BLOCK_REGISTRY.find(r => r.name.toUpperCase() === blockName)
-				blockId = reg?.id ?? null
+			// Collect ALL IDs sharing this name (e.g. Door has 4 variants)
+			const matched = new Set(
+				BLOCK_REGISTRY.filter((r) => r.name.toUpperCase() === blockName).map((r) => r.id),
+			)
+			// Also check built-in BLOCK map (keys are mixed-case)
+			for (const [k, id] of Object.entries(BLOCK)) {
+				if (k.toUpperCase() === blockName) matched.add(id)
 			}
-			if (blockId === null) {
+			if (matched.size === 0) {
 				showToast(`Unknown block: ${removeMatch[1]}`)
 				return
 			}
+			blockIds = matched
 		}
 
 		const px = Math.floor(player.pos.x)
@@ -4274,7 +4277,7 @@ function handleCommand(raw) {
 			let removed = 0
 			const affectedChunks = new Set()
 			for (const [k, val] of [...modified.entries()]) {
-				if (blockId !== null && val !== blockId) continue
+				if (blockIds !== null && !blockIds.has(val)) continue
 				const parts = k.split('_')
 				const bx = parseInt(parts[0], 10), bz = parseInt(parts[2], 10)
 				if ((bx-px)**2 + (bz-pz)**2 > r2) continue
@@ -4288,7 +4291,7 @@ function handleCommand(raw) {
 			}
 			showToast(`Removed ${removed} block${removed !== 1 ? 's' : ''} (offline)`)
 		} else {
-			netSend({ type: 'remove_blocks', blockId, px, py, pz, radius })
+			netSend({ type: 'remove_blocks', blockIds: blockIds ? [...blockIds] : null, px, py, pz, radius })
 		}
 		return
 	}

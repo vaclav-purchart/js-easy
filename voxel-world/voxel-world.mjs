@@ -1101,13 +1101,14 @@ export default function attachVoxelWorld(httpServer) {
 				}
 				case 'remove_blocks': {
 					if (!player) return
-					// msg: { blockId: number|null, px, py, pz, radius }
-					// blockId null means ALL blocks (any type)
-					const { blockId, px, py, pz, radius } = msg
+					// msg: { blockIds: number[]|null, px, py, pz, radius }
+					// blockIds null means ALL blocks (any type)
+					const { blockIds, px, py, pz, radius } = msg
+					const blockIdSet = blockIds ? new Set(blockIds) : null
 					const r2 = radius * radius
 					const keys = []
 					for (const [k, v] of world.modifiedBlocks) {
-						if (blockId !== null && v !== blockId) continue
+						if (blockIdSet !== null && !blockIdSet.has(v)) continue
 						const parts = k.split('_')
 						const rx = parseInt(parts[0], 10), rz = parseInt(parts[2], 10)
 						const dx = rx - px, dz = rz - pz
