@@ -61,7 +61,12 @@ landmarks when editing — keep them when adding new sections.
 - `BLOCK` — core block-id map (`AIR=0, GRASS=1, …`). IDs `1–99` are reserved
   for core blocks; **plugins must use `100+`**, allocated via the API.
 - `TRANSPARENT` — `Set` of block ids that need the transparent material/meshing
-  path.
+  path (face-culling: neighbors show faces through them).
+- `CHUNK_INVISIBLE` — `Set` of block ids that are transparent for face-culling but
+  produce **no chunk mesh geometry** (visual is provided by a custom THREE.js object).
+  Populated automatically when `registerBlock({ invisible: true })` is called.
+- `PASSABLE` — `Set` of block ids the player can walk through (no collision).
+  Populated automatically when `registerBlock({ passable: true })` is called.
 - `BLOCK_DEFS` — per-id draw functions that paint the texture atlas tile.
 - `BLOCK_REGISTRY` — array consumed by the GUI block picker
   (`{ id, name, category }`).
@@ -118,7 +123,13 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
 - `PLUGIN_NAME`
 - `allocateBlockId() → number` (deterministic from plugin name; do **not**
   hard-code IDs)
-- `registerBlock(def)` — `{ id, name, category, transparent?, draw:{ side, top?, bottom? } }`
+- `registerBlock(def)` — `{ id, name, category, transparent?, invisible?, passable?, draw?:{ side, top?, bottom? } }`
+  - `transparent` — adds to `TRANSPARENT`; chunk renders the block in the glass/water bucket.
+  - `invisible` — adds to both `TRANSPARENT` and `CHUNK_INVISIBLE`; the block is transparent
+    for face-culling (adjacent walls show their faces) but generates **no chunk mesh geometry**.
+    The block still gets pick faces so it can be clicked and mined. Use when the block's visual
+    is provided entirely by a custom THREE.js mesh (e.g. a door panel). Implies `transparent`.
+  - `passable` — adds to `PASSABLE`; player collision ignores the block.
 - `loadBlockTexture(id, url, face?)` — `'side' | 'top' | 'bottom' | 'all'`
 - `registerGuiTab(id, label, renderFn)`
 - `registerMob(cfg)` — model + hitbox stay client-side; the AI fields are
@@ -152,6 +163,12 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
   `ctx.setToolVisual()` can swap visuals instantly
 - `scene` — the Three.js `Scene`; add/remove visual objects (arrows, effects)
 - `camera` — the Three.js `PerspectiveCamera`; read position / direction
+- `registerBlockInteraction(blockIds, fn)` — register a right-click / Place-button
+  callback `fn(ctx)` that fires when the player right-clicks any block whose id is in
+  `blockIds`, **regardless of the currently equipped item**. Block interactions take
+  priority over the equipped tool's `onRightClick`. `ctx` has the same shape as tool
+  right-click context. Use for interactive blocks (doors, buttons, …) that should
+  respond to any player action.
 - `addTickCallback(fn)` / `removeTickCallback(fn)` — register/unregister a
   per-frame callback `fn(dt)` (dt in seconds). Called just before each render.
 - `shootRay(maxDist=64) → { type, id, point, distance } | null` — hitscan from

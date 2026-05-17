@@ -661,6 +661,9 @@ window.VoxelWorld = {
 		 *     name:        string   — display name in GUI
 		 *     category:    string   — group in block picker (e.g. 'Natural', 'Crafted')
 		 *     transparent: boolean  — optional, default false. Set true for glass-like blocks.
+		 *     invisible:   boolean  — optional. Like transparent but also suppresses chunk mesh geometry.
+		 *                            Use for blocks rendered entirely as custom THREE.js meshes.
+		 *     passable:    boolean  — optional, default false. Player walks through the block.
 		 *     draw: {
 		 *       side(ctx, x, y, S)    — required. Draws the side face texture.
 		 *       top(ctx, x, y, S)     — optional. Falls back to side if omitted.
@@ -879,6 +882,19 @@ window.VoxelWorld = {
 			},
 
 			/**
+			 * Register a right-click callback for specific block IDs.
+			 * Fires when the player right-clicks (or presses Place on mobile) on any
+			 * block whose ID is in blockIds, regardless of the equipped item.
+			 * Block interactions take priority over the equipped tool's onRightClick.
+			 *
+			 * @param {number[]} blockIds  — block IDs to intercept
+			 * @param {function(ctx): void} fn  — same ctx shape as tool onRightClick
+			 */
+			registerBlockInteraction(blockIds, fn) {
+				for (const id of blockIds) _blockInteractions.set(id, fn)
+			},
+
+			/**
 			 * Hitscan from camera centre. Returns the nearest hit or null.
 			 * { type: 'mob'|'player'|'block', id, point: THREE.Vector3, distance }
 			 * id is null for block hits.
@@ -1005,6 +1021,18 @@ const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDR
 
 // Which blocks are transparent (semi-transparent or see-through)
 const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
+
+// Which blocks don't stop player movement (player walks through them).
+// Plugins add IDs here via registerBlock({ ..., passable: true }).
+const PASSABLE = new Set()
+
+// Right-click callbacks keyed by block ID, regardless of equipped tool.
+// Registered via api.registerBlockInteraction(). Map<blockId, fn(ctx)>.
+const _blockInteractions = new Map()
+
+// Blocks that are transparent for face-culling but generate NO chunk geometry.
+// Registered via registerBlock({ invisible: true }). Subset of TRANSPARENT.
+const CHUNK_INVISIBLE = new Set()
 
 // Custom external textures - side, top, bottom
 const TEXTURES = {
@@ -1547,6 +1575,7 @@ function buildChunkGeometry(cx, cz) {
 			for (let y = BEDROCK_Y; y <= maxY; y++) {
 				const t = getBlock(wx, y, wz)
 				if (!t) continue
+				const isInvisible = CHUNK_INVISIBLE.has(t)
 
 				const isTrans = TRANSPARENT.has(t)
 				const bucket = blockBucket(t)
@@ -1560,16 +1589,18 @@ function buildChunkGeometry(cx, cz) {
 					// Skip internal faces between same block types (water-water, glass-glass etc.)
 					if (isTrans && neighbor === t) continue
 
-					const [u0, v0, u1, v1] = tileUV(t, face.col)
-					const vc = vCount[bucket]
+					if (!isInvisible) {
+						const [u0, v0, u1, v1] = tileUV(t, face.col)
+						const vc = vCount[bucket]
 
-					for (const [dx, dy, dz] of face.verts) {
-						pos[bucket].push(wx + dx, y + dy, wz + dz)
-						norm[bucket].push(nx, ny, nz)
+						for (const [dx, dy, dz] of face.verts) {
+							pos[bucket].push(wx + dx, y + dy, wz + dz)
+							norm[bucket].push(nx, ny, nz)
+						}
+						uv[bucket].push(u0, v1, u0, v0, u1, v0, u1, v1)
+						idx[bucket].push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
+						vCount[bucket] += 4
 					}
-					uv[bucket].push(u0, v1, u0, v0, u1, v0, u1, v1)
-					idx[bucket].push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
-					vCount[bucket] += 4
 
 					pickFaces.push({ x: wx, y, z: wz, type: t, nx, ny, nz })
 				}
@@ -1722,10 +1753,11 @@ const BUCKET_MATS = [matOpaque, matWater, matLeaves, matGlass, matPlant]
 
 function _workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
                            ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY,
-                           blockMap, transparentIds) {
+                           blockMap, transparentIds, invisibleIds) {
 	// blockMap: { AIR:0, GRASS:1, ... } — passed from main thread so plugins extend it
 	const BLOCK = blockMap
 	const TRANSPARENT = new Set(transparentIds)
+	const INVISIBLE = new Set(invisibleIds || [])
 	const blockAtlasRow = {}
 	ALL_BLOCK_IDS.forEach((id, i) => { blockAtlasRow[id] = i })
 	const INV_W = 1 / (TILE_SIZE * ATLAS_COLS)
@@ -1738,7 +1770,7 @@ function _workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COL
 		{ n:[0,0,1],  verts:[[1,0,1],[1,1,1],[0,1,1],[0,0,1]], col:0 },
 		{ n:[0,0,-1], verts:[[0,0,0],[0,1,0],[1,1,0],[1,0,0]], col:0 },
 	]
-	return { BLOCK, TRANSPARENT, blockAtlasRow, INV_W, INV_H, FACES }
+	return { BLOCK, TRANSPARENT, INVISIBLE, blockAtlasRow, INV_W, INV_H, FACES }
 }
 
 function _workerTileUV(blockId, col, blockAtlasRow, TILE_SIZE, INV_W, INV_H) {
@@ -1779,7 +1811,7 @@ function _workerTerrain(SEED, SEA_LEVEL, BEDROCK_Y, BLOCK) {
 	return { terrainHeight }
 }
 
-function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE) {
+function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE, TRANSPARENT) {
 	// Re-create plugin terrain-layer functions from their serialized sources.
 	// We inject a single `api` argument that mirrors the shape of api.CONST on
 	// the main thread, so the same function body works in both environments.
@@ -1800,11 +1832,15 @@ function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, s
 		if (y >= h - 3) return BLOCK.DIRT
 		return BLOCK.STONE
 	}
-	function isTransparent(b) { return b === null || b === BLOCK.AIR || b === BLOCK.WATER || b === BLOCK.LEAVES || b === BLOCK.GLASS }
+	// TRANSPARENT is passed in from _workerBuildGeometry (built from transparentIds).
+	// This ensures plugin blocks registered with transparent:true are culled correctly.
+	const _TRANSPARENT = TRANSPARENT || new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
+	function isTransparent(b) { return b === null || b === BLOCK.AIR || _TRANSPARENT.has(b) }
 	function blockBucket(t) {
 		if (t === BLOCK.WATER) return 1
 		if (t === BLOCK.LEAVES) return 2
 		if (t === BLOCK.GLASS) return 3
+		if (_TRANSPARENT.has(t)) return 1  // plugin transparent blocks → water-like rendering
 		return 0
 	}
 	return { getBlock, isTransparent, blockBucket }
@@ -1812,19 +1848,20 @@ function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, s
 
 function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 	CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS, ATLAS_ROWS,
-	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY, blockMap, transparentIds, terrainLayerSources, terrainLayerMaxExtra) {
+	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY, blockMap, transparentIds, terrainLayerSources, terrainLayerMaxExtra,
+	invisibleIds) {
 
-	const { BLOCK, TRANSPARENT, blockAtlasRow, INV_W, INV_H, FACES } =
+	const { BLOCK, TRANSPARENT, INVISIBLE, blockAtlasRow, INV_W, INV_H, FACES } =
 		_workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
 		                 ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY,
-		                 blockMap, transparentIds)
+		                 blockMap, transparentIds, invisibleIds)
 
 	const tileUV  = (id, col) => _workerTileUV(id, col, blockAtlasRow, TILE_SIZE, INV_W, INV_H)
 	const plantUV = (row)     => _workerPlantUV(row, PLANT_TILE, plantCount)
 
 	const modified = new Map(modifiedEntries)
 	const { terrainHeight } = _workerTerrain(seed, SEA_LEVEL, BEDROCK_Y, BLOCK)
-	const { getBlock, isTransparent, blockBucket } = _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE)
+	const { getBlock, isTransparent, blockBucket } = _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE, TRANSPARENT)
 
 	function plantAt(wx, wz) {
 		if (modified.has('plant_' + wx + '_' + wz)) return -1
@@ -1858,6 +1895,7 @@ function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 			for (let y = BEDROCK_Y; y <= maxY; y++) {
 				const t = getBlock(wx, y, wz)
 				if (!t) continue
+				const isInvisible = INVISIBLE.has(t)
 				const isTrans = TRANSPARENT.has(t)
 				const bucket  = blockBucket(t)
 				for (const face of FACES) {
@@ -1865,15 +1903,17 @@ function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 					const neighbor = getBlock(wx + nx, y + ny, wz + nz)
 					if (!isTransparent(neighbor)) continue
 					if (isTrans && neighbor === t) continue
-					const [u0, v0, u1, v1] = tileUV(t, face.col)
-					const vc = vCount[bucket]
-					for (const [dx, dy, dz] of face.verts) {
-						pos[bucket].push(wx + dx, y + dy, wz + dz)
-						norm[bucket].push(nx, ny, nz)
+					if (!isInvisible) {
+						const [u0, v0, u1, v1] = tileUV(t, face.col)
+						const vc = vCount[bucket]
+						for (const [dx, dy, dz] of face.verts) {
+							pos[bucket].push(wx + dx, y + dy, wz + dz)
+							norm[bucket].push(nx, ny, nz)
+						}
+						uv[bucket].push(u0, v1, u0, v0, u1, v0, u1, v1)
+						idx[bucket].push(vc, vc + 1, vc + 2, vc, vc + 2, vc + 3)
+						vCount[bucket] += 4
 					}
-					uv[bucket].push(u0, v1, u0, v0, u1, v0, u1, v1)   // matches main-thread order
-					idx[bucket].push(vc, vc+1, vc+2, vc, vc+2, vc+3)
-					vCount[bucket] += 4
 					pickFaces.push({ x:wx, y, z:wz, type:t, nx, ny, nz })
 				}
 			}
@@ -1920,6 +1960,7 @@ function _workerMain() {
 			d.CHUNK_SIZE, d.SEA_LEVEL, d.BEDROCK_Y, d.TILE_SIZE, d.ATLAS_COLS,
 			d.ATLAS_ROWS, d.ALL_BLOCK_IDS, d.PLANT_TILE, d.PLANT_RARITY,
 			d.blockMap, d.transparentIds, d.terrainLayerSources, d.terrainLayerMaxExtra,
+			d.invisibleIds,
 		)
 		const { pos, uv, norm, idx, pickFaces } = result
 		const bufs = [], typed = { pos:[], uv:[], norm:[], idx:[] }
@@ -2015,6 +2056,7 @@ function _enqueueChunk(cx, cz) {
 			// Dynamic block data — plugins may have added new blocks
 			blockMap: { ...BLOCK },
 			transparentIds: [...TRANSPARENT],
+			invisibleIds: [...CHUNK_INVISIBLE],
 			terrainLayerSources: [..._pluginTerrainLayerSources],
 			terrainLayerMaxExtra: _pluginTerrainLayerMaxExtra,
 			_bufs: [],
@@ -2819,13 +2861,19 @@ addEventListener('mousedown', (e) => {
 		if (tool?.onLeftClick) tool.onLeftClick(makeToolUseCtx())
 	}
 	if (e.button === 2) {
-		const tool = equippedTool()
-		if (tool?.onRightClick) {
-			tool.onRightClick(makeToolUseCtx())
-			if (!tool.onRightUp) triggerSwing()
-		} else if (!tool) {
-			placeBlock()
+		const _face = currentTarget?.face
+		if (_face && _blockInteractions.has(_face.type)) {
+			_blockInteractions.get(_face.type)(makeToolUseCtx())
 			triggerSwing()
+		} else {
+			const tool = equippedTool()
+			if (tool?.onRightClick) {
+				tool.onRightClick(makeToolUseCtx())
+				if (!tool.onRightUp) triggerSwing()
+			} else if (!tool) {
+				placeBlock()
+				triggerSwing()
+			}
 		}
 	}
 })
@@ -2945,9 +2993,15 @@ function setupTouchBtn(id, key) {
 		touchState[key] = true
 		el.classList.add('pressed')
 		if (key === 'place') {
-			const tool = equippedTool()
-			if (tool?.onRightClick) { tool.onRightClick(makeToolUseCtx()); if (!tool.onRightUp) triggerSwing() }
-			else if (!tool) { placeBlock(); triggerSwing() }
+			const _face = currentTarget?.face
+			if (_face && _blockInteractions.has(_face.type)) {
+				_blockInteractions.get(_face.type)(makeToolUseCtx())
+				triggerSwing()
+			} else {
+				const tool = equippedTool()
+				if (tool?.onRightClick) { tool.onRightClick(makeToolUseCtx()); if (!tool.onRightUp) triggerSwing() }
+				else if (!tool) { placeBlock(); triggerSwing() }
+			}
 		}
 		if (key === 'mine') {
 			mining = true
@@ -3556,6 +3610,8 @@ function _registerBlockNow(def) {
 	// 1. Register ID
 	if (!BLOCK[def.name]) BLOCK[def.name] = id   // optional: add to BLOCK map
 	if (def.transparent) TRANSPARENT.add(id)
+	if (def.invisible) { TRANSPARENT.add(id); CHUNK_INVISIBLE.add(id) }
+	if (def.passable) PASSABLE.add(id)
 	const row = ALL_BLOCK_IDS.length
 	ALL_BLOCK_IDS.push(id)
 	blockAtlasRow[id] = row
@@ -5041,7 +5097,7 @@ function animate() {
 	//   head  = player.pos.y                   (top)
 	//   width = HALF*2 = 0.6  (±HALF on each XZ side)
 
-	function isSolid(b) { return b !== null && b !== BLOCK.WATER && b !== BLOCK.AIR }
+	function isSolid(b) { return b !== null && b !== BLOCK.WATER && b !== BLOCK.AIR && !PASSABLE.has(b) }
 	const HALF = 0.3
 
 	// Returns true if the player AABB at position (px, py, pz) overlaps any
