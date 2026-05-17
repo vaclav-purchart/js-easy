@@ -605,15 +605,14 @@ window.VoxelWorld = {
 	_nextPluginId: 100,  // plugin block IDs start at 100, assigned by engine
 
 	_getBlockId(pluginName, index) {
-		// Each (pluginName, index) pair hashes independently — no more +1 offsets.
-		// Range 10000–64999 (55 000 values) makes birthday-problem collisions
-		// between all plugin blocks essentially impossible.
-		let hash = 0
+		// index 0  →  100–255 (old range): preserves IDs already saved in world files.
+		// index 1+ →  10000–64999: large range eliminates collision risk for extra blocks.
 		const key = index ? pluginName + '\x00' + index : pluginName
+		let hash = 0
 		for (let i = 0; i < key.length; i++) {
 			hash = (hash * 31 + key.charCodeAt(i)) >>> 0
 		}
-		return 10000 + (hash % 55000)
+		return index === 0 ? 100 + (hash % 156) : 10000 + (hash % 55000)
 	},
 
 	registerPlugin(pluginName, pluginObj) {
