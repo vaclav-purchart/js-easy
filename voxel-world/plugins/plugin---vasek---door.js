@@ -12,17 +12,16 @@
  * Direction is inferred from the wall's face normal or camera yaw (floor/ceiling).
  */
 
-/* global VoxelWorld, THREE */
+/* global VoxelWorld, THREE, modified, BLOCK, scene, camera, player, rebuildChunkAt, netSendBlockUpdate, RENDER_DISTANCE, CHUNK_SIZE */
 
 VoxelWorld.registerPlugin('Door', {
 	async init(api) {
 		const DOOR_URL = 'https://purchart.eu/images?file=2026-05-04--14-58-55---Lachim---door.png'
 
-		const BASE          = api.allocateBlockId()
-		const DOOR_Z_CLOSED = BASE       // panel perpendicular to Z, closed (solid)
-		const DOOR_X_CLOSED = BASE + 1   // panel perpendicular to X, closed (solid)
-		const DOOR_Z_OPEN   = BASE + 2   // panel perpendicular to Z, open  (passable)
-		const DOOR_X_OPEN   = BASE + 3   // panel perpendicular to X, open  (passable)
+		const DOOR_Z_CLOSED = api.allocateBlockId()  // panel perpendicular to Z, closed (solid)
+		const DOOR_X_CLOSED = api.allocateBlockId()  // panel perpendicular to X, closed (solid)
+		const DOOR_Z_OPEN   = api.allocateBlockId()  // panel perpendicular to Z, open  (passable)
+		const DOOR_X_OPEN   = api.allocateBlockId()  // panel perpendicular to X, open  (passable)
 
 		const DOOR_IDS    = [DOOR_Z_CLOSED, DOOR_X_CLOSED, DOOR_Z_OPEN, DOOR_X_OPEN]
 		const DOOR_ID_SET = new Set(DOOR_IDS)
@@ -64,6 +63,8 @@ VoxelWorld.registerPlugin('Door', {
 		// Track which door blocks existed last tick so we can detect mining.
 		let prevDoorKeys = new Set()
 
+		const CULL_DIST = (RENDER_DISTANCE + 1) * CHUNK_SIZE
+
 		api.addTickCallback(() => {
 			// ── Scan modified for all current door blocks ─────────────────
 			const currentDoorKeys = new Set()
@@ -89,15 +90,19 @@ VoxelWorld.registerPlugin('Door', {
 			prevDoorKeys = new Set(currentDoorKeys)
 
 			// ── Sync THREE.js panel meshes to world state ─────────────────
-			const bottomKeys = new Set()
+			const visibleBottomKeys = new Set()
 
 			for (const k of currentDoorKeys) {
 				const [x, y, z] = k.split('_').map(Number)
-				// Only process the bottom half (skip top half — door block directly below is also a door)
+
+				// Only process the bottom half
 				const kBelow = `${x}_${y - 1}_${z}`
 				if (currentDoorKeys.has(kBelow)) continue
 
-				bottomKeys.add(k)
+				// Skip doors outside render distance
+				if (Math.abs(x - player.pos.x) > CULL_DIST || Math.abs(z - player.pos.z) > CULL_DIST) continue
+
+				visibleBottomKeys.add(k)
 
 				if (!doorMeshes.has(k)) {
 					const mesh = new THREE.Mesh(panelGeo, panelMat)
@@ -112,9 +117,9 @@ VoxelWorld.registerPlugin('Door', {
 				mesh.rotation.y = ry
 			}
 
-			// Remove meshes for door pairs that no longer exist
+			// Remove meshes that are gone or moved out of render distance
 			for (const [k, mesh] of doorMeshes) {
-				if (!bottomKeys.has(k)) {
+				if (!visibleBottomKeys.has(k)) {
 					scene.remove(mesh)
 					doorMeshes.delete(k)
 				}
@@ -181,6 +186,6 @@ VoxelWorld.registerPlugin('Door', {
 			},
 		})
 
-		console.log('[Door] registered ids ' + BASE + '–' + (BASE + 3))
+		console.log('[Door] registered ids ' + DOOR_Z_CLOSED + ',' + DOOR_X_CLOSED + ',' + DOOR_Z_OPEN + ',' + DOOR_X_OPEN)
 	},
 })

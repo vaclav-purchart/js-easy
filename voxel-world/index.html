@@ -604,15 +604,16 @@ window.VoxelWorld = {
 	_ready: false,
 	_nextPluginId: 100,  // plugin block IDs start at 100, assigned by engine
 
-	_getBlockId(pluginName) {
+	_getBlockId(pluginName, index) {
+		// Each (pluginName, index) pair hashes independently — no more +1 offsets.
+		// Range 10000–64999 (55 000 values) makes birthday-problem collisions
+		// between all plugin blocks essentially impossible.
 		let hash = 0
-
-		for (let i = 0; i < pluginName.length; i++) {
-			hash = (hash * 31 + pluginName.charCodeAt(i)) >>> 0 // keep it uint32
+		const key = index ? pluginName + '\x00' + index : pluginName
+		for (let i = 0; i < key.length; i++) {
+			hash = (hash * 31 + key.charCodeAt(i)) >>> 0
 		}
-
-		// Map to range 100–255 (156 values)
-		return 100 + (hash % 156)
+		return 10000 + (hash % 55000)
 	},
 
 	registerPlugin(pluginName, pluginObj) {
@@ -718,7 +719,7 @@ window.VoxelWorld = {
 				terrainHeight,
 			},
 
-			allocateBlockId: () => VoxelWorld._getBlockId(pluginObj.PLUGIN_NAME),
+			allocateBlockId: (() => { let _seq = 0; return () => VoxelWorld._getBlockId(pluginObj.PLUGIN_NAME, _seq++) })(),
 
 			registerBlock(def) {
 				// Ensure top/bottom fall back to side if not provided

@@ -13,12 +13,59 @@ const WORLDS_DIR = './worlds'
 const PLUGINS_DIR = './saves'
 const PLUGINS_URL_BASE = 'https://purchart.eu/voxel-world'   // adjust to your domain
 const MAX_CLAIM_SIZE = 3
+const WORLD_VERSION = 2   // bump when the on-disk format needs migration
+
+// ── Plugin block-ID migration (v1/v2 → v3) ───────────────────────────────
+// The client changed its allocateBlockId() from a single hash-per-plugin
+// (range 100–255) to per-call hashes (range 10000–64999).  Any world saved
+// before that change has stale block IDs that need to be remapped once.
+//
+// Keep KNOWN_PLUGINS in sync with the plugins that call allocateBlockId().
+// Entry format: [pluginName, numberOfAllocateBlockIdCalls].
+
+function _h31(str) {
+	let h = 0
+	for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0
+	return h
+}
+
+function _buildPluginIdMap() {
+	// v1 allocation: every call returned 100 + hash(pluginName) % 156, then
+	// plugin code added +0,+1,+2… as manual offsets (BASE+N pattern).
+	const v1Id = (name, i) => 100 + (_h31(name) % 156) + i
+
+	// v2 allocation: per-call but still range 100-255 (briefly in use).
+	const v2Id = (name, i) => 100 + (_h31(i ? name + '\x00' + i : name) % 156)
+
+	// v3 (current): per-call, range 10000-64999.
+	const v3Id = (name, i) => 10000 + (_h31(i ? name + '\x00' + i : name) % 55000)
+
+	const KNOWN_PLUGINS = [
+		['Furnace', 1],
+		['Builder', 5],
+		['Door',    4],
+	]
+
+	const map = new Map()
+	for (const [name, count] of KNOWN_PLUGINS) {
+		for (let i = 0; i < count; i++) {
+			const target = v3Id(name, i)
+			for (const old of [v1Id(name, i), v2Id(name, i)]) {
+				if (old !== target && !map.has(old)) map.set(old, target)
+			}
+		}
+	}
+	return map
+}
+
+const _PLUGIN_ID_MAP = _buildPluginIdMap()
 
 // ── Persist a single world to disk ────────────────────────────────────────
 function saveWorld(world) {
 	mkdirSync(WORLDS_DIR, { recursive: true })
 	const filePath = join(WORLDS_DIR, `${world.name}.json`)
 	const data = {
+		version: WORLD_VERSION,
 		world: world.name,
 		seed:  world.seed,
 		modified: [...world.modifiedBlocks.entries()],
@@ -49,6 +96,22 @@ function saveAllWorlds() {
 	}
 }
 
+// ── Migrate a world's plugin block IDs from an older format ──────────────
+function _migrateWorld(world, fromVersion) {
+	if (fromVersion >= WORLD_VERSION) return
+	let count = 0
+	for (const [k, v] of world.modifiedBlocks) {
+		const newV = _PLUGIN_ID_MAP.get(v)
+		if (newV !== undefined) {
+			world.modifiedBlocks.set(k, newV)
+			count++
+		}
+	}
+	console.log(`[voxel-world] [!] Migrated world "${world.name}" v${fromVersion}→v${WORLD_VERSION}` +
+		(count ? ` (${count} plugin blocks remapped)` : ' (no plugin blocks to remap)'))
+	saveWorld(world)
+}
+
 // ── Auto-restore all worlds from the worlds/ folder at startup ────────────
 function restoreAllWorlds() {
 	let files
@@ -63,6 +126,8 @@ function restoreAllWorlds() {
 			const world = getWorld(name)
 			if (typeof data.seed === 'number') world.seed = data.seed
 			for (const [k, v] of data.modified || []) world.modifiedBlocks.set(k, v)
+			const savedVersion = data.version ?? 0
+			if (savedVersion < WORLD_VERSION) _migrateWorld(world, savedVersion)
 			for (const c of data.claims || []) {
 				if (!c.owner || typeof c.blockX !== 'number') continue
 				world.claims.set(c.owner.toLowerCase(), {
