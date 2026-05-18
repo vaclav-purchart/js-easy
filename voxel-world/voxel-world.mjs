@@ -143,6 +143,14 @@ function broadcastAllPlayers(obj) {
 			if (p.ws.readyState === 1) p.ws.send(data)
 }
 
+function broadcastGlobalPlayersList() {
+	const nicknames = []
+	for (const world of worlds.values())
+		for (const p of world.players.values())
+			nicknames.push(p.nickname)
+	broadcastAllPlayers({ type: 'players_list', nicknames })
+}
+
 function watchPluginsFolder() {
 	try {
 		mkdirSync(PLUGINS_DIR, { recursive: true })
@@ -891,6 +899,7 @@ function kickPlayer(world, player, reason) {
 	player.ws.close(1000, reason)
 	world.players.delete(player.id)
 	broadcastWorld(world, { type: 'player_leave', id: player.id })
+	broadcastGlobalPlayersList()
 	console.log(`[kick] "${player.nickname}" kicked from "${world.name}": ${reason}`)
 }
 
@@ -957,6 +966,7 @@ export default function attachVoxelWorld(httpServer) {
 						claims: [...world.claims.values()].map(serializeClaim),
 					})
 					broadcastWorld(world, { type:'player_join', player:serializePlayer(player) }, id)
+					broadcastGlobalPlayersList()
 					console.log(`[+] "${nickname}" -> "${worldName}" (${id})  online=${world.players.size}`)
 					break
 				}
@@ -1280,6 +1290,7 @@ export default function attachVoxelWorld(httpServer) {
 					if (!player) return
 					player.nickname = (msg.nickname || '').trim().slice(0, 20) || player.nickname
 					broadcastWorld(world, { type:'player_rename', id:player.id, nickname:player.nickname })
+					broadcastGlobalPlayersList()
 					break
 				}
 				case 'world_reset': {
@@ -1379,8 +1390,8 @@ export default function attachVoxelWorld(httpServer) {
 					if (!player) return
 					const text = String(msg.text || '').trim().slice(0, 200)
 					if (!text) return
-					broadcastWorld(world, { type:'chat', nickname:player.nickname, text })
-					console.log(`[chat/${world.name}] ${player.nickname}: ${text}`)
+					broadcastAllPlayers({ type:'chat', nickname:player.nickname, text })
+					console.log(`[chat] ${player.nickname}: ${text}`)
 					break
 				}
 			}
@@ -1390,6 +1401,7 @@ export default function attachVoxelWorld(httpServer) {
 			if (player && world) {
 				world.players.delete(player.id)
 				broadcastWorld(world, { type:'player_leave', id:player.id })
+				broadcastGlobalPlayersList()
 				console.log(`[-] ${player.nickname} left "${world.name}"  online=${world.players.size}`)
 			}
 		})

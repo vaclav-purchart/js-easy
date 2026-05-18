@@ -2450,6 +2450,7 @@ function updatePlayerLabel(model, nickname) {
    REMOTE PLAYERS
 ============================================================ */
 const remotePlayers = new Map()
+let allOnlinePlayers = []
 // Per-player tool visual overrides: Map<playerId, Map<toolIndex, THREE.Group>>
 // Populated when we receive a tool_visual broadcast from that player.
 const remoteToolModels = new Map()
@@ -4352,6 +4353,8 @@ function connect() {
 		connected = false; myId = null
 		for (const id of [...remotePlayers.keys()]) removeRemotePlayer(id)
 		for (const id of [...mobs.keys()]) removeMob(id)
+		allOnlinePlayers = []
+		updatePlayerList()
 		setStatus('offline', 'OFFLINE')
 		scheduleReconnect()
 	}
@@ -4401,8 +4404,8 @@ function handleServerMessage(msg) {
 			addChatMessage('', `🪶 A ${typeLabel} was killed by ${msg.killerName}`, true)
 			break
 		}
-		case 'player_join': addRemotePlayer(msg.player); updatePlayerList(); break
-		case 'player_leave': removeRemotePlayer(msg.id); remoteToolModels.delete(msg.id); updatePlayerList(); break
+		case 'player_join': addRemotePlayer(msg.player); break
+		case 'player_leave': removeRemotePlayer(msg.id); remoteToolModels.delete(msg.id); break
 		case 'tool_visual': {
 			const { id, toolIndex, iconDataURL } = msg
 			if (typeof iconDataURL !== 'string' || !iconDataURL.startsWith('data:image/')) break
@@ -4470,7 +4473,6 @@ function handleServerMessage(msg) {
 		case 'player_rename': {
 			const rp = remotePlayers.get(msg.id)
 			if (rp) { rp.data.nickname = msg.nickname; updatePlayerLabel(rp.model, msg.nickname) }
-			updatePlayerList()
 			break
 		}
 		case 'world_reset': {
@@ -4560,6 +4562,11 @@ function handleServerMessage(msg) {
 		}
 		case 'kicked': {
 			location.reload()
+			break
+		}
+		case 'players_list': {
+			allOnlinePlayers = msg.nicknames
+			updatePlayerList()
 			break
 		}
 		case 'chat': {
@@ -4680,17 +4687,16 @@ function netSendNickname(name) { netSend({ type:'set_nickname', nickname:name })
 
 function updatePlayerList() {
 	const el = document.getElementById('player-list')
-	const total = remotePlayers.size + 1   // +1 for self
 	el.style.display = 'block'
-	el.innerHTML = `<b>Players online (${total})</b><hr style="margin:3px 0">`
-	// Self first
-	const selfEl = document.createElement('div')
-	selfEl.style.color = '#8df'
-	selfEl.textContent = '● ' + myNickname + ' (you)'
-	el.appendChild(selfEl)
-	for (const { data } of remotePlayers.values()) {
+	el.innerHTML = `<b>Players online (${allOnlinePlayers.length})</b><hr style="margin:3px 0">`
+	for (const nickname of allOnlinePlayers) {
 		const d = document.createElement('div')
-		d.textContent = '● ' + data.nickname
+		if (nickname === myNickname) {
+			d.style.color = '#8df'
+			d.textContent = '● ' + nickname + ' (you)'
+		} else {
+			d.textContent = '● ' + nickname
+		}
 		el.appendChild(d)
 	}
 }
