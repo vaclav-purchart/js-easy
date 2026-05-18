@@ -883,6 +883,27 @@ setInterval(() => {
 	}
 }, 50)
 
+// ── Idle kick — disconnect players with no activity for 15 minutes ───────
+const IDLE_KICK_MS = 15 * 60 * 1000
+
+function kickPlayer(world, player, reason) {
+	send(player.ws, { type: 'kicked', reason })
+	player.ws.close(1000, reason)
+	world.players.delete(player.id)
+	broadcastWorld(world, { type: 'player_leave', id: player.id })
+	console.log(`[kick] "${player.nickname}" kicked from "${world.name}": ${reason}`)
+}
+
+setInterval(() => {
+	const now = Date.now()
+	for (const world of worlds.values()) {
+		for (const p of world.players.values()) {
+			if (now - p.lastActivityTime > IDLE_KICK_MS)
+				kickPlayer(world, p, 'Kicked for inactivity (15 min)')
+		}
+	}
+}, 60_000)
+
 // ── Player health regeneration — 1 HP/s, starts 5 s after last hit ───────
 const REGEN_DELAY_MS = 5000
 setInterval(() => {
@@ -909,6 +930,7 @@ export default function attachVoxelWorld(httpServer) {
 
 		ws.on('message', (raw) => {
 			let msg; try { msg = JSON.parse(raw) } catch { return }
+			if (player) player.lastActivityTime = Date.now()
 
 			switch (msg.type) {
 				case 'join': {
@@ -917,7 +939,7 @@ export default function attachVoxelWorld(httpServer) {
 					world = getWorld(worldName)
 					const id = world.nextId++
 					player = { id, nickname, x:0, y:20, z:0, yaw:0, pitch:0, ws, dirty:false,
-					           hp:100, lastHitTime:0, held:null, swing:false,
+					           hp:100, lastHitTime:0, lastActivityTime:Date.now(), held:null, swing:false,
 					           // Mob types this client knows about (built-ins + everything
 					           // their loaded plugins have registered). Plugin types arrive
 					           // via register_mob_type after init.
@@ -1341,6 +1363,16 @@ export default function attachVoxelWorld(httpServer) {
 						}
 					}
 					send(ws, { type: 'claim_error', text: 'You have no claim or friendly claim to teleport to.' })
+					break
+				}
+				case 'kick': {
+					if (!player || !world) return
+					const target = [...world.players.values()]
+						.find((p) => p.nickname.toLowerCase() === String(msg.nickname || '').toLowerCase())
+					if (!target) { send(ws, { type: 'chat', nickname: '⚡', text: `Player "${msg.nickname}" not found.` }); return }
+					if (target.id === player.id) { send(ws, { type: 'chat', nickname: '⚡', text: "You can't kick yourself." }); return }
+					kickPlayer(world, target, `Kicked by ${player.nickname}`)
+					send(ws, { type: 'chat', nickname: '⚡', text: `Kicked ${target.nickname}.` })
 					break
 				}
 				case 'chat': {

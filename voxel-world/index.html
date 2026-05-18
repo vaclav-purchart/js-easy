@@ -4206,6 +4206,13 @@ function handleCommand(raw) {
 		showToast('World reset!')
 		return
 	}
+	if (v.startsWith('/kick ')) {
+		const target = v.slice(6).trim()
+		if (!target) { showToast('Usage: /kick <player name>'); return }
+		if (offlineMode) { showToast('Not available in offline mode.'); return }
+		netSend({ type: 'kick', nickname: target })
+		return
+	}
 	if (v.startsWith('/nick ')) {
 		myNickname = v.slice(6).trim().slice(0, 20)
 		updateClaimColors()
@@ -4536,6 +4543,10 @@ function handleServerMessage(msg) {
 		}
 		case 'claim_error': {
 			showToast(msg.text)
+			break
+		}
+		case 'kicked': {
+			location.reload()
 			break
 		}
 		case 'chat': {
