@@ -170,9 +170,9 @@ VoxelWorld.registerPlugin('Door', {
 				// Wall normals determine orientation; floor/ceiling falls back to camera yaw.
 				let closedId
 				if (f.nx !== 0) {
-					closedId = DOOR_Z_CLOSED
-				} else if (f.nz !== 0) {
 					closedId = DOOR_X_CLOSED
+				} else if (f.nz !== 0) {
+					closedId = DOOR_Z_CLOSED
 				} else {
 					const dir = new THREE.Vector3()
 					camera.getWorldDirection(dir)
