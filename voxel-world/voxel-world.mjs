@@ -15,6 +15,7 @@ const PLUGINS_URL_BASE = 'https://purchart.eu/voxel-world'   // adjust to your d
 const MAX_CLAIM_SIZE = 3
 const WORLD_VERSION = 2   // bump when the on-disk format needs migration
 
+const CLAIM_BLOCK_ID = 10
 
 // ── Persist a single world to disk ────────────────────────────────────────
 function saveWorld(world) {
@@ -310,7 +311,6 @@ function getGroundY(world, x, z) {
 }
 
 // ── Claim system ──────────────────────────────────────────────────────────
-const CLAIM_BLOCK_ID = 10
 
 function claimBounds(claim) {
 	const cx = Math.floor(claim.blockX / CHUNK_SIZE)
