@@ -4712,10 +4712,23 @@ const _defaultNick = 'Player' + Math.floor(Math.random() * 9000 + 1000)
 lobbyNickEl.value = localStorage.getItem('voxelNickname') || _defaultNick
 
 // ── Plugin picker ──────────────────────────────────────────────────────────
-const PLUGINS_API   = 'https://purchart.eu/voxel-world/plugins'
+const PLUGINS_API          = 'https://purchart.eu/voxel-world/plugins'
+const PLUGIN_UNCHECKED_KEY = 'voxelUncheckedPlugins'
 const pluginListEl  = document.getElementById('lobby-plugins-list')
 const checkAllBtn   = document.getElementById('lobby-plugins-check-all')
 let availablePlugins = []   // { url, filename, name, author }
+
+function loadUncheckedPlugins() {
+	try { return new Set(JSON.parse(localStorage.getItem(PLUGIN_UNCHECKED_KEY) || '[]')) }
+	catch { return new Set() }
+}
+
+function savePluginState() {
+	const unchecked = [...pluginListEl.querySelectorAll('input[type=checkbox]')]
+		.filter(c => !c.checked)
+		.map(c => c.dataset.url)
+	localStorage.setItem(PLUGIN_UNCHECKED_KEY, JSON.stringify(unchecked))
+}
 
 function parsePluginMeta(url) {
 	// filename schema: plugin---[author]---[name].js
@@ -4735,6 +4748,7 @@ function buildPluginList(plugins) {
 	availablePlugins = plugins
 	pluginListEl.classList.remove('loading', 'error')
 	pluginListEl.innerHTML = ''
+	const uncheckedUrls = loadUncheckedPlugins()
 
 	if (plugins.length === 0) {
 		pluginListEl.textContent = 'No plugins available.'
@@ -4749,7 +4763,7 @@ function buildPluginList(plugins) {
 		const cb   = document.createElement('input')
 		cb.type    = 'checkbox'
 		cb.dataset.url = p.url
-		cb.checked = true
+		cb.checked = !uncheckedUrls.has(p.url)
 
 		const nameEl   = document.createElement('span')
 		nameEl.className = 'plugin-name'
@@ -4778,8 +4792,9 @@ checkAllBtn.addEventListener('click', () => {
 	const shouldCheck = !all.every(c => c.checked)
 	all.forEach(c => { c.checked = shouldCheck })
 	updateCheckAllLabel()
+	savePluginState()
 })
-pluginListEl.addEventListener('change', updateCheckAllLabel)
+pluginListEl.addEventListener('change', () => { updateCheckAllLabel(); savePluginState() })
 
 // ?plugin= URL params — inject as local test entries at the top of the list
 const _localPluginPaths = new URLSearchParams(location.search).getAll('plugin')
