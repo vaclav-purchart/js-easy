@@ -309,6 +309,23 @@
   .plugin-row input[type=checkbox] { margin:0; cursor:pointer; accent-color:#8df; }
   .plugin-row .plugin-name  { color:white; font-size:12px; }
   .plugin-row .plugin-author { color:#8df; font-size:11px; margin-left:auto; white-space:nowrap; }
+  .plugin-cat-tags { display:flex; gap:2px; flex-wrap:wrap; }
+  .plugin-cat-tag {
+    font-size:9px; padding:0 4px; border-radius:2px; line-height:16px;
+    background:rgba(255,255,255,.08); color:#778; border:1px solid #445;
+  }
+  #lobby-plugin-categories {
+    display:flex; flex-wrap:wrap; gap:4px; padding:4px 0 2px;
+    min-height:0;
+  }
+  .plugin-cat-chip {
+    font-family:monospace; font-size:11px; padding:2px 8px;
+    cursor:pointer; border:1px solid #445; background:rgba(255,255,255,.05);
+    color:#667; transition:background .15s, color .15s, border-color .15s;
+  }
+  .plugin-cat-chip:hover { background:rgba(255,255,255,.1); color:#aaa; }
+  .plugin-cat-chip.some { border-color:#556; color:#99b; background:rgba(120,140,180,.12); }
+  .plugin-cat-chip.all  { border-color:#8df; color:#8df; background:rgba(100,160,240,.18); }
   /* ── Settings panel ── */
   #settings-panel {
     position:fixed; top:10px; left:50%; transform:translateX(-50%);
@@ -493,6 +510,7 @@
         <label>Plugins</label>
         <button id="lobby-plugins-check-all">Check all</button>
       </div>
+      <div id="lobby-plugin-categories"></div>
       <div id="lobby-plugins-list" class="loading">Loading plugins…</div>
     </div>
     <div class="lobby-buttons">
@@ -4842,9 +4860,17 @@ lobbyNickEl.value = localStorage.getItem('voxelNickname') || _defaultNick
 // ── Plugin picker ──────────────────────────────────────────────────────────
 const PLUGINS_API          = 'https://purchart.eu/voxel-world/plugins'
 const PLUGIN_UNCHECKED_KEY = 'voxelUncheckedPlugins'
-const pluginListEl  = document.getElementById('lobby-plugins-list')
-const checkAllBtn   = document.getElementById('lobby-plugins-check-all')
-let availablePlugins = []   // { url, filename, name, author }
+const pluginListEl = document.getElementById('lobby-plugins-list')
+const checkAllBtn = document.getElementById('lobby-plugins-check-all')
+const catChipsEl = document.getElementById('lobby-plugin-categories')
+let availablePlugins = []   // { url, filename, name, author, categories }
+
+const CATEGORY_DEFS = [
+	{ id: 'blocks', label: '🧱 Blocks', pattern: /\bapi\.registerBlock\b/ },
+	{ id: 'tools', label: '⚒ Tools', pattern: /\bapi\.registerTool\b/ },
+	{ id: 'mobs', label: '👾 Mobs', pattern: /\bapi\.registerMob\b/ },
+	{ id: 'world', label: '🌿 World', pattern: /\bapi\.register(?:Plant|Tree|Structure)\b/ },
+]
 
 function loadUncheckedPlugins() {
 	try { return new Set(JSON.parse(localStorage.getItem(PLUGIN_UNCHECKED_KEY) || '[]')) }
@@ -4859,17 +4885,44 @@ function savePluginState() {
 }
 
 function parsePluginMeta(url) {
-	// filename schema: plugin---[author]---[name].js
 	const filename = url.split('/list?file=').pop()
-	console.log(filename)
-
 	const m = filename.match(/^plugin---(.+?)---(.+?)\.js$/i)
 	return {
 		url,
 		filename,
 		author: m ? m[1].replace(/-/g, ' ') : 'unknown',
 		name:   m ? m[2].replace(/-/g, ' ') : filename,
+		categories: [],
 	}
+}
+
+function _buildPluginRow(p, checked) {
+	const row = document.createElement('label')
+	row.className = 'plugin-row'
+
+	const cb = document.createElement('input')
+	cb.type = 'checkbox'
+	cb.dataset.url = p.url
+	cb.dataset.categories = '[]'
+	cb.checked = checked
+
+	const nameEl = document.createElement('span')
+	nameEl.className = 'plugin-name'
+	nameEl.textContent = p.name
+
+	const tagsEl = document.createElement('span')
+	tagsEl.className = 'plugin-cat-tags'
+	tagsEl.dataset.tagsFor = p.url
+
+	const authorEl = document.createElement('span')
+	authorEl.className = 'plugin-author'
+	authorEl.textContent = p.author
+
+	row.appendChild(cb)
+	row.appendChild(nameEl)
+	row.appendChild(tagsEl)
+	row.appendChild(authorEl)
+	return row
 }
 
 function buildPluginList(plugins) {
@@ -4885,30 +4938,91 @@ function buildPluginList(plugins) {
 	}
 
 	for (const p of plugins) {
-		const row  = document.createElement('label')
-		row.className = 'plugin-row'
-
-		const cb   = document.createElement('input')
-		cb.type    = 'checkbox'
-		cb.dataset.url = p.url
-		cb.checked = !uncheckedUrls.has(p.url)
-
-		const nameEl   = document.createElement('span')
-		nameEl.className = 'plugin-name'
-		nameEl.textContent = p.name
-
-		const authorEl = document.createElement('span')
-		authorEl.className = 'plugin-author'
-		authorEl.textContent = p.author
-
-		row.appendChild(cb)
-		row.appendChild(nameEl)
-		row.appendChild(authorEl)
-		pluginListEl.appendChild(row)
+		pluginListEl.appendChild(_buildPluginRow(p, !uncheckedUrls.has(p.url)))
 	}
 
 	updateCheckAllLabel()
+	_fetchAllCategories(plugins)
 }
+
+// ── Category chips ────────────────────────────────────────────────────────
+
+function _updateCategoryChips() {
+	for (const chip of catChipsEl.querySelectorAll('.plugin-cat-chip')) {
+		const catId = chip.dataset.catId
+		const boxes = _boxesForCategory(catId)
+		const all  = boxes.length > 0 && boxes.every((cb) => cb.checked)
+		const some = !all && boxes.some((cb) => cb.checked)
+		chip.classList.toggle('all', all)
+		chip.classList.toggle('some', some)
+	}
+}
+
+function _renderCategoryChips(usedCatIds) {
+	catChipsEl.innerHTML = ''
+	for (const def of CATEGORY_DEFS) {
+		if (!usedCatIds.has(def.id)) continue
+		const chip = document.createElement('button')
+		chip.className = 'plugin-cat-chip'
+		chip.dataset.catId = def.id
+		chip.textContent = def.label
+		chip.addEventListener('click', () => {
+			const boxes = _boxesForCategory(def.id)
+			const shouldCheck = !boxes.every((cb) => cb.checked)
+			boxes.forEach((cb) => { cb.checked = shouldCheck })
+			_updateCategoryChips()
+			updateCheckAllLabel()
+			savePluginState()
+		})
+		catChipsEl.appendChild(chip)
+	}
+	_updateCategoryChips()
+}
+
+function _boxesForCategory(catId) {
+	return [...pluginListEl.querySelectorAll('input[type=checkbox]')].filter((cb) => {
+		try { return JSON.parse(cb.dataset.categories).includes(catId) }
+		catch { return false }
+	})
+}
+
+// ── Source-based category detection ──────────────────────────────────────
+
+async function _fetchAllCategories(plugins) {
+	const usedCatIds = new Set()
+	await Promise.all(plugins.map(async (p) => {
+		let cats = []
+		try {
+			const res = await fetch(p.url, { cache: 'force-cache' })
+			if (res.ok) {
+				const src = await res.text()
+				cats = CATEGORY_DEFS.filter((def) => def.pattern.test(src)).map((def) => def.id)
+			}
+		} catch { /* ignore network errors */ }
+
+		if (cats.length === 0) return
+		cats.forEach((c) => usedCatIds.add(c))
+
+		const cb = pluginListEl.querySelector(`input[data-url="${p.url}"]`)
+		if (cb) cb.dataset.categories = JSON.stringify(cats)
+
+		const tagsEl = pluginListEl.querySelector(`[data-tags-for="${p.url}"]`)
+		if (tagsEl) {
+			for (const catId of cats) {
+				const def = CATEGORY_DEFS.find((d) => d.id === catId)
+				if (!def) continue
+				const tag = document.createElement('span')
+				tag.className = 'plugin-cat-tag'
+				tag.textContent = def.label
+				tagsEl.appendChild(tag)
+			}
+		}
+	}))
+
+	if (usedCatIds.size > 0) _renderCategoryChips(usedCatIds)
+}
+
+// ── Shared controls ───────────────────────────────────────────────────────
 
 function updateCheckAllLabel() {
 	const all = [...pluginListEl.querySelectorAll('input[type=checkbox]')]
@@ -4920,9 +5034,14 @@ checkAllBtn.addEventListener('click', () => {
 	const shouldCheck = !all.every(c => c.checked)
 	all.forEach(c => { c.checked = shouldCheck })
 	updateCheckAllLabel()
+	_updateCategoryChips()
 	savePluginState()
 })
-pluginListEl.addEventListener('change', () => { updateCheckAllLabel(); savePluginState() })
+pluginListEl.addEventListener('change', () => {
+	updateCheckAllLabel()
+	_updateCategoryChips()
+	savePluginState()
+})
 
 // ?plugin= URL params — inject as local test entries at the top of the list
 const _localPluginPaths = new URLSearchParams(location.search).getAll('plugin')
