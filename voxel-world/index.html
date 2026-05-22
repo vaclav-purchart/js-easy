@@ -192,6 +192,31 @@
     border-left:1px solid #334;
   }
   #gui-close:hover { color:white; background:rgba(255,80,80,.2); }
+  #gui-search {
+    padding:8px 12px; border-bottom:1px solid #334;
+    background:rgba(0,0,0,.2);
+  }
+  #gui-search-wrap { position:relative; }
+  #gui-search-input {
+    width:100%; box-sizing:border-box;
+    background:rgba(255,255,255,.07); border:1px solid #445;
+    color:#ddd; font-family:monospace; font-size:13px;
+    padding:6px 32px 6px 30px; outline:none;
+  }
+  #gui-search-input:focus { border-color:#8df; }
+  #gui-search-input::placeholder { color:#556; }
+  #gui-search-icon {
+    position:absolute; left:8px; top:50%; transform:translateY(-50%);
+    font-size:13px; pointer-events:none; user-select:none;
+  }
+  #gui-search-clear {
+    position:absolute; right:4px; top:50%; transform:translateY(-50%);
+    background:none; border:none; color:#556; cursor:pointer;
+    font-size:13px; padding:2px 6px; line-height:1;
+    display:none;
+  }
+  #gui-search-clear:hover { color:#ddd; }
+  #gui-search-clear.visible { display:block; }
   #gui-body { flex:1; overflow-y:auto; padding:16px; }
   /* Block picker grid */
   .block-grid {
@@ -436,6 +461,13 @@
     <div id="gui-tabs">
       <!-- tabs injected by JS -->
       <div id="gui-close" title="Close (E/I/Esc)">✕</div>
+    </div>
+    <div id="gui-search">
+      <div id="gui-search-wrap">
+        <span id="gui-search-icon">🔍</span>
+        <input id="gui-search-input" type="text" placeholder="Search…" autocomplete="off" spellcheck="false">
+        <button id="gui-search-clear" title="Clear search">✕</button>
+      </div>
     </div>
     <div id="gui-body"></div>
   </div>
@@ -3961,9 +3993,10 @@ document.getElementById('blocks-modal-overlay').addEventListener('click', (e) =>
    GAME GUI  — tabbed modal panel (block picker / inventory / crafting)
    Tabs are registered dynamically so mods can add their own.
 ============================================================ */
-const guiEl   = document.getElementById('game-gui')
+const guiEl = document.getElementById('game-gui')
 const guiTabs = document.getElementById('gui-tabs')
 const guiBody = document.getElementById('gui-body')
+const guiSearchInput = document.getElementById('gui-search-input')
 let guiOpen = false
 let activeTabId = null
 
@@ -3988,11 +4021,57 @@ function _rebuildGuiTabs() {
 	}
 }
 
+function _applyGuiSearch(query) {
+	const q = query.toLowerCase().trim()
+	for (const item of guiBody.querySelectorAll('.block-grid-item')) {
+		const name = item.querySelector('span')?.textContent?.toLowerCase() ?? ''
+		item.style.display = (!q || name.includes(q)) ? '' : 'none'
+	}
+	// Hide section titles whose entire group is filtered out
+	for (const title of guiBody.querySelectorAll('.gui-section-title')) {
+		let sibling = title.nextElementSibling
+		while (sibling && !sibling.classList.contains('block-grid')) sibling = sibling.nextElementSibling
+		const anyVisible = sibling
+			? [...sibling.querySelectorAll('.block-grid-item')].some((el) => el.style.display !== 'none')
+			: true
+		title.style.display = anyVisible ? '' : 'none'
+	}
+}
+
+const guiSearchClear = document.getElementById('gui-search-clear')
+
+function _clearGuiSearch() {
+	guiSearchInput.value = ''
+	guiSearchClear.classList.remove('visible')
+	_applyGuiSearch('')
+	guiSearchInput.focus()
+}
+
+guiSearchInput.addEventListener('input', () => {
+	_applyGuiSearch(guiSearchInput.value)
+	guiSearchClear.classList.toggle('visible', guiSearchInput.value.length > 0)
+})
+
+guiSearchInput.addEventListener('keydown', (e) => {
+	if (e.code === 'Escape') {
+		e.preventDefault()
+		e.stopPropagation()
+		if (guiSearchInput.value) { _clearGuiSearch() } else { closeGui() }
+	} else {
+		// Prevent all other keys from reaching game control listeners
+		e.stopPropagation()
+	}
+})
+
+guiSearchClear.addEventListener('click', _clearGuiSearch)
+
 function openGuiTab(id) {
 	activeTabId = id
 	_rebuildGuiTabs()
 	const tab = GUI_TABS.find(t => t.id === id)
 	guiBody.innerHTML = ''
+	guiSearchInput.value = ''
+	guiSearchClear.classList.remove('visible')
 	if (tab) guiBody.appendChild(tab.render())
 }
 
@@ -4002,6 +4081,7 @@ function openGui(tabId) {
 	guiEl.classList.add('open')
 	document.exitPointerLock?.()
 	openGuiTab(tabId || activeTabId || GUI_TABS[0]?.id)
+	setTimeout(() => guiSearchInput.focus(), 50)
 }
 
 function closeGui() {
