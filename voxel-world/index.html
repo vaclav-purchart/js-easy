@@ -890,12 +890,8 @@ window.VoxelWorld = {
 			registerTool(def) {
 				if (!def?.name) { console.warn('[plugin] registerTool: missing name'); return }
 				loadTool(def).then((tool) => {
-					const toolIndex = loadedTools.length
 					loadedTools.push(tool)
-					// Insert after other tools, before blocks
-					const toolCount = HOTBAR_ITEMS.filter((it) => it.type === 'tool').length
-					HOTBAR_ITEMS.splice(toolCount, 0, { type: 'tool', toolIndex, name: tool.name })
-					rebuildHotbarDOM()
+					// Tool is available in the Tools picker GUI; player assigns it to a slot manually
 					console.log(`[plugin] Registered tool "${tool.name}"`)
 				})
 			},
@@ -3219,9 +3215,40 @@ const TOOL_DEFS = [
 		url: 'https://purchart.eu/images?file=2026-03-25--19-33-18---luky15---kamenny-krumpac.png',
 		damage: 5,
 	},
-	// To add more tools, append here:
-	// { name: 'Axe', url: '...', damage: 12 },
-	// { name: 'Shovel', draw(ctx,W,H){ ... }, damage: 4 },
+	{
+		name: 'Bucket',
+		draw(ctx, W, H) {
+			// Body: trapezoid, wider at top
+			ctx.fillStyle = '#aaa'
+			ctx.beginPath()
+			ctx.moveTo(3, 5); ctx.lineTo(13, 5)
+			ctx.lineTo(11, 14); ctx.lineTo(5, 14)
+			ctx.closePath(); ctx.fill()
+			// Rim
+			ctx.fillStyle = '#ccc'
+			ctx.fillRect(2, 4, 12, 2)
+			// Handle arc
+			ctx.strokeStyle = '#888'; ctx.lineWidth = 1.5
+			ctx.beginPath(); ctx.arc(8, 4, 4, Math.PI, 0); ctx.stroke()
+			// Water fill inside bucket
+			ctx.fillStyle = '#38f'
+			ctx.beginPath()
+			ctx.moveTo(5, 9); ctx.lineTo(11, 9)
+			ctx.lineTo(10, 14); ctx.lineTo(6, 14)
+			ctx.closePath(); ctx.fill()
+		},
+		damage: 0,
+		onRightClick({ target, BLOCK, setBlock }) {
+			if (!target?.face) return
+			const { x, y, z, nx, ny, nz } = target.face
+			setBlock(x + nx, y + ny, z + nz, BLOCK.WATER)
+		},
+		onLeftClick({ target, BLOCK, setBlock, getBlock }) {
+			if (!target?.face) return
+			const { x, y, z } = target.face
+			if (getBlock(x, y, z) === BLOCK.WATER) setBlock(x, y, z, 0)
+		},
+	},
 ]
 
 // ── Build a 3D voxel model from a 16×16 RGBA pixel array ─────────────────
@@ -3487,9 +3514,8 @@ function swapCurrentTool(toolName) {
 	if (HOTBAR_ITEMS[selectedSlot]?.type === 'tool') {
 		HOTBAR_ITEMS[selectedSlot] = { type: 'tool', toolIndex: toolIdx, name }
 	} else {
-		const ti = HOTBAR_ITEMS.findIndex((it) => it.type === 'tool')
+		const ti = HOTBAR_ITEMS.findIndex((it) => it?.type === 'tool')
 		if (ti !== -1) { HOTBAR_ITEMS[ti] = { type: 'tool', toolIndex: toolIdx, name }; selectedSlot = ti }
-		else { HOTBAR_ITEMS.unshift({ type: 'tool', toolIndex: toolIdx, name }); selectedSlot = 0 }
 	}
 	rebuildHotbarDOM()
 }
@@ -3500,19 +3526,22 @@ function swapCurrentTool(toolName) {
 const hotbar = document.getElementById('hotbar')
 let selectedSlot = 0
 
-// Hotbar items: first blocks, then tools (appended once loaded)
-// Each entry: { type:'block', blockId, name } | { type:'tool', toolIndex, name }
+// Fixed 10-slot hotbar. Slots 0-2 are tools (filled async on load); slots 3-9 are blocks.
+// Each entry: { type:'block', blockId, name } | { type:'tool', toolIndex, name } | { type:'empty', name:'' }
 const HOTBAR_ITEMS = [
-	{ type: 'block', blockId: BLOCK.DIRT,   name: 'Dirt'   },
-	{ type: 'block', blockId: BLOCK.STONE,  name: 'Stone'  },
-	{ type: 'block', blockId: BLOCK.WOOD,   name: 'Wood'   },
-	{ type: 'block', blockId: BLOCK.SAND,   name: 'Sand'   },
-	{ type: 'block', blockId: BLOCK.GLASS,  name: 'Glass'  },
+	{ type: 'empty', name: '' },  // slot 0: Sword   (filled on load)
+	{ type: 'empty', name: '' },  // slot 1: Pickaxe (filled on load)
+	{ type: 'empty', name: '' },  // slot 2: Bucket  (filled on load)
+	{ type: 'block', blockId: BLOCK.DIRT, name: 'Dirt' },
+	{ type: 'block', blockId: BLOCK.STONE, name: 'Stone' },
+	{ type: 'block', blockId: BLOCK.WOOD, name: 'Wood' },
+	{ type: 'block', blockId: BLOCK.SAND, name: 'Sand' },
+	{ type: 'block', blockId: BLOCK.GLASS, name: 'Glass' },
 	{ type: 'block', blockId: BLOCK.LEAVES, name: 'Leaves' },
-	// Tools appended dynamically after loading (slots 7, 8, 9, …)
+	{ type: 'block', blockId: BLOCK.GRASS, name: 'Grass' },
 ]
 
-// These stay for backward compat with placeBlock
+// Backward compat with placeBlock — tools / empty slots yield undefined which is harmless
 const HOTBAR_BLOCKS = HOTBAR_ITEMS.map(it => it.blockId)
 
 function equippedTool() {
@@ -3563,8 +3592,7 @@ function rebuildHotbarDOM() {
 
 		if (item.type === 'block') {
 			d.appendChild(makeBlockIcon(item.blockId))
-		} else {
-			// Tool icon: show the loaded PNG
+		} else if (item.type === 'tool') {
 			const tool = loadedTools[item.toolIndex]
 			const img = document.createElement('img')
 			img.className = 'icon'
@@ -3572,10 +3600,13 @@ function rebuildHotbarDOM() {
 			if (tool) img.src = tool.iconDataURL
 			d.appendChild(img)
 		}
+		// type === 'empty': slot renders blank until a tool loads into it
 
-		const lbl = document.createElement('span')
-		lbl.textContent = item.name
-		d.appendChild(lbl)
+		if (item.name) {
+			const lbl = document.createElement('span')
+			lbl.textContent = item.name
+			d.appendChild(lbl)
+		}
 		hotbar.appendChild(d)
 	}
 	updateHotbar()
@@ -3588,22 +3619,21 @@ function updateHotbar() {
 // Initial hotbar with blocks
 rebuildHotbarDOM()
 
-// Load all built-in tools, then prepend them to the hotbar so sword is slot 0,
-// pickaxe slot 1, and blocks come after.
+// Load built-in tools into their fixed hotbar slots (0 = Sword, 1 = Pickaxe, 2 = Bucket).
 ;(async () => {
-	const newItems = []
 	for (let i = 0; i < TOOL_DEFS.length; i++) {
 		const tool = await loadTool(TOOL_DEFS[i])
 		loadedTools.push(tool)
-		newItems.push({ type: 'tool', toolIndex: i, name: tool.name })
+		HOTBAR_ITEMS[i] = { type: 'tool', toolIndex: i, name: tool.name }
+		rebuildHotbarDOM()
 	}
-	HOTBAR_ITEMS.unshift(...newItems)
 	selectedSlot = 0
 	rebuildHotbarDOM()
 })()
 
 addEventListener('keydown', (e) => {
 	if (e.key >= '1' && e.key <= '9') { selectedSlot = +e.key - 1; updateHotbar() }
+	if (e.key === '0') { selectedSlot = 9; updateHotbar() }
 	if (e.code === 'KeyM') document.getElementById('debugImg').style.display =
 		document.getElementById('debugImg').style.display === 'none' ? 'block' : 'none'
 })
@@ -4096,26 +4126,13 @@ function renderBlockPicker() {
 }
 
 function _pickBlock(blockId, itemEl, grid) {
-	// Assign to hotbar: find existing slot with this block, or use/create one
 	const existingIdx = HOTBAR_ITEMS.findIndex(it => it.type === 'block' && it.blockId === blockId)
 	if (existingIdx !== -1) {
 		selectedSlot = existingIdx
 	} else {
-		// Replace the first block slot with this block
-		const firstBlockIdx = HOTBAR_ITEMS.findIndex(it => it.type === 'block')
-		if (firstBlockIdx !== -1) {
-			// Shift blocks left, put new one at end of block section; keep tools first
-			const blockItems = HOTBAR_ITEMS.filter((it) => it.type === 'block')
-			const toolItems  = HOTBAR_ITEMS.filter((it) => it.type === 'tool')
-			blockItems.shift()
-			const reg = BLOCK_REGISTRY.find((r) => r.id === blockId)
-			blockItems.push({ type:'block', blockId, name: reg?.name ?? String(blockId) })
-			HOTBAR_ITEMS.length = 0
-			for (const it of [...toolItems, ...blockItems]) HOTBAR_ITEMS.push(it)
-			selectedSlot = toolItems.length + blockItems.length - 1
-		}
+		const reg = BLOCK_REGISTRY.find((r) => r.id === blockId)
+		HOTBAR_ITEMS[selectedSlot] = { type: 'block', blockId, name: reg?.name ?? String(blockId) }
 	}
-	// Update selection highlight in grid
 	;[...grid.querySelectorAll('.block-grid-item')].forEach(el => el.classList.remove('selected'))
 	itemEl.classList.add('selected')
 	rebuildHotbarDOM()
@@ -4140,7 +4157,7 @@ function renderToolPicker() {
 		const tool = loadedTools[i]
 		const item = document.createElement('div')
 		item.className = 'block-grid-item'
-		if (HOTBAR_ITEMS.some((it) => it.type === 'tool' && it.toolIndex === i)) item.classList.add('selected')
+		if (HOTBAR_ITEMS.some((it) => it?.type === 'tool' && it.toolIndex === i)) item.classList.add('selected')
 
 		const img = document.createElement('img')
 		img.className = 'icon'
@@ -4167,12 +4184,8 @@ function _pickTool(toolIndex) {
 	const existing = HOTBAR_ITEMS.findIndex((it) => it.type === 'tool' && it.toolIndex === toolIndex)
 	if (existing !== -1) {
 		selectedSlot = existing
-	} else if (HOTBAR_ITEMS[selectedSlot]?.type === 'tool') {
-		HOTBAR_ITEMS[selectedSlot] = { type: 'tool', toolIndex, name }
 	} else {
-		const toolCount = HOTBAR_ITEMS.filter((it) => it.type === 'tool').length
-		HOTBAR_ITEMS.splice(toolCount, 0, { type: 'tool', toolIndex, name })
-		selectedSlot = toolCount
+		HOTBAR_ITEMS[selectedSlot] = { type: 'tool', toolIndex, name }
 	}
 	rebuildHotbarDOM()
 	closeGui()
