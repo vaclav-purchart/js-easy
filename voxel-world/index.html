@@ -3550,6 +3550,7 @@ function swapCurrentTool(toolName) {
 		if (ti !== -1) { HOTBAR_ITEMS[ti] = { type: 'tool', toolIndex: toolIdx, name }; selectedSlot = ti }
 	}
 	rebuildHotbarDOM()
+	saveHotbar()
 }
 
 /* ============================================================
@@ -3652,7 +3653,8 @@ function updateHotbar() {
 rebuildHotbarDOM()
 
 // Load built-in tools into their fixed hotbar slots (0 = Sword, 1 = Pickaxe, 2 = Bucket).
-;(async () => {
+// Stored as a promise so startGame() can await it before restoring a saved hotbar.
+const _builtinToolsReady = (async () => {
 	for (let i = 0; i < TOOL_DEFS.length; i++) {
 		const tool = await loadTool(TOOL_DEFS[i])
 		loadedTools.push(tool)
@@ -3662,6 +3664,35 @@ rebuildHotbarDOM()
 	selectedSlot = 0
 	rebuildHotbarDOM()
 })()
+
+function _hotbarKey() { return 'voxelHotbar_' + myNickname.toLowerCase() }
+
+function saveHotbar() {
+	const data = HOTBAR_ITEMS.map((item) => {
+		if (item.type === 'tool') return { type: 'tool', name: item.name }
+		if (item.type === 'block') return { type: 'block', blockId: item.blockId, name: item.name }
+		return { type: 'empty' }
+	})
+	localStorage.setItem(_hotbarKey(), JSON.stringify(data))
+}
+
+function loadHotbar() {
+	let data
+	try { data = JSON.parse(localStorage.getItem(_hotbarKey())) } catch { return }
+	if (!Array.isArray(data)) return
+	for (let i = 0; i < HOTBAR_ITEMS.length && i < data.length; i++) {
+		const s = data[i]
+		if (s.type === 'tool') {
+			const toolIndex = loadedTools.findIndex((t) => t.name === s.name)
+			if (toolIndex !== -1) HOTBAR_ITEMS[i] = { type: 'tool', toolIndex, name: s.name }
+		} else if (s.type === 'block') {
+			HOTBAR_ITEMS[i] = { type: 'block', blockId: s.blockId, name: s.name }
+		} else {
+			HOTBAR_ITEMS[i] = { type: 'empty', name: '' }
+		}
+	}
+	rebuildHotbarDOM()
+}
 
 addEventListener('keydown', (e) => {
 	if (e.key >= '1' && e.key <= '9') { selectedSlot = +e.key - 1; updateHotbar() }
@@ -4216,6 +4247,7 @@ function _pickBlock(blockId, itemEl, grid) {
 	;[...grid.querySelectorAll('.block-grid-item')].forEach(el => el.classList.remove('selected'))
 	itemEl.classList.add('selected')
 	rebuildHotbarDOM()
+	saveHotbar()
 	closeGui()
 }
 
@@ -4268,6 +4300,7 @@ function _pickTool(toolIndex) {
 		HOTBAR_ITEMS[selectedSlot] = { type: 'tool', toolIndex, name }
 	}
 	rebuildHotbarDOM()
+	saveHotbar()
 	closeGui()
 }
 
@@ -4321,7 +4354,9 @@ function handleCommand(raw) {
 		return
 	}
 	if (v.startsWith('/nick ')) {
+		saveHotbar()
 		myNickname = v.slice(6).trim().slice(0, 20)
+		loadHotbar()
 		updateClaimColors()
 		netSendNickname(myNickname)
 		showToast(`Nickname set to "${myNickname}"`)
@@ -4988,6 +5023,9 @@ async function startGame(online) {
 
 		btns.forEach(b => { b.disabled = false; b.style.opacity = '' })
 	}
+
+	await _builtinToolsReady
+	loadHotbar()
 
 	lobbyEl.style.display = 'none'
 	settingsToggle.style.display = 'block'
