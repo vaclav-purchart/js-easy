@@ -2528,6 +2528,14 @@ function addRemotePlayer(data) {
 function removeRemotePlayer(id) {
 	const rp = remotePlayers.get(id)
 	if (!rp) return
+	// All materials in makePlayerModel are per-player (no shared mats), so dispose everything.
+	rp.model.traverse((child) => {
+		if (child.geometry) child.geometry.dispose()
+		if (child.material) {
+			if (child.material.map) child.material.map.dispose()
+			child.material.dispose()
+		}
+	})
 	scene.remove(rp.model)
 	const pi = playerPickMeshes.indexOf(rp.hitBox)
 	if (pi !== -1) playerPickMeshes.splice(pi, 1)
@@ -2819,6 +2827,12 @@ function addMob(data) {
 function removeMob(id) {
 	const m = mobs.get(id)
 	if (!m) return
+	// Dispose per-mob geometries. Shared mob materials (_MAT_MOB_*) are intentionally
+	// not disposed here — only the per-instance hitbox material and HP bar sprite.
+	m.model.traverse((child) => { if (child.geometry) child.geometry.dispose() })
+	m.hitBox.material.dispose()
+	const hpBar = m.model.userData.hpBar
+	if (hpBar?.material) { hpBar.material.map?.dispose(); hpBar.material.dispose() }
 	scene.remove(m.model)
 	const i = mobPickMeshes.indexOf(m.hitBox); if (i !== -1) mobPickMeshes.splice(i, 1)
 	mobs.delete(id)
@@ -5372,6 +5386,9 @@ function handleChatMessage(msg) {
 const debug = document.getElementById('debug')
 let lastTime = performance.now()
 let frameCount = 0, fpsAccum = 0, fps = 0
+// Reused each frame to avoid per-frame allocations
+const _animForward = new THREE.Vector3()
+const _animRight = new THREE.Vector3()
 
 function animate() {
 	requestAnimationFrame(animate)
@@ -5501,8 +5518,8 @@ function animate() {
 	}
 
 	// ── X axis ────────────────────────────────────────────────────────────
-	const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(yawObject.quaternion)
-	const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(yawObject.quaternion)
+	const forward = _animForward.set(0, 0, -1).applyQuaternion(yawObject.quaternion)
+	const right = _animRight.set(1, 0, 0).applyQuaternion(yawObject.quaternion)
 
 	let moveX = 0, moveZ = 0
 	const horizSpeed = inWater ? player.speed * 0.5 : player.speed

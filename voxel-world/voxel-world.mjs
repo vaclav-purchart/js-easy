@@ -310,12 +310,19 @@ function isSolidAt(world, x, y, z) {
 // Y of the surface (= 1 above the topmost solid block) at integer column (x, z).
 // Search starts well above the natural terrain so player towers up to ~24
 // blocks above the original surface still register.
+// Per-world cache keyed by "x_z"; cleared each mob-AI tick to stay consistent
+// with block changes while avoiding redundant terrain math within a tick.
+const _groundYCache = new Map()
 function getGroundY(world, x, z) {
+	const k = `${x}_${z}`
+	if (_groundYCache.has(k)) return _groundYCache.get(k)
 	const startY = Math.max(terrainHeight(world.seed, x, z) + 8, 32)
+	let result = 1
 	for (let y = startY; y >= 0; y--) {
-		if (isSolidAt(world, x, y, z)) return y + 1
+		if (isSolidAt(world, x, y, z)) { result = y + 1; break }
 	}
-	return 1
+	_groundYCache.set(k, result)
+	return result
 }
 
 // ── Claim system ──────────────────────────────────────────────────────────
@@ -744,7 +751,7 @@ function broadcastWorldByMobType(world, mobType, obj, excludeId) {
 // World-wide soft cap. Past this many mobs we stop topping up regardless of
 // per-region density — keeps long-running worlds from filling up. Scales
 // with player count so a busy world isn't choked.
-const MAX_MOBS_PER_PLAYER = 14
+const MAX_MOBS_PER_PLAYER = 6
 const MIN_WORLD_MOB_CAP = 12
 function worldMobCap(world) {
 	return Math.max(MIN_WORLD_MOB_CAP, world.players.size * MAX_MOBS_PER_PLAYER)
@@ -830,6 +837,7 @@ setInterval(() => {
 	const now = Date.now()
 	const dt = (now - _lastMobTick) / 1000
 	_lastMobTick = now
+	_groundYCache.clear()
 	for (const world of worlds.values()) {
 		if (world.players.size === 0) continue
 		for (const mob of world.mobs.values()) updateMobAI(world, mob, dt)
