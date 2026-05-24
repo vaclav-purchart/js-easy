@@ -61,48 +61,53 @@ VoxelWorld.registerPlugin('Door', {
 		}
 
 		// Track which door blocks existed last tick so we can detect mining.
-		let prevDoorKeys = new Set()
+		// Reuse sets each frame via pointer swap to avoid per-tick GC pressure.
+		let _scanKeys = new Set()
+		let _prevKeys = new Set()
+		const _visibleBottomKeys = new Set()
 
 		const CULL_DIST = (RENDER_DISTANCE + 1) * CHUNK_SIZE
 
 		api.addTickCallback(() => {
 			// ── Scan modified for all current door blocks ─────────────────
-			const currentDoorKeys = new Set()
+			_scanKeys.clear()
 			for (const [k, v] of modified) {
-				if (DOOR_ID_SET.has(v)) currentDoorKeys.add(k)
+				if (DOOR_ID_SET.has(v)) _scanKeys.add(k)
 			}
 
 			// ── Detect mined door halves and remove the partner ───────────
-			for (const k of prevDoorKeys) {
-				if (currentDoorKeys.has(k)) continue   // still exists, nothing to do
+			for (const k of _prevKeys) {
+				if (_scanKeys.has(k)) continue   // still exists, nothing to do
 				const [x, y, z] = k.split('_').map(Number)
 				for (const dy of [1, -1]) {
 					const pk = `${x}_${y + dy}_${z}`
-					if (!currentDoorKeys.has(pk)) continue
+					if (!_scanKeys.has(pk)) continue
 					// Partner is still present — remove it
 					modified.set(pk, BLOCK.AIR)
 					rebuildChunkAt(x, z)
 					netSendBlockUpdate(pk, BLOCK.AIR)
-					currentDoorKeys.delete(pk)  // prevent cascade next tick
+					_scanKeys.delete(pk)  // prevent cascade next tick
 					break
 				}
 			}
-			prevDoorKeys = new Set(currentDoorKeys)
+
+			// Swap: _scanKeys becomes prev for next tick, _prevKeys becomes scratch
+			const _tmp = _prevKeys; _prevKeys = _scanKeys; _scanKeys = _tmp
 
 			// ── Sync THREE.js panel meshes to world state ─────────────────
-			const visibleBottomKeys = new Set()
+			_visibleBottomKeys.clear()
 
-			for (const k of currentDoorKeys) {
+			for (const k of _prevKeys) {
 				const [x, y, z] = k.split('_').map(Number)
 
 				// Only process the bottom half
 				const kBelow = `${x}_${y - 1}_${z}`
-				if (currentDoorKeys.has(kBelow)) continue
+				if (_prevKeys.has(kBelow)) continue
 
 				// Skip doors outside render distance
 				if (Math.abs(x - player.pos.x) > CULL_DIST || Math.abs(z - player.pos.z) > CULL_DIST) continue
 
-				visibleBottomKeys.add(k)
+				_visibleBottomKeys.add(k)
 
 				if (!doorMeshes.has(k)) {
 					const mesh = new THREE.Mesh(panelGeo, panelMat)
@@ -119,7 +124,7 @@ VoxelWorld.registerPlugin('Door', {
 
 			// Remove meshes that are gone or moved out of render distance
 			for (const [k, mesh] of doorMeshes) {
-				if (!visibleBottomKeys.has(k)) {
+				if (!_visibleBottomKeys.has(k)) {
 					scene.remove(mesh)
 					doorMeshes.delete(k)
 				}

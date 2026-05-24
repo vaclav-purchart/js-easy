@@ -1106,6 +1106,17 @@ window.VoxelWorld = {
 
 			/** Send a raw message to the server (same as the internal netSend). */
 			netSend: (obj) => netSend(obj),
+
+			/**
+			 * Register a callback for a specific server message type.
+			 * Multiple plugins may register for the same type — all are called.
+			 * @param {string} type  — message type (e.g. 'sign_update')
+			 * @param {function(msg): void} fn
+			 */
+			onServerMessage(type, fn) {
+				if (!_pluginMessageHandlers.has(type)) _pluginMessageHandlers.set(type, new Set())
+				_pluginMessageHandlers.get(type).add(fn)
+			},
 		}
 		return api
 	},
@@ -1124,6 +1135,10 @@ const PASSABLE = new Set()
 // Right-click callbacks keyed by block ID, regardless of equipped tool.
 // Registered via api.registerBlockInteraction(). Map<blockId, fn(ctx)>.
 const _blockInteractions = new Map()
+
+// Server message handlers registered by plugins via api.onServerMessage().
+// Map<type, Set<fn(msg)>> — multiple plugins may listen to the same type.
+const _pluginMessageHandlers = new Map()
 
 // Blocks that are transparent for face-culling but generate NO chunk geometry.
 // Registered via registerBlock({ invisible: true }). Subset of TRANSPARENT.
@@ -4752,6 +4767,9 @@ function handleServerMessage(msg) {
 			break
 		}
 	}
+	// Dispatch to plugin-registered handlers (supports any custom message type).
+	const _ph = _pluginMessageHandlers.get(msg.type)
+	if (_ph) for (const h of _ph) h(msg)
 }
 
 /* ============================================================

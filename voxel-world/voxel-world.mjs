@@ -27,6 +27,7 @@ function saveWorld(world) {
 		seed:  world.seed,
 		modified: [...world.modifiedBlocks.entries()],
 		claims: [...world.claims.values()].map(serializeClaim),
+		signs:  [...world.signs.entries()].map(([k, lines]) => ({ k, lines })),
 	}
 	writeFileSync(filePath, JSON.stringify(data), 'utf8')
 	console.log(`[voxel-world] Saved world "${world.name}"  blocks=${world.modifiedBlocks.size}  → ${filePath}`)
@@ -75,7 +76,11 @@ function restoreAllWorlds() {
 					friends: Array.isArray(c.friends) ? c.friends : [],
 				})
 			}
-			console.log(`[voxel-world] Restored world "${name}"  blocks=${world.modifiedBlocks.size}  claims=${world.claims.size}`)
+			for (const s of data.signs || []) {
+				if (typeof s.k !== 'string' || !Array.isArray(s.lines)) continue
+				world.signs.set(s.k, s.lines.slice(0, 3).map((l) => String(l).slice(0, 20)))
+			}
+			console.log(`[voxel-world] Restored world "${name}"  blocks=${world.modifiedBlocks.size}  claims=${world.claims.size}  signs=${world.signs.size}`)
 		} catch (err) {
 			console.error(`[voxel-world] Failed to restore "${file}":`, err.message)
 		}
@@ -121,6 +126,7 @@ function getWorld(name) {
 			seed: Math.floor(Math.random() * 1_000_000),
 			modifiedBlocks: new Map(),
 			claims: new Map(),   // owner (lowercase) → claim object
+			signs:  new Map(),   // "x_y_z" → string[] (up to 3 lines, 20 chars each)
 			players: new Map(),
 			nextId: 1,
 			// Mobs (chickens, future cows/pigs/…) are server-authoritative but
@@ -972,6 +978,7 @@ export default function attachVoxelWorld(httpServer) {
 							.filter((m) => player.knownMobTypes.has(m.type))
 							.map(serializeMob),
 						claims: [...world.claims.values()].map(serializeClaim),
+					signs:  [...world.signs.entries()].map(([k, lines]) => ({ k, lines })),
 					})
 					broadcastWorld(world, { type:'player_join', player:serializePlayer(player) }, id)
 					broadcastGlobalPlayersList()
@@ -1392,6 +1399,24 @@ export default function attachVoxelWorld(httpServer) {
 					if (target.id === player.id) { send(ws, { type: 'chat', nickname: '⚡', text: "You can't kick yourself." }); return }
 					kickPlayer(world, target, `Kicked by ${player.nickname}`)
 					send(ws, { type: 'chat', nickname: '⚡', text: `Kicked ${target.nickname}.` })
+					break
+				}
+				case 'sign_update': {
+					if (!player) return
+					const sk = String(msg.k || '')
+					if (!/^-?\d+_-?\d+_-?\d+$/.test(sk)) return
+					const rawLines = Array.isArray(msg.lines) ? msg.lines : []
+					if (rawLines.length === 0) {
+						// Empty lines array = remove sign text
+						world.signs.delete(sk)
+						broadcastWorld(world, { type: 'sign_update', k: sk, lines: [] }, player.id)
+					} else {
+						// Sanitise: max 3 lines, 20 chars each; strip control characters
+						const lines = rawLines.slice(0, 3)
+							.map((l) => String(l).replace(/[\x00-\x1F\x7F]/g, '').slice(0, 20))
+						world.signs.set(sk, lines)
+						broadcastWorld(world, { type: 'sign_update', k: sk, lines }, player.id)
+					}
 					break
 				}
 				case 'chat': {
