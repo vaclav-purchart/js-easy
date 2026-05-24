@@ -2897,7 +2897,8 @@ function tickMobs(dt) {
 /* ============================================================
    PLAYER & CAMERA
 ============================================================ */
-const G = 9.8 // gravity
+const G = 9.8      // gravity (m/s²)
+const MASS = 75    // player mass (kg)
 const player = {
 	pos: new THREE.Vector3(0, 20, 0),
 	vel: new THREE.Vector3(),
