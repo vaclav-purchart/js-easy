@@ -5492,7 +5492,11 @@ function animate() {
 			// Falling — find the exact floor surface by stepping back up
 			const feetTarget = Math.floor(player.pos.y - player.height) + 1
 			player.pos.y = feetTarget + player.height
-			if (!inWater) player.onGround = true   // only land on ground when not in water
+			if (!inWater) {
+				player.onGround = true   // only land on ground when not in water
+				player.vel.x = 0         // kill horizontal inertia; trampoline plugin re-sets it if needed
+				player.vel.z = 0
+			}
 			// Touched ground while flying → drop back to walking. Same trigger
 			// as what stops a normal free-fall, so descending with Shift or
 			// drifting onto a placed block both end flight cleanly.
@@ -5533,15 +5537,20 @@ function animate() {
 		moveZ += (-joy.dy * forward.z + joy.dx * right.z) * horizSpeed * dt
 	}
 
-	player.pos.x += moveX
+	const driftX = player.vel.x * dt
+	const driftZ = player.vel.z * dt
+
+	player.pos.x += moveX + driftX
 	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z)) {
-		player.pos.x -= moveX   // revert only X
+		player.pos.x -= moveX + driftX
+		player.vel.x = 0
 	}
 
 	// ── Z axis ────────────────────────────────────────────────────────────
-	player.pos.z += moveZ
+	player.pos.z += moveZ + driftZ
 	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z)) {
-		player.pos.z -= moveZ   // revert only Z
+		player.pos.z -= moveZ + driftZ
+		player.vel.z = 0
 	}
 
 	if ((keys.Space || touchState.jump) && player.onGround && !inWater && !player.flying) {
