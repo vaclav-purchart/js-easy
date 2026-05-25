@@ -3812,8 +3812,8 @@ function _registerBlockNow(def) {
 	drawAtlasTile(id, 0); drawAtlasTile(id, 1); drawAtlasTile(id, 2)
 	atlasTexture.needsUpdate = true
 
-	// 3. Register in GUI
-	BLOCK_REGISTRY.push({ id, name: def.name, category: def.category || 'Plugin' })
+	// 3. Register in GUI (invisible blocks are internal — hide from picker)
+	if (!def.invisible) BLOCK_REGISTRY.push({ id, name: def.name, category: def.category || 'Plugin' })
 
 	// 4. Invalidate chunk hand-model cache for this id (in case it was built before)
 	_blockHandModelCache.delete(id)

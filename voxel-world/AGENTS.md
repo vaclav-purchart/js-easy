@@ -174,6 +174,11 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
 - `shootRay(maxDist=64) → { type, id, point, distance } | null` — hitscan from
   camera centre. `type` is `'mob'|'player'|'block'`; `id` is null for blocks.
 - `netSend(obj)` — send a raw message to the server (same as internal `netSend`)
+- `onServerMessage(type, fn)` — register a callback for a server message type.
+  Multiple plugins may listen to the same type — all callbacks are called.
+  Fires **after** the built-in handler, so when `type === 'init'`, `modified` is
+  already populated. Use for custom message types (e.g. `sign_update`) and to
+  load initial plugin state from the `init` payload.
 - `BLOCK` (read-only core map)
 - `rebuildAllChunks()`
 
@@ -531,6 +536,61 @@ Follow what's already in the files:
 - Sanitise any user-supplied string before using it in a key, filename, or
   broadcast (`.slice(0, N).replace(/[^a-zA-Z0-9_-]/g, '_')` is the pattern
   already in use).
+
+### Custom-mesh plugin patterns
+
+Plugins that render `invisible` blocks as THREE.js objects follow a tick-based
+sync loop. Three rules keep them from leaking GPU memory or allocating garbage
+every frame.
+
+**1. Reuse Sets — never `new Set()` inside `addTickCallback`.**
+
+`addTickCallback` fires every animation frame (~60 Hz). Allocating Sets inside
+it creates GC pressure. Hoist them to outer scope, use `.clear()` to reset, and
+swap pointers instead of copying:
+
+```js
+let _scanKeys = new Set()   // fills each tick
+let _prevKeys = new Set()   // holds previous tick's scan (for removal detection)
+const _visibleKeys = new Set()
+
+api.addTickCallback(() => {
+  _scanKeys.clear()
+  for (const [k, v] of modified) {
+    if (MY_ID_SET.has(v)) _scanKeys.add(k)
+  }
+
+  for (const k of _prevKeys) {
+    if (!_scanKeys.has(k)) { /* block was removed */ }
+  }
+
+  // swap: _scanKeys becomes prev, old prev becomes next scratch (cleared above)
+  const _tmp = _prevKeys; _prevKeys = _scanKeys; _scanKeys = _tmp
+
+  _visibleKeys.clear()
+  // … cull by CULL_DIST, create / remove meshes …
+})
+```
+
+**2. Dispose per-instance GPU resources when culling.**
+
+When a mesh leaves render distance or is mined, free the GPU memory it holds.
+Only dispose resources that are **unique to that instance** — shared geometry
+and materials must not be disposed (they are still used by other meshes).
+
+```js
+scene.remove(mesh)
+mesh.material.map?.dispose()   // per-instance texture (e.g. CanvasTexture)
+mesh.material.dispose()        // per-instance material
+// do NOT dispose shared geometry or shared panelMat / POST_MAT etc.
+```
+
+**3. Static meshes: set the transform once at creation.**
+
+If the block never changes position (signs, furniture), set `mesh.position` and
+`mesh.rotation` inside the creation block, not in the tick loop. Reserve
+per-tick transform writes for blocks that actually animate or have state changes
+(e.g. doors switching open/closed).
 
 ## Things to be careful about
 
