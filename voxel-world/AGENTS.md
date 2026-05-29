@@ -123,13 +123,22 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
 - `PLUGIN_NAME`
 - `allocateBlockId() → number` (deterministic from plugin name; do **not**
   hard-code IDs)
-- `registerBlock(def)` — `{ id, name, category, transparent?, invisible?, passable?, draw?:{ side, top?, bottom? } }`
+- `registerBlock(def)` — `{ id, name, category, transparent?, invisible?, passable?, stair?:{dx,dz}, draw?:{ side, top?, bottom? } }`
   - `transparent` — adds to `TRANSPARENT`; chunk renders the block in the glass/water bucket.
   - `invisible` — adds to both `TRANSPARENT` and `CHUNK_INVISIBLE`; the block is transparent
     for face-culling (adjacent walls show their faces) but generates **no chunk mesh geometry**.
     The block still gets pick faces so it can be clicked and mined. Use when the block's visual
     is provided entirely by a custom THREE.js mesh (e.g. a door panel). Implies `transparent`.
   - `passable` — adds to `PASSABLE`; player collision ignores the block.
+  - `stair` — adds to the `STAIRS` registry `{dx,dz}` (unit climb direction; the solid top
+    surface rises from the cell floor on the low/entry side to the cell ceiling on the `(dx,dz)`
+    side). The MAIN LOOP ramp pass gives the player a **smooth sloped support surface** when
+    walking in from the low side and walls off the back + two side faces. Always combine with
+    `passable: true` (the generic AABB collision must ignore it so the ramp pass can take over)
+    and usually `invisible: true` (visual is a custom THREE.js stepped mesh). See
+    `plugins/plugin---vasek---stairs.js`. Step tolerances live in `STAIR_STEP_CLIMB` /
+    `STAIR_STEP_FLAT`; a bounded solid step-up (`tryStepUp`) handles ramp→platform and chained-ramp
+    transitions without enabling auto-stepping of ordinary 1-block terrain.
 - `loadBlockTexture(id, url, face?)` — `'side' | 'top' | 'bottom' | 'all'`
 - `registerGuiTab(id, label, renderFn)`
 - `registerMob(cfg)` — model + hitbox stay client-side; the AI fields are

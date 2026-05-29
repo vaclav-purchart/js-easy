@@ -763,6 +763,13 @@ window.VoxelWorld = {
 		 *     invisible:   boolean  — optional. Like transparent but also suppresses chunk mesh geometry.
 		 *                            Use for blocks rendered entirely as custom THREE.js meshes.
 		 *     passable:    boolean  — optional, default false. Player walks through the block.
+		 *     stair:       {dx,dz}  — optional. Marks the block as a stair/ramp whose solid
+		 *                            top surface rises along the unit climb direction (dx,dz)
+		 *                            (one of ±1 on a single axis). The player walks in from the
+		 *                            opposite "low" side and is smoothly lifted as they cross;
+		 *                            the back and two side faces act as solid walls. Combine with
+		 *                            `passable:true` (so the generic collision ignores it) and
+		 *                            `invisible:true` (visual is a custom THREE.js mesh).
 		 *     draw: {
 		 *       side(ctx, x, y, S)    — required. Draws the side face texture.
 		 *       top(ctx, x, y, S)     — optional. Falls back to side if omitted.
@@ -1131,6 +1138,28 @@ const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
 // Which blocks don't stop player movement (player walks through them).
 // Plugins add IDs here via registerBlock({ ..., passable: true }).
 const PASSABLE = new Set()
+
+// Stair / ramp blocks.  Map<blockId, { dx, dz }> where (dx,dz) is the unit
+// CLIMB direction — the horizontal direction in which the block's solid top
+// surface rises from the cell floor (frac 0) to the cell ceiling (frac 1).
+// The opposite side is the "low" side the player walks in from.
+//
+// Stair blocks are registered `passable` so the generic AABB collision ignores
+// them entirely; a dedicated ramp pass in the main loop (see MAIN LOOP) gives
+// them a sloped support surface (smooth height change) and walls off the three
+// non-low faces.  Populated by registerBlock({ ..., stair:{dx,dz} }).
+const STAIRS = new Map()
+
+// Max height (in blocks) the player will be auto-lifted onto a stair surface.
+// STAIR_STEP_CLIMB is generous so walking up a slope (where the surface ahead
+// is only slightly higher than the feet each frame) is never blocked. The
+// per-frame surface rise is bounded by speed*dt*slope ≈ 0.3 at the dt cap, so
+// 0.5 leaves comfortable margin while still letting you step from a ramp's top
+// onto the full block above it. STAIR_STEP_FLAT is tiny: moving into a stair
+// from any direction OTHER than its climb direction may only step up a sliver,
+// which is what walls off the back and the two side faces.
+const STAIR_STEP_CLIMB = 0.5
+const STAIR_STEP_FLAT  = 0.1
 
 // Right-click callbacks keyed by block ID, regardless of equipped tool.
 // Registered via api.registerBlockInteraction(). Map<blockId, fn(ctx)>.
@@ -3803,6 +3832,7 @@ function _registerBlockNow(def) {
 	if (def.transparent) TRANSPARENT.add(id)
 	if (def.invisible) { TRANSPARENT.add(id); CHUNK_INVISIBLE.add(id) }
 	if (def.passable) PASSABLE.add(id)
+	if (def.stair) STAIRS.set(id, { dx: Math.sign(def.stair.dx || 0), dz: Math.sign(def.stair.dz || 0) })
 	const row = ALL_BLOCK_IDS.length
 	ALL_BLOCK_IDS.push(id)
 	blockAtlasRow[id] = row
@@ -5500,8 +5530,78 @@ function animate() {
 		return false
 	}
 
+	// ── Stair / ramp surface ──────────────────────────────────────────────
+	// Stairs are `passable` (the generic solid pass above ignores them); these
+	// helpers give them a sloped top the player rides up smoothly, plus solid
+	// walls on the back + two side faces.
+	//
+	// Within a stair cell the solid fills y from `by` up to `by + frac`, where
+	// frac ∈ [0,1] is the projection of the local position onto the climb
+	// direction. We evaluate frac at the HIGHEST point of the player's footprint
+	// inside the cell (the leading edge) so the player is lifted enough to clear
+	// the step and never clips into the slope.
+	function stairFracMax(st, px, pz, bx, bz) {
+		const lx0 = Math.max(0, (px - HALF) - bx), lx1 = Math.min(1, (px + HALF) - bx)
+		const lz0 = Math.max(0, (pz - HALF) - bz), lz1 = Math.min(1, (pz + HALF) - bz)
+		let f
+		if (st.dx > 0) f = lx1
+		else if (st.dx < 0) f = 1 - lx0
+		else if (st.dz > 0) f = lz1
+		else f = 1 - lz0
+		return Math.max(0, Math.min(1, f))
+	}
+
+	// Highest stair surface the player can stand on / step up onto at (px,pz),
+	// or -Infinity if none. Only surfaces within STAIR_STEP_CLIMB of the feet
+	// count as support — anything higher is a wall, handled by stairWall().
+	function stairSupportTop(px, pz, feet) {
+		let top = -Infinity
+		const x0 = Math.floor(px - HALF), x1 = Math.floor(px + HALF - 0.001)
+		const z0 = Math.floor(pz - HALF), z1 = Math.floor(pz + HALF - 0.001)
+		const y0 = Math.floor(feet - 1.05), y1 = Math.floor(feet + STAIR_STEP_CLIMB)
+		for (let bx = x0; bx <= x1; bx++)
+			for (let bz = z0; bz <= z1; bz++)
+				for (let by = y0; by <= y1; by++) {
+					const st = STAIRS.get(getBlock(bx, by, bz))
+					if (!st) continue
+					const surf = by + stairFracMax(st, px, pz, bx, bz)
+					if (surf > feet + STAIR_STEP_CLIMB) continue   // a wall, not support
+					if (surf > top) top = surf
+				}
+		return top
+	}
+
+	// True if moving along `axis` with direction `sign` would drive the player
+	// into a stair surface that is too high to step onto from here. Moving along
+	// a stair's own climb direction allows a generous step (STAIR_STEP_CLIMB) so
+	// climbing the slope is smooth; every other direction allows only a sliver
+	// (STAIR_STEP_FLAT), which makes the back + side faces behave like walls.
+	function stairWall(px, py, pz, axis, sign) {
+		const feet = py - player.height
+		const x0 = Math.floor(px - HALF), x1 = Math.floor(px + HALF - 0.001)
+		const z0 = Math.floor(pz - HALF), z1 = Math.floor(pz + HALF - 0.001)
+		const y0 = Math.floor(feet + 0.001), y1 = Math.floor(py - 0.001)
+		for (let bx = x0; bx <= x1; bx++)
+			for (let bz = z0; bz <= z1; bz++)
+				for (let by = y0; by <= y1; by++) {
+					const st = STAIRS.get(getBlock(bx, by, bz))
+					if (!st) continue
+					const surf = by + stairFracMax(st, px, pz, bx, bz)
+					if (surf <= feet) continue   // already above this surface
+					const aligned = (axis === 'x' && st.dx === sign) ||
+					                (axis === 'z' && st.dz === sign)
+					if (surf > feet + (aligned ? STAIR_STEP_CLIMB : STAIR_STEP_FLAT)) return true
+				}
+		return false
+	}
+
 	// Move Y first (gravity dominates feel), then X, then Z.
 	// After each axis move, if we're now overlapping push back and zero velocity.
+
+	// Was the player standing on something at the end of last frame? Used by the
+	// stair down-stick below to tell "walking down a ramp" (stick to the slope)
+	// apart from "falling through the air onto a ramp" (land at gravity's pace).
+	const wasOnGround = player.onGround
 
 	// ── Y axis ────────────────────────────────────────────────────────────
 	player.pos.y += player.vel.y * dt
@@ -5558,17 +5658,97 @@ function animate() {
 	const driftX = player.vel.x * dt
 	const driftZ = player.vel.z * dt
 
-	player.pos.x += moveX + driftX
-	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z)) {
-		player.pos.x -= moveX + driftX
-		player.vel.x = 0
+	// Highest SOLID block top under the footprint that is at most
+	// STAIR_STEP_CLIMB above the feet (and has standing room) — used to
+	// auto-step the small ledge where a ramp meets the full block above it (and
+	// chained ramps). Bounded well under 1.0, so ordinary 1-block terrain still
+	// needs a jump; only the sub-block lips that stairs create are stepped over.
+	function solidStepTop(px, pz, feet) {
+		let top = -Infinity
+		const x0 = Math.floor(px - HALF), x1 = Math.floor(px + HALF - 0.001)
+		const z0 = Math.floor(pz - HALF), z1 = Math.floor(pz + HALF - 0.001)
+		const y0 = Math.floor(feet - 0.05), y1 = Math.floor(feet + STAIR_STEP_CLIMB)
+		for (let bx = x0; bx <= x1; bx++)
+			for (let bz = z0; bz <= z1; bz++)
+				for (let by = y0; by <= y1; by++) {
+					if (!isSolid(getBlock(bx, by, bz))) continue
+					const surf = by + 1
+					if (surf > feet + 0.001 && surf <= feet + STAIR_STEP_CLIMB && surf > top) top = surf
+				}
+		return top
+	}
+
+	// Attempt the bounded step-up when a horizontal move was blocked. Returns
+	// the lifted eye-Y if the step clears the obstruction, else null. Only solid
+	// tops are considered (never stair ramps) so the directional stair walls in
+	// stairWall() are never bypassed — you still cannot mount a stair from a wall
+	// face, only step the small lip onto the platform a ramp leads up to.
+	function tryStepUp(px, py, pz, axis, sign) {
+		const feet = py - player.height
+		const stepTop = solidStepTop(px, pz, feet)
+		if (stepTop === -Infinity) return null
+		const lifted = stepTop + player.height
+		if (overlapsAt(px, lifted, pz)) return null
+		if (stairWall(px, lifted, pz, axis, sign)) return null
+		return lifted
+	}
+
+	const totX = moveX + driftX
+	player.pos.x += totX
+	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z) ||
+		(STAIRS.size && stairWall(player.pos.x, player.pos.y, player.pos.z, 'x', Math.sign(totX)))) {
+		const lifted = tryStepUp(player.pos.x, player.pos.y, player.pos.z, 'x', Math.sign(totX))
+		if (lifted !== null) {
+			player.pos.y = lifted
+		} else {
+			player.pos.x -= totX
+			player.vel.x = 0
+		}
 	}
 
 	// ── Z axis ────────────────────────────────────────────────────────────
-	player.pos.z += moveZ + driftZ
-	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z)) {
-		player.pos.z -= moveZ + driftZ
-		player.vel.z = 0
+	const totZ = moveZ + driftZ
+	player.pos.z += totZ
+	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z) ||
+		(STAIRS.size && stairWall(player.pos.x, player.pos.y, player.pos.z, 'z', Math.sign(totZ)))) {
+		const lifted = tryStepUp(player.pos.x, player.pos.y, player.pos.z, 'z', Math.sign(totZ))
+		if (lifted !== null) {
+			player.pos.y = lifted
+		} else {
+			player.pos.z -= totZ
+			player.vel.z = 0
+		}
+	}
+
+	// ── Stair ramp support ─────────────────────────────────────────────────
+	// After the horizontal move settles, ride the player up/down the sloped
+	// stair surface under their feet. Continuous in XZ, so the height change is
+	// smooth; gated on vel.y<=0 so jumping off a stair still works normally.
+	if (STAIRS.size && !player.flying) {
+		const feet = player.pos.y - player.height
+		const sTop = stairSupportTop(player.pos.x, player.pos.z, feet)
+		if (sTop > -Infinity && player.vel.y <= 0) {
+			if (feet <= sTop + 0.02) {
+				// Standing on, or climbing onto, the ramp — lift feet to the slope.
+				// This is also what catches a free-fall: gravity carries the feet
+				// down at its normal pace until they reach the surface, then this
+				// lands them, so dropping onto a stair feels like dropping anywhere.
+				player.pos.y = sTop + player.height
+				if (player.vel.y < 0) player.vel.y = 0
+				if (!inWater) player.onGround = true
+			} else if (wasOnGround && !player.onGround && feet - sTop <= STAIR_STEP_CLIMB) {
+				// Walking DOWN the ramp: the surface just dropped out from under
+				// the feet. Without this the player free-falls each lip in visible
+				// steps; here we stick to the slope and follow it down smoothly.
+				// Gated on wasOnGround so a genuine fall through the air lands at
+				// gravity's pace (above branch) instead of snapping early, and on
+				// !onGround so a player on a solid block that overhangs a lower
+				// stair is never sucked down off the block.
+				player.pos.y = sTop + player.height
+				player.vel.y = 0
+				if (!inWater) player.onGround = true
+			}
+		}
 	}
 
 	if ((keys.Space || touchState.jump) && player.onGround && !inWater && !player.flying) {
