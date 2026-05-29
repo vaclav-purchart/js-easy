@@ -5697,7 +5697,9 @@ function animate() {
 	player.pos.x += totX
 	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z) ||
 		(STAIRS.size && stairWall(player.pos.x, player.pos.y, player.pos.z, 'x', Math.sign(totX)))) {
-		const lifted = tryStepUp(player.pos.x, player.pos.y, player.pos.z, 'x', Math.sign(totX))
+		// Only step up the ramp lip while walking (grounded last frame); mid-jump
+		// the feet sit at fractional heights and would otherwise hop onto ledges.
+		const lifted = wasOnGround ? tryStepUp(player.pos.x, player.pos.y, player.pos.z, 'x', Math.sign(totX)) : null
 		if (lifted !== null) {
 			player.pos.y = lifted
 		} else {
@@ -5711,7 +5713,7 @@ function animate() {
 	player.pos.z += totZ
 	if (overlapsAt(player.pos.x, player.pos.y, player.pos.z) ||
 		(STAIRS.size && stairWall(player.pos.x, player.pos.y, player.pos.z, 'z', Math.sign(totZ)))) {
-		const lifted = tryStepUp(player.pos.x, player.pos.y, player.pos.z, 'z', Math.sign(totZ))
+		const lifted = wasOnGround ? tryStepUp(player.pos.x, player.pos.y, player.pos.z, 'z', Math.sign(totZ)) : null
 		if (lifted !== null) {
 			player.pos.y = lifted
 		} else {
