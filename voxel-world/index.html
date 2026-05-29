@@ -759,7 +759,11 @@ window.VoxelWorld = {
 		 *     id:          number   — from allocateBlockId()
 		 *     name:        string   — display name in GUI
 		 *     category:    string   — group in block picker (e.g. 'Natural', 'Crafted')
-		 *     transparent: boolean  — optional, default false. Set true for glass-like blocks.
+		 *     transparent: boolean  — optional, default false. Set true for glass-like blocks
+		 *                            (rendered in the water bucket, opacity 0.72).
+		 *     semiTransparent: boolean — optional. Like transparent but rendered in a more
+		 *                            opaque bucket (opacity 0.85) — only slightly see-through.
+		 *                            Use for near-solid translucent blocks (e.g. molten lava).
 		 *     invisible:   boolean  — optional. Like transparent but also suppresses chunk mesh geometry.
 		 *                            Use for blocks rendered entirely as custom THREE.js meshes.
 		 *     passable:    boolean  — optional, default false. Player walks through the block.
@@ -1135,6 +1139,12 @@ const BLOCK = { AIR:0, GRASS:1, DIRT:2, STONE:3, WATER:4, WOOD:5, LEAVES:6, BEDR
 // Which blocks are transparent (semi-transparent or see-through)
 const TRANSPARENT = new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
 
+// Blocks that render translucent but MORE opaque than water/glass — only a
+// little see-through (e.g. molten lava). They get their own geometry bucket and
+// material (matSemi). Members are also added to TRANSPARENT so face-culling
+// treats them as see-through. Populated by registerBlock({ semiTransparent:true }).
+const SEMI_TRANSPARENT = new Set()
+
 // Which blocks don't stop player movement (player walks through them).
 // Plugins add IDs here via registerBlock({ ..., passable: true }).
 const PASSABLE = new Set()
@@ -1506,6 +1516,16 @@ const matGlass = new THREE.MeshLambertMaterial({
 	depthWrite: false,
 	side: THREE.DoubleSide,
 })
+
+// Semi-transparent bucket — only slightly see-through (more opaque than water's
+// 0.72 and glass's 0.35). depthWrite stays on: these blocks are nearly solid, so
+// keeping them in the depth buffer avoids the sorting artefacts you'd get with
+// thin glass-like surfaces. Used for molten lava and similar.
+const matSemi = new THREE.MeshLambertMaterial({
+	map: atlasTexture,
+	transparent: true,
+	opacity: 0.85,
+})
 /* ============================================================
    NOISE / TERRAIN
 ============================================================ */
@@ -1681,17 +1701,18 @@ const FACES = [
 ]
 
 // Map block type to geometry bucket index
-// 0=opaque  1=water  2=leaves  3=glass
+// 0=opaque  1=water  2=leaves  3=glass  4=plants  5=semi-transparent
 function blockBucket(t) {
 	if (t === BLOCK.WATER) return 1
 	if (t === BLOCK.LEAVES) return 2
 	if (t === BLOCK.GLASS) return 3
+	if (SEMI_TRANSPARENT.has(t)) return 5  // check before TRANSPARENT (semi ids are in both)
 	if (TRANSPARENT.has(t)) return 1  // fallback for future transparent blocks
 	return 0
 }
 
 function buildChunkGeometry(cx, cz) {
-	const N = 5   // 0=opaque 1=water 2=leaves 3=glass 4=plants
+	const N = 6   // 0=opaque 1=water 2=leaves 3=glass 4=plants 5=semi-transparent
 	const pos = Array.from({length:N}, () => [])
 	const uv = Array.from({length:N}, () => [])
 	const norm = Array.from({length:N}, () => [])
@@ -1876,7 +1897,7 @@ function makePickMesh(pickFaces) {
 	return mesh
 }
 
-const BUCKET_MATS = [matOpaque, matWater, matLeaves, matGlass, matPlant]
+const BUCKET_MATS = [matOpaque, matWater, matLeaves, matGlass, matPlant, matSemi]
 
 /* ============================================================
    CHUNK WORKER POOL
@@ -1892,10 +1913,11 @@ const BUCKET_MATS = [matOpaque, matWater, matLeaves, matGlass, matPlant]
 
 function _workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
                            ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY,
-                           blockMap, transparentIds, invisibleIds) {
+                           blockMap, transparentIds, invisibleIds, semiTransparentIds) {
 	// blockMap: { AIR:0, GRASS:1, ... } — passed from main thread so plugins extend it
 	const BLOCK = blockMap
 	const TRANSPARENT = new Set(transparentIds)
+	const SEMI = new Set(semiTransparentIds || [])
 	const INVISIBLE = new Set(invisibleIds || [])
 	const blockAtlasRow = {}
 	ALL_BLOCK_IDS.forEach((id, i) => { blockAtlasRow[id] = i })
@@ -1909,7 +1931,7 @@ function _workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COL
 		{ n:[0,0,1],  verts:[[1,0,1],[1,1,1],[0,1,1],[0,0,1]], col:0 },
 		{ n:[0,0,-1], verts:[[0,0,0],[0,1,0],[1,1,0],[1,0,0]], col:0 },
 	]
-	return { BLOCK, TRANSPARENT, INVISIBLE, blockAtlasRow, INV_W, INV_H, FACES }
+	return { BLOCK, TRANSPARENT, SEMI, INVISIBLE, blockAtlasRow, INV_W, INV_H, FACES }
 }
 
 function _workerTileUV(blockId, col, blockAtlasRow, TILE_SIZE, INV_W, INV_H) {
@@ -1950,7 +1972,7 @@ function _workerTerrain(SEED, SEA_LEVEL, BEDROCK_Y, BLOCK) {
 	return { terrainHeight }
 }
 
-function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE, TRANSPARENT) {
+function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE, TRANSPARENT, SEMI) {
 	// Re-create plugin terrain-layer functions from their serialized sources.
 	// We inject a single `api` argument that mirrors the shape of api.CONST on
 	// the main thread, so the same function body works in both environments.
@@ -1974,11 +1996,13 @@ function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, s
 	// TRANSPARENT is passed in from _workerBuildGeometry (built from transparentIds).
 	// This ensures plugin blocks registered with transparent:true are culled correctly.
 	const _TRANSPARENT = TRANSPARENT || new Set([BLOCK.AIR, BLOCK.WATER, BLOCK.LEAVES, BLOCK.GLASS])
+	const _SEMI = SEMI || new Set()
 	function isTransparent(b) { return b === null || b === BLOCK.AIR || _TRANSPARENT.has(b) }
 	function blockBucket(t) {
 		if (t === BLOCK.WATER) return 1
 		if (t === BLOCK.LEAVES) return 2
 		if (t === BLOCK.GLASS) return 3
+		if (_SEMI.has(t)) return 5  // semi-transparent (check before TRANSPARENT — semi ids are in both)
 		if (_TRANSPARENT.has(t)) return 1  // plugin transparent blocks → water-like rendering
 		return 0
 	}
@@ -1988,19 +2012,19 @@ function _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, s
 function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 	CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS, ATLAS_ROWS,
 	ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY, blockMap, transparentIds, terrainLayerSources, terrainLayerMaxExtra,
-	invisibleIds) {
+	invisibleIds, semiTransparentIds) {
 
-	const { BLOCK, TRANSPARENT, INVISIBLE, blockAtlasRow, INV_W, INV_H, FACES } =
+	const { BLOCK, TRANSPARENT, SEMI, INVISIBLE, blockAtlasRow, INV_W, INV_H, FACES } =
 		_workerConstants(CHUNK_SIZE, SEA_LEVEL, BEDROCK_Y, TILE_SIZE, ATLAS_COLS,
 		                 ATLAS_ROWS, ALL_BLOCK_IDS, PLANT_TILE, PLANT_RARITY,
-		                 blockMap, transparentIds, invisibleIds)
+		                 blockMap, transparentIds, invisibleIds, semiTransparentIds)
 
 	const tileUV  = (id, col) => _workerTileUV(id, col, blockAtlasRow, TILE_SIZE, INV_W, INV_H)
 	const plantUV = (row)     => _workerPlantUV(row, PLANT_TILE, plantCount)
 
 	const modified = new Map(modifiedEntries)
 	const { terrainHeight } = _workerTerrain(seed, SEA_LEVEL, BEDROCK_Y, BLOCK)
-	const { getBlock, isTransparent, blockBucket } = _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE, TRANSPARENT)
+	const { getBlock, isTransparent, blockBucket } = _workerGetBlock(modified, terrainHeight, BLOCK, SEA_LEVEL, BEDROCK_Y, seed, terrainLayerSources, CHUNK_SIZE, TRANSPARENT, SEMI)
 
 	function plantAt(wx, wz) {
 		if (modified.has('plant_' + wx + '_' + wz)) return -1
@@ -2010,7 +2034,7 @@ function _workerBuildGeometry(cx, cz, seed, plantCount, modifiedEntries,
 		return Math.floor((Math.abs(Math.sin(wx*374.1 + wz*591.3)) % 1) * plantCount)
 	}
 
-	const N = 5
+	const N = 6
 	const pos  = Array.from({length:N}, () => [])
 	const uv   = Array.from({length:N}, () => [])
 	const norm = Array.from({length:N}, () => [])
@@ -2099,11 +2123,11 @@ function _workerMain() {
 			d.CHUNK_SIZE, d.SEA_LEVEL, d.BEDROCK_Y, d.TILE_SIZE, d.ATLAS_COLS,
 			d.ATLAS_ROWS, d.ALL_BLOCK_IDS, d.PLANT_TILE, d.PLANT_RARITY,
 			d.blockMap, d.transparentIds, d.terrainLayerSources, d.terrainLayerMaxExtra,
-			d.invisibleIds,
+			d.invisibleIds, d.semiTransparentIds,
 		)
 		const { pos, uv, norm, idx, pickFaces } = result
 		const bufs = [], typed = { pos:[], uv:[], norm:[], idx:[] }
-		for (let b = 0; b < 5; b++) {
+		for (let b = 0; b < 6; b++) {
 			typed.pos[b]  = new Float32Array(pos[b]);  bufs.push(typed.pos[b].buffer)
 			typed.uv[b]   = new Float32Array(uv[b]);   bufs.push(typed.uv[b].buffer)
 			typed.norm[b] = new Float32Array(norm[b]); bufs.push(typed.norm[b].buffer)
@@ -2195,6 +2219,7 @@ function _enqueueChunk(cx, cz) {
 			// Dynamic block data — plugins may have added new blocks
 			blockMap: { ...BLOCK },
 			transparentIds: [...TRANSPARENT],
+			semiTransparentIds: [...SEMI_TRANSPARENT],
 			invisibleIds: [...CHUNK_INVISIBLE],
 			terrainLayerSources: [..._pluginTerrainLayerSources],
 			terrainLayerMaxExtra: _pluginTerrainLayerMaxExtra,
@@ -3830,6 +3855,7 @@ function _registerBlockNow(def) {
 	// 1. Register ID
 	if (!BLOCK[def.name]) BLOCK[def.name] = id   // optional: add to BLOCK map
 	if (def.transparent) TRANSPARENT.add(id)
+	if (def.semiTransparent) { TRANSPARENT.add(id); SEMI_TRANSPARENT.add(id) }
 	if (def.invisible) { TRANSPARENT.add(id); CHUNK_INVISIBLE.add(id) }
 	if (def.passable) PASSABLE.add(id)
 	if (def.stair) STAIRS.set(id, { dx: Math.sign(def.stair.dx || 0), dz: Math.sign(def.stair.dz || 0) })

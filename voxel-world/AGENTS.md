@@ -123,8 +123,11 @@ API surface (see the JSDoc on `_makeApi()` in `index.html`):
 - `PLUGIN_NAME`
 - `allocateBlockId() → number` (deterministic from plugin name; do **not**
   hard-code IDs)
-- `registerBlock(def)` — `{ id, name, category, transparent?, invisible?, passable?, stair?:{dx,dz}, draw?:{ side, top?, bottom? } }`
+- `registerBlock(def)` — `{ id, name, category, transparent?, semiTransparent?, invisible?, passable?, stair?:{dx,dz}, draw?:{ side, top?, bottom? } }`
   - `transparent` — adds to `TRANSPARENT`; chunk renders the block in the glass/water bucket.
+  - `semiTransparent` — adds to `SEMI_TRANSPARENT` (and `TRANSPARENT`); chunk renders the block in a
+    dedicated bucket with `matSemi` (opacity `0.85`) — only slightly see-through, more solid than
+    water (`0.72`) or glass (`0.35`). Implies transparent face-culling. Used by the molten-lava plugin.
   - `invisible` — adds to both `TRANSPARENT` and `CHUNK_INVISIBLE`; the block is transparent
     for face-culling (adjacent walls show their faces) but generates **no chunk mesh geometry**.
     The block still gets pick faces so it can be clicked and mined. Use when the block's visual
@@ -482,6 +485,7 @@ Inbound (client → server):
 | `remove_blocks`  | `blockId|null, px, py, pz, radius`                       |
 | `hit_player`     | `targetId, damage` (clamped 1..50 server-side)           |
 | `hit_mob`        | `mobId, damage` (clamped 1..50 server-side)              |
+| `env_damage`     | `amount, cause?` — self-only environmental damage (lava, fall, …); applied to the sender, clamped & rate-limited like `hit_player`, reuses `hp_update`/`player_died` outbound |
 | `set_nickname`   | `nickname`                                               |
 | `world_reset`    | —                                                        |
 | `chat`           | `text`                                                   |

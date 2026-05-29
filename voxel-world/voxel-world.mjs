@@ -1090,6 +1090,32 @@ export default function attachVoxelWorld(httpServer) {
 					}
 					break
 				}
+				case 'env_damage': {
+					if (!player) return
+					// Environmental self-damage (lava, fall, drowning, …). There is
+					// no target — it is always applied to the SENDING player, so it
+					// can't be used to hurt anyone else. Same 500ms window and clamp
+					// as PvP cap the rate and magnitude regardless of what a buggy or
+					// malicious plugin sends. `cause` is a short label for the kill feed.
+					const now = Date.now()
+					if (now - (player.lastHitTime || 0) < 500) return
+					player.lastHitTime = now
+
+					const cause = String(msg.cause || 'the environment').slice(0, 32)
+					const damage = clampHitDamage(msg.amount, 5)
+					player.hp = Math.max(0, player.hp - damage)
+					broadcastWorld(world, { type:'hp_update', id:player.id, hp:player.hp, damage })
+					console.log(`[hurt] ${player.nickname} took ${damage} from ${cause}  hp=${player.hp}`)
+
+					if (player.hp <= 0) {
+						player.hp = 100
+						player.x = 0; player.y = 20; player.z = 0
+						broadcastWorld(world, { type:'player_died',
+							id: player.id, killerName: cause, hp: player.hp })
+						console.log(`[kill] ${player.nickname} died to ${cause}`)
+					}
+					break
+				}
 				case 'ranged_hit_mob': {
 					if (!player) return
 					const mob = world.mobs.get(msg.mobId)
