@@ -7,26 +7,50 @@
  *     mounts on top of the clicked block and faces the way you are looking
  *     (nearest cardinal), barrels pointing "forward".
  *   • Right-click the cannon (any tool) to climb into the gunner seat — the
- *     camera snaps behind the barrels and you can aim by looking around.
- *   • While seated, FIRE with the left mouse button (or Space / F). Each shot
- *     launches twin plasma bolts down the camera's line of sight and deals
- *     1000 damage on impact (the server anti-cheat clamps every hit to 50, so
- *     it still one-shots any mob and two-shots a 100-HP player).
- *   • Press Shift to climb out.
+ *     camera snaps behind the barrels. While seated the turret smoothly follows
+ *     your view, so the barrels always point where you look.
+ *   • HOLD the left mouse button (or Space / F) to charge, release to FIRE. The
+ *     longer you hold, the bigger the volley: a tap is 20×50 = 1000 damage, a
+ *     full charge is 40×50 = 2000. (The server clamps each hit to 50, so we
+ *     stack many hits — this stacks fully on mobs; players have a 500 ms
+ *     per-hit invincibility window, so only 50/half-second lands on a player.)
+ *   • Press Shift to climb out — the turret eases back to its original facing.
  *
  * Like the rocket engine it is a big custom THREE.js model registered as an
  * `invisible` solid block (the mesh below is the only visual). Four cardinal
  * orientations, one block ID each, so the facing survives in the world's
  * modified-block diff. Twin ribbed barrels with glowing emitters, finned side
- * coolers, a gunner seat, energy coils and cyan hi-tech accents. Firing,
- * sitting and the plasma bolts are purely client-side; only the damage hit
- * messages are networked (reusing the bow's `ranged_hit_*` path).
+ * coolers, a gunner seat, energy coils and cyan hi-tech accents.
+ *
+ * Hot-reload note: the engine re-runs init() on every script load without
+ * unloading the old instance. To avoid stacked "ghost" cannons we stamp a
+ * global generation counter; an older generation's ticks/listeners tear
+ * themselves down as soon as a newer one loads. (Instances from a *different*
+ * filename still linger until a hard page reload, though.)
  */
 
 /* global VoxelWorld, THREE, modified, scene, camera, player, yawObject, RENDER_DISTANCE, CHUNK_SIZE, showToast */
 
 VoxelWorld.registerPlugin('PlasmaCannon', {
 	init(api) {
+		// ── Generation guard (defeats hot-reload mesh stacking) ───────────
+		// Every load bumps a global counter. This instance's persistent ticks &
+		// listeners check isStale() and a dedicated cleanup tick removes them
+		// (and their meshes) the moment a newer generation loads.
+		const MY_GEN = (window.__PLASMA_CANNON_GEN = (window.__PLASMA_CANNON_GEN || 0) + 1)
+		const isStale = () => window.__PLASMA_CANNON_GEN !== MY_GEN
+
+		const _ticks = []                 // persistent tick wrappers (for teardown)
+		const _listeners = []             // [target?, type, fn, capture] (for teardown)
+		function addTick(fn) {
+			const w = (dt) => { if (isStale()) return; fn(dt) }
+			_ticks.push(w); api.addTickCallback(w); return w
+		}
+		function on(type, fn, capture) {
+			addEventListener(type, fn, capture)
+			_listeners.push([type, fn, capture])
+		}
+
 		// One block ID per cardinal facing — (dx,dz) is the direction the barrels
 		// point; the gunner seat sits on the opposite side.
 		const DIRS = [
@@ -174,7 +198,7 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 		let fireFlashUntil = 0
 
 		// ── Fire-flash / charge-glow / idle-glow animation (shared materials) ──
-		api.addTickCallback(() => {
+		addTick(() => {
 			const t = performance.now()
 			const boost = t < fireFlashUntil ? (fireFlashUntil - t) / 260 : 0   // 1→0 ramp after a shot
 			const charge = chargeStart > 0 ? Math.min((t - chargeStart) / MAX_CHARGE_MS, 1) : 0
@@ -193,7 +217,7 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 		const _visibleKeys = new Set()
 		const CULL_DIST = (RENDER_DISTANCE + 1) * CHUNK_SIZE
 
-		api.addTickCallback(() => {
+		addTick(() => {
 			_scanKeys.clear()
 			for (const [k, v] of modified) {
 				if (ID_SET.has(v)) _scanKeys.add(k)
@@ -209,6 +233,7 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 					const d = ID_TO_DIR.get(modified.get(k))
 					const mesh = templates.get(dirKey(d.dx, d.dz)).clone()
 					mesh.position.set(x + 0.5, y, z + 0.5)
+					mesh.userData.homeYaw = mesh.rotation.y   // placed facing — restored on exit
 					scene.add(mesh)
 					cannonMeshes.set(k, mesh)
 				}
@@ -224,12 +249,15 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 		})
 
 		// ── Sitting state & override ──────────────────────────────────────
-		// null when standing; otherwise { key, ex, ey, ez }.
-		let seat = null
-		const SEAT_EYE = 1.7   // eye height above the cannon block's floor while seated (scales with the bigger turret)
+		let seat = null            // null when standing; else { key, ex, ey, ez }
+		let returning = null       // "x_y_z" of a mesh easing back to its home facing after exit
+		const SEAT_EYE = 1.7       // eye height above the cannon block's floor while seated
+		const TURN_RESPONSE = 18   // how tightly the barrels follow your view (higher = snappier)
+		const RETURN_RESPONSE = 6  // how fast the turret swings back to its facing on exit
 
 		function sitDown(x, y, z, d) {
 			seat = { key: `${x}_${y}_${z}`, ex: x + 0.5, ey: y + SEAT_EYE, ez: z + 0.5 }
+			returning = null   // cancel any in-progress return on the cannon we just took
 			// Face down the barrels. yawObject forward is (-sin,−cos) of its Y
 			// rotation, so this yaw points the camera along (dx,dz).
 			yawObject.rotation.y = Math.atan2(-d.dx, -d.dz)
@@ -240,6 +268,7 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 		function standUp() {
 			if (!seat) return
 			const [x, y, z] = seat.key.split('_').map(Number)
+			returning = seat.key   // ease the turret back to its original facing
 			// Step out onto the top of the cannon block so we don't clip the solid turret.
 			player.pos.set(x + 0.5, y + 1 + player.height, z + 0.5)
 			player.vel.set(0, 0, 0)
@@ -249,35 +278,44 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 			showToast('🚶 Standing')
 		}
 
-		// Per-frame override: pin the player into the seat, re-sync the camera, and
-		// slowly swing the turret to track where the gunner is looking.
-		// (The main loop copies player.pos into yawObject BEFORE this tick, so
-		// without the re-copy the view lags one frame — same as the captain chair / lift.)
-		const TURN_RATE = 1.5   // rad/s — the turret follows the view "slowly"
-		const _camDirTmp = new THREE.Vector3()   // hoisted: no alloc in the per-frame tick
-		api.addTickCallback((dt) => {
-			if (!seat) return
-			if (!ID_SET.has(modified.get(seat.key))) { standUp(); return }   // cannon removed underneath us
-			player.pos.set(seat.ex, seat.ey, seat.ez)
-			player.vel.set(0, 0, 0)
-			player.onGround = true
-			yawObject.position.copy(player.pos)
+		// Per-frame: pin the player into the seat, re-sync the camera, and swing the
+		// turret. While seated the barrels follow your view; after you exit they ease
+		// back to the cannon's placed facing.
+		// (The main loop copies player.pos into yawObject BEFORE this tick, so without
+		// the re-copy the view lags one frame — same as the captain chair / lift.)
+		addTick((dt) => {
+			if (seat) {
+				if (!ID_SET.has(modified.get(seat.key))) { standUp(); return }   // cannon removed underneath us
+				player.pos.set(seat.ex, seat.ey, seat.ez)
+				player.vel.set(0, 0, 0)
+				player.onGround = true
+				yawObject.position.copy(player.pos)
 
-			// Swing the seated cannon's barrels toward where the gunner is actually
-			// looking. The canonical model fires +Z, so aiming its rotation.y at
-			// atan2(forward.x, forward.z) of the real camera forward points the barrels
-			// down the line of sight (same vector firing uses). Step toward it at
-			// TURN_RATE for a heavy, motorised feel rather than snapping.
-			const mesh = cannonMeshes.get(seat.key)
-			if (mesh) {
-				camera.getWorldDirection(_camDirTmp)
-				const targetYaw = Math.atan2(_camDirTmp.x, _camDirTmp.z)
-				let delta = targetYaw - mesh.rotation.y
-				delta = Math.atan2(Math.sin(delta), Math.cos(delta))   // shortest angle, wrapped to [-π,π]
-				const step = TURN_RATE * dt
-				mesh.rotation.y += Math.max(-step, Math.min(step, delta))
+				// Follow the gunner's view. The canonical model fires +Z and the camera's
+				// world forward is (-sinθ,-cosθ) for yaw θ, so the barrels point down the
+				// line of sight when the mesh yaw is (yaw + π). Ease toward it (frame-rate
+				// independent) so it tracks closely with a touch of motorised weight.
+				const mesh = cannonMeshes.get(seat.key)
+				if (mesh) easeYaw(mesh, yawObject.rotation.y + Math.PI, TURN_RESPONSE, dt)
+				return
+			}
+
+			if (returning) {
+				const mesh = cannonMeshes.get(returning)
+				if (!mesh) { returning = null; return }
+				const home = mesh.userData.homeYaw ?? 0
+				if (easeYaw(mesh, home, RETURN_RESPONSE, dt) < 0.01) { mesh.rotation.y = home; returning = null }
 			}
 		})
+
+		// Ease an object's Y rotation toward a target along the shortest arc.
+		// Returns the (pre-step) absolute angular distance remaining, in radians.
+		function easeYaw(mesh, targetYaw, response, dt) {
+			let delta = targetYaw - mesh.rotation.y
+			delta = Math.atan2(Math.sin(delta), Math.cos(delta))   // shortest angle, wrapped to [-π,π]
+			mesh.rotation.y += delta * (1 - Math.exp(-response * dt))
+			return Math.abs(delta)
+		}
 
 		// ── Plasma bolt visuals + firing ──────────────────────────────────
 		function makeBolt(sizeMul) {
@@ -388,16 +426,15 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 		// ── Input: hold to charge & fire while seated, Shift to stand ─────
 		// Capture phase so we win before the game's mining (mousedown) and the
 		// fly/sink Shift handling, and only while actually seated.
-		addEventListener('mousedown', (e) => {
+		on('mousedown', (e) => {
 			if (!seat) return
 			if (e.button === 0) { startCharge(); e.preventDefault(); e.stopPropagation() }
 		}, true)
-		addEventListener('mouseup', (e) => {
+		on('mouseup', (e) => {
 			if (!seat) return
 			if (e.button === 0) { releaseFire(); e.preventDefault(); e.stopPropagation() }
 		}, true)
-
-		addEventListener('keydown', (e) => {
+		on('keydown', (e) => {
 			if (!seat) return
 			if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
 				standUp(); e.preventDefault(); e.stopPropagation()
@@ -405,7 +442,7 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 				startCharge(); e.preventDefault(); e.stopPropagation()
 			}
 		}, true)
-		addEventListener('keyup', (e) => {
+		on('keyup', (e) => {
 			if (!seat) return
 			if (e.code === 'Space' || e.code === 'KeyF') {
 				releaseFire(); e.preventDefault(); e.stopPropagation()
@@ -414,6 +451,7 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 
 		// ── Right-click a cannon to sit ───────────────────────────────────
 		api.registerBlockInteraction([...ID_SET], (ctx) => {
+			if (isStale()) return
 			const f = ctx.facing
 			if (!f || !ID_SET.has(f.type)) return
 			if (seat) return   // already seated
@@ -453,6 +491,7 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 			url: iconCanvas.toDataURL(),
 			damage: 0,
 			onRightClick(ctx) {
+				if (isStale()) return
 				const f = ctx.facing
 				if (!f) return
 				if (ID_SET.has(f.type)) return   // right-clicking a cannon sits instead
@@ -470,6 +509,25 @@ VoxelWorld.registerPlugin('PlasmaCannon', {
 			},
 		})
 
-		console.log('[PlasmaCannon] registered ids ' + DIRS.map((d) => d.id).join(','))
+		// ── Teardown when a newer generation loads (clean hot-reload) ──────
+		// Runs last so it can see isStale() flip; removes this instance's meshes,
+		// ticks and listeners so the replacement instance is the only one alive.
+		const cleanupTick = () => {
+			if (!isStale()) return
+			for (const [, mesh] of cannonMeshes) scene.remove(mesh)
+			cannonMeshes.clear()
+			for (const [type, fn, capture] of _listeners) removeEventListener(type, fn, capture)
+			for (const w of _ticks) api.removeTickCallback(w)
+			api.removeTickCallback(cleanupTick)
+		}
+		api.addTickCallback(cleanupTick)
+
+		console.log('[PlasmaCannon] gen ' + MY_GEN + ' registered ids ' + DIRS.map((d) => d.id).join(','))
+		if (MY_GEN > 1) {
+			console.warn('[PlasmaCannon] ⚠ generation ' + MY_GEN + ' — earlier instances from this session are still ' +
+				'loaded. Pre-guard instances (loaded before this code existed) cannot be torn down from script; ' +
+				'do a FULL page reload (not a hot-reload) so only one instance runs. Stacked instances are what ' +
+				'cause a "frozen / inverted" ghost cannon on one or more variants.')
+		}
 	},
 })

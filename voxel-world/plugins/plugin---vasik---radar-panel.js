@@ -118,30 +118,31 @@ VoxelWorld.registerPlugin('RadarPanel', {
 		}
 
 		// ── Beep beep (Web Audio), created lazily after a user gesture ─────
-		// let audioCtx = null
-		// function tone(start, freq, dur) {
-		// 	const o = audioCtx.createOscillator()
-		// 	const g = audioCtx.createGain()
-		// 	o.type = 'square'
-		// 	o.frequency.value = freq
-		// 	g.gain.setValueAtTime(0.0001, start)
-		// 	g.gain.exponentialRampToValueAtTime(0.18, start + 0.01)
-		// 	g.gain.exponentialRampToValueAtTime(0.0001, start + dur)
-		// 	o.connect(g).connect(audioCtx.destination)
-		// 	o.start(start)
-		// 	o.stop(start + dur + 0.02)
-		// }
-		// function beepBeep() {
-		// 	if (!audioCtx) {
-		// 		const AC = window.AudioContext || window.webkitAudioContext
-		// 		if (!AC) return
-		// 		audioCtx = new AC()
-		// 	}
-		// 	if (audioCtx.state === 'suspended') audioCtx.resume()
-		// 	const t0 = audioCtx.currentTime
-		// 	tone(t0, 1320, 0.09)
-		// 	tone(t0 + 0.16, 1320, 0.09)
-		// }
+		let audioCtx = null
+		function tone(start, freq, dur) {
+			const o = audioCtx.createOscillator()
+			const g = audioCtx.createGain()
+			o.type = 'square'
+			o.frequency.value = freq
+			g.gain.setValueAtTime(0.0001, start)
+			g.gain.exponentialRampToValueAtTime(0.18, start + 0.01)
+			g.gain.exponentialRampToValueAtTime(0.0001, start + dur)
+			o.connect(g).connect(audioCtx.destination)
+			o.start(start)
+			o.stop(start + dur + 0.02)
+		}
+		function beepBeep() {
+			return // skip
+			if (!audioCtx) {
+				const AC = window.AudioContext || window.webkitAudioContext
+				if (!AC) return
+				audioCtx = new AC()
+			}
+			if (audioCtx.state === 'suspended') audioCtx.resume()
+			const t0 = audioCtx.currentTime
+			tone(t0, 1320, 0.09)
+			tone(t0 + 0.16, 1320, 0.09)
+		}
 
 		// ── Radar simulation (shared by every placed scope) ────────────────
 		// A blip flies around the scope for BLIP_LIFE seconds: its radius grows
@@ -238,6 +239,14 @@ VoxelWorld.registerPlugin('RadarPanel', {
 
 		// ── Per-frame: advance the sim, blink LEDs, redraw the scope ───────
 		api.addTickCallback((dt) => {
+			// Nothing in range → no scope on screen, so skip the whole sim and
+			// (the costly part) the canvas redraw + GPU texture re-upload. The
+			// mesh-sync tick below keeps panelMeshes to just the in-range panels,
+			// so a radar that's unplaced or out of render distance costs nothing.
+			// (One-frame lag when a panel first comes in range is irrelevant; the
+			// sim just resumes from where it froze — nobody saw the frozen state.)
+			if (panelMeshes.size === 0) return
+
 			// Guard against huge dt after a tab was backgrounded.
 			if (dt > 0.25) dt = 0.25
 
