@@ -3,12 +3,19 @@
  *
  * Left-click a block to flatten a 10×10 area to that block's height.
  * Blocks above are removed; the surface is filled with the clicked block type.
+ * Right-click to undo the most recent leveling (last 10 are remembered).
  */
 
-/* global VoxelWorld */
+/* global VoxelWorld, showToast */
 
 VoxelWorld.registerPlugin('TerrainLeveler', {
 	async init(api) {
+		// Undo history: stack of operations, each a [[x,y,z,prevBlockId], …]
+		// array recording the block values *before* a level op. Capped so we
+		// never hold more than the last MAX_UNDO operations.
+		const MAX_UNDO = 10
+		const undoStack = []
+
 		api.registerTool({
 			name: 'Terrain Leveler',
 			draw(ctx, W, H) {
@@ -50,6 +57,15 @@ VoxelWorld.registerPlugin('TerrainLeveler', {
 				if (blockType === null) return
 
 				const blocks = []
+				// Previous values, recorded before we mutate, so the op can be
+				// undone. getBlock returns null for air → store AIR explicitly.
+				const undo = []
+				const record = (x, y, z, newVal) => {
+					const prev = ctx.getBlock(x, y, z)
+					if (prev === newVal) return // no-op, nothing to change/undo
+					undo.push([x, y, z, prev === null ? ctx.BLOCK.AIR : prev])
+					blocks.push([x, y, z, newVal])
+				}
 
 				for (let dx = -4; dx <= 5; dx++) {
 					for (let dz = -4; dz <= 5; dz++) {
@@ -57,20 +73,35 @@ VoxelWorld.registerPlugin('TerrainLeveler', {
 						const cz = f.z + dz
 
 						// Fill surface at target level with clicked block type
-						blocks.push([cx, targetY, cz, blockType])
+						record(cx, targetY, cz, blockType)
 
 						// Remove blocks above target level
 						for (let dy = 1; dy <= 64; dy++) {
 							if (blocks.length >= 1020) break
 							const cy = targetY + dy
 							if (ctx.getBlock(cx, cy, cz) !== null) {
-								blocks.push([cx, cy, cz, ctx.BLOCK.AIR])
+								record(cx, cy, cz, ctx.BLOCK.AIR)
 							}
 						}
 					}
 				}
 
+				if (!blocks.length) return
+
+				undoStack.push(undo)
+				if (undoStack.length > MAX_UNDO) undoStack.shift()
+
 				ctx.setBlocks(blocks)
+			},
+
+			onRightClick(ctx) {
+				const undo = undoStack.pop()
+				if (!undo) {
+					showToast('Nothing to undo')
+					return
+				}
+				ctx.setBlocks(undo)
+				showToast(`↩ Undo (${undoStack.length} left)`)
 			},
 		})
 	},
