@@ -3843,6 +3843,23 @@ const BLOCK_REGISTRY = [
 	{ id: BLOCK.CLAIM, name: 'Claim Totem', category: 'Special' },
 ]
 
+// Authoritative name→id metadata for the /blocks and /remove commands. Unlike
+// BLOCK_REGISTRY (the GUI picker, which deliberately hides invisible blocks),
+// this records EVERY registered block — including invisible ones (stairs, doors,
+// the oriented mesh blocks) and every variant that shares a display name. That
+// makes /remove work on multi-variant blocks out of the box: one name resolves
+// to all of its orientation IDs. Seeded from the core list above.
+const BLOCK_META = BLOCK_REGISTRY.map((r) => ({ id: r.id, name: r.name, category: r.category, invisible: false }))
+
+// Every id that shares a display name (case-insensitive) — so /remove on e.g.
+// "Captain Chair" nukes all four orientation variants at once.
+function blockIdsByName(name) {
+	const want = name.trim().toUpperCase()
+	const ids = new Set()
+	for (const m of BLOCK_META) if (m.name.toUpperCase() === want) ids.add(m.id)
+	return ids
+}
+
 // ── Core block registration implementation ────────────────────────────────
 // Adds a new block type at runtime: extends atlas, registers in GUI, updates
 // the worker's block list (passed per-job so no worker recreation needed).
@@ -3870,6 +3887,10 @@ function _registerBlockNow(def) {
 
 	// 3. Register in GUI (invisible blocks are internal — hide from picker)
 	if (!def.invisible) BLOCK_REGISTRY.push({ id, name: def.name, category: def.category || 'Plugin' })
+
+	// 3b. Always record in BLOCK_META so /blocks lists it and /remove can target
+	// it by name — including invisible blocks and every orientation variant.
+	BLOCK_META.push({ id, name: def.name, category: def.category || 'Plugin', invisible: !!def.invisible })
 
 	// 4. Invalidate chunk hand-model cache for this id (in case it was built before)
 	_blockHandModelCache.delete(id)
@@ -4486,35 +4507,41 @@ function handleCommand(raw) {
 		return
 	}
 	if (v === '/blocks') {
-		const builtins = Object.keys(BLOCK).map((name) => ({ id: BLOCK[name], name, category: 'Built-in' }))
-		const all = [...builtins, ...BLOCK_REGISTRY].sort((a, b) => a.name.localeCompare(b.name))
+		// One row per unique display name (orientation variants collapsed). The
+		// Name column is exactly what you pass to /remove.
+		const byName = new Map()   // NAME(upper) → { name, category, count }
+		for (const m of BLOCK_META) {
+			const key = m.name.toUpperCase()
+			const e = byName.get(key)
+			if (e) e.count++
+			else byName.set(key, { name: m.name, category: m.category, count: 1 })
+		}
+		const all = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
 		const body = document.getElementById('blocks-modal-body')
-		body.innerHTML = '<table>' + all.map((b) =>
-			`<tr><td>${b.name}</td><td>${b.category}</td><td>id=${b.id}</td></tr>`,
-		).join('') + '</table>'
+		body.innerHTML =
+			'<p style="margin:0 0 8px;opacity:.75">Use the <b>Name</b> with <code>/remove &lt;name&gt; &lt;radius&gt;</code>.</p>' +
+			'<table>' + all.map((b) =>
+				`<tr><td>${b.name}</td><td>${b.category}</td><td>${b.count > 1 ? b.count + ' variants' : ''}</td></tr>`,
+			).join('') + '</table>'
 		document.getElementById('blocks-modal-overlay').classList.add('open')
 		return
 	}
 	// /remove <blockname|ALL> <radius>
 	// Tells the server to remove all modified blocks of the given type within
 	// radius blocks of the player. Server broadcasts the changes to everyone.
-	const removeMatch = v.match(/^\/remove\s+(\S+)\s+(\d+)$/i)
+	// The name may contain spaces (e.g. "Captain Chair"); the trailing number is
+	// always the radius. Names resolve via BLOCK_META, so every orientation
+	// variant of a multi-variant mesh block is removed in one go.
+	const removeMatch = v.match(/^\/remove\s+(.+)\s+(\d+)$/i)
 	if (removeMatch) {
-		const blockName = removeMatch[1].toUpperCase()
+		const blockName = removeMatch[1].trim()
 		const radius    = Math.min(parseInt(removeMatch[2], 10), 500)
 
 		let blockIds = null   // null = ALL; otherwise Set of matching IDs
-		if (blockName !== 'ALL') {
-			// Collect ALL IDs sharing this name (e.g. Door has 4 variants)
-			const matched = new Set(
-				BLOCK_REGISTRY.filter((r) => r.name.toUpperCase() === blockName).map((r) => r.id),
-			)
-			// Also check built-in BLOCK map (keys are mixed-case)
-			for (const [k, id] of Object.entries(BLOCK)) {
-				if (k.toUpperCase() === blockName) matched.add(id)
-			}
+		if (blockName.toUpperCase() !== 'ALL') {
+			const matched = blockIdsByName(blockName)   // all variants sharing the name
 			if (matched.size === 0) {
-				showToast(`Unknown block: ${removeMatch[1]}`)
+				showToast(`Unknown block: ${blockName}`)
 				return
 			}
 			blockIds = matched

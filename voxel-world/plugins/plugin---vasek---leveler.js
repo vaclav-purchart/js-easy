@@ -6,10 +6,12 @@
  * Right-click to undo the most recent leveling (last 10 are remembered).
  */
 
-/* global VoxelWorld, showToast */
+/* global VoxelWorld, showToast, HOTBAR_ITEMS, selectedSlot */
 
 VoxelWorld.registerPlugin('TerrainLeveler', {
 	async init(api) {
+		const TOOL_NAME = 'Terrain Leveler'
+
 		// Undo history: stack of operations, each a [[x,y,z,prevBlockId], …]
 		// array recording the block values *before* a level op. Capped so we
 		// never hold more than the last MAX_UNDO operations.
@@ -17,7 +19,7 @@ VoxelWorld.registerPlugin('TerrainLeveler', {
 		const undoStack = []
 
 		api.registerTool({
-			name: 'Terrain Leveler',
+			name: TOOL_NAME,
 			draw(ctx, W, H) {
 				// Ground surface (flat line)
 				ctx.fillStyle = '#8B6914'
@@ -103,6 +105,29 @@ VoxelWorld.registerPlugin('TerrainLeveler', {
 				ctx.setBlocks(undo)
 				showToast(`↩ Undo (${undoStack.length} left)`)
 			},
+		})
+
+		// Persistent usage hint, shown the whole time the tool is equipped.
+		// There is no built-in equip hook, so poll the hotbar selection in a
+		// tick and toggle the banner's visibility on equip transitions.
+		const hint = document.createElement('div')
+		hint.textContent = '⛏ Left-click to level blocks — right-click to undo last change'
+		hint.style.cssText = [
+			'position:fixed', 'left:50%', 'bottom:90px', 'transform:translateX(-50%)',
+			'padding:6px 14px', 'background:rgba(0,0,0,0.6)', 'color:#fff',
+			'font:14px sans-serif', 'border-radius:6px', 'pointer-events:none',
+			'z-index:50', 'white-space:nowrap', 'display:none',
+		].join(';')
+		document.body.appendChild(hint)
+
+		let wasEquipped = false
+		api.addTickCallback(() => {
+			const item = HOTBAR_ITEMS[selectedSlot]
+			const equipped = item?.type === 'tool' && item.name === TOOL_NAME
+			if (equipped !== wasEquipped) {
+				hint.style.display = equipped ? 'block' : 'none'
+				wasEquipped = equipped
+			}
 		})
 	},
 })

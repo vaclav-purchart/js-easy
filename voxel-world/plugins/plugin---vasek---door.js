@@ -32,8 +32,10 @@ VoxelWorld.registerPlugin('Door', {
 		for (const id of [DOOR_Z_CLOSED, DOOR_X_CLOSED]) {
 			api.registerBlock({ id, name: 'Door', category: 'Crafted', invisible: true })
 		}
+		// Same display name as the closed halves so `/remove Door <r>` clears
+		// every variant (open + closed, both axes) in one go.
 		for (const id of [DOOR_Z_OPEN, DOOR_X_OPEN]) {
-			api.registerBlock({ id, name: 'Door (open)', category: 'Crafted', invisible: true, passable: true })
+			api.registerBlock({ id, name: 'Door', category: 'Crafted', invisible: true, passable: true })
 		}
 
 		// ── THREE.js door panel meshes ────────────────────────────────────

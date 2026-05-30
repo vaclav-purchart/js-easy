@@ -69,7 +69,15 @@ landmarks when editing — keep them when adding new sections.
   Populated automatically when `registerBlock({ passable: true })` is called.
 - `BLOCK_DEFS` — per-id draw functions that paint the texture atlas tile.
 - `BLOCK_REGISTRY` — array consumed by the GUI block picker
-  (`{ id, name, category }`).
+  (`{ id, name, category }`). **Invisible blocks are deliberately excluded**
+  (they are placed via tools, not the picker).
+- `BLOCK_META` — authoritative `{ id, name, category, invisible }` list of
+  **every** registered block, including invisible ones and every orientation
+  variant that shares a display name. This is what `/blocks` lists and what
+  `/remove <name>` resolves against (via `blockIdsByName(name)`), so a single
+  name targets all of a multi-variant mesh block's IDs at once. Plugins get
+  this for free: register each variant with the **same `name`** and `/remove`
+  + `/blocks` handle it — no per-plugin removal hack needed.
 - `ALL_BLOCK_IDS` / `blockAtlasRow` — atlas row bookkeeping. Live arrays —
   push to extend.
 - `TOOL_DEFS` / `loadedTools` / `HOTBAR_ITEMS` — hotbar items (block or tool).
@@ -235,8 +243,11 @@ Chat slash-commands handled in `handleCommand()`:
 
 - `/reset` — clear local + broadcast `world_reset`.
 - `/nick <name>` — change nickname.
-- `/remove <BLOCK|ALL> <radius>` — server-side bulk removal (or local-only
-  in offline mode).
+- `/remove <name|ALL> <radius>` — server-side bulk removal (or local-only
+  in offline mode). The name may contain spaces (e.g. `Captain Chair`); the
+  trailing number is the radius. The name resolves through `BLOCK_META`, so
+  **every orientation variant** sharing that name is removed in one call. Use
+  `/blocks` to see the exact names (variant counts shown).
 
 When adding new commands, route them through `handleCommand()` and update the
 server `switch` if they require server-side state.
