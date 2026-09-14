@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mining Platformer</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #222;
+    color: white;
+    font-family: sans-serif;
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<script>
+/* =======================
+   CANVAS & CONSTANTS
+======================= */
+const canvas = document.getElementById("game")
+const ctx = canvas.getContext("2d")
+resize()
+window.addEventListener("resize", resize)
+
+function resize() {
+	canvas.width = window.innerWidth
+	canvas.height = window.innerHeight
+}
+
+const TILE_SIZE = 32
+const GRAVITY = 0.5
+const JUMP_FORCE = 10
+
+let touchMoveLeft = false
+let touchMoveRight = false
+let touchJump = false
+let touchMining = false
+const TOUCH_AREA = 0.85
+
+/* =======================
+   INPUT
+======================= */
+const keys = {}
+window.addEventListener("keydown", (e) => keys[e.key.toLowerCase()] = true)
+window.addEventListener("keyup", (e) => keys[e.key.toLowerCase()] = false)
+
+let pointerDown = false
+let pointerX = 0
+let pointerY = 0
+
+canvas.addEventListener("mousedown", (e) => {
+	pointerDown = true
+	pointerX = e.clientX
+	pointerY = e.clientY
+})
+canvas.addEventListener("mouseup", () => pointerDown = false)
+canvas.addEventListener("mousemove", (e) => {
+	pointerX = e.clientX
+	pointerY = e.clientY
+})
+
+// Touch
+canvas.addEventListener("touchstart", handleTouch, { passive: false })
+canvas.addEventListener("touchmove", handleTouch, { passive: false })
+canvas.addEventListener("touchend", handleTouchEnd, { passive: false })
+
+function handleTouch(e) {
+	e.preventDefault()
+
+	// Reset
+	touchMoveLeft = false
+	touchMoveRight = false
+	touchJump = false
+	touchMining = false
+
+	for (const t of e.touches) {
+		const x = t.clientX
+		const y = t.clientY
+
+		const bottomZone = y > canvas.height * TOUCH_AREA
+
+		if (bottomZone) {
+			// --- CONTROL ZONE ---
+			if (x < canvas.width * 0.33) {
+				touchMoveLeft = true
+			} else if (x < canvas.width * 0.66) {
+				touchMoveRight = true
+			} else {
+				touchJump = true
+			}
+		} else {
+			// --- GAME / MINING ZONE ---
+			pointerDown = true
+			pointerX = x
+			pointerY = y
+			touchMining = true
+		}
+	}
+}
+
+function handleTouchEnd(e) {
+	e.preventDefault()
+	if (e.touches.length === 0) {
+		touchMoveLeft = false
+		touchMoveRight = false
+		touchJump = false
+		touchMining = false
+		pointerDown = false
+	}
+}
+
+
+/* =======================
+   RNG
+======================= */
+function mulberry32(seed) {
+	return function() {
+		seed |= 0
+		seed = seed + 0x6D2B79F5 | 0
+		let t = Math.imul(seed ^ seed >>> 15, 1 | seed)
+		t ^= t + Math.imul(t ^ t >>> 7, 61 | t)
+		return ((t ^ t >>> 14) >>> 0) / 4294967296
+	}
+}
+
+/* =======================
+   WORLD & TILES
+======================= */
+let worldSeed = Math.floor(Math.random() * 1e9)
+let changedTiles = {}
+let miningProgress = {}
+
+for (let y = -1; y < 20; y++) {
+	changedTiles[`3_${y}`] = { type: "ladder" }
+}
+
+const TILE_TYPES = {
+	air:    { solid: false, color: "transparent" },
+	grass:  { solid: true, hp: 20, color: "#3a5" },
+	dirt:   { solid: true, hp: 30, color: "#764" },
+	coal:   { solid: true, hp: 50, color: "#333", res: "coal", value: 2 },
+	iron:   { solid: true, hp: 80, color: "#999", res: "iron", value: 5 },
+	gold:   { solid: true, hp: 120, color: "#db3", res: "gold", value: 15 },
+	diamond:{ solid: true, hp: 200, color: "#6ff", res: "diamond", value: 50 },
+	ladder: { solid: false, climbable: true, color: "#c96" },
+}
+
+function generateTile(x, y) {
+	const rng = mulberry32(worldSeed + x * 928371 + y * 123123)
+	if (y < 0) {
+		if (y === -1) return { type: "grass" }
+		return { type: "air" }
+	}
+	let r = rng()
+	if (y < 10) return r < 0.1 ? { type: "coal" } : { type: "dirt" }
+	if (y < 30) return r < 0.08 ? { type: "iron" } : { type: "dirt" }
+	if (y < 60) return r < 0.05 ? { type: "gold" } : { type: "dirt" }
+	return r < 0.03 ? { type: "diamond" } : { type: "dirt" }
+}
+
+function getTile(x, y) {
+	return changedTiles[`${x}_${y}`] || generateTile(x, y)
+}
+
+/* =======================
+   PLAYER
+======================= */
+let player = {
+	x: 0,
+	y: -3,
+	vx: 0,
+	vy: 0,
+	width: 0.8,
+	height: 1.8,
+	onGround: false,
+	energy: 100,
+	maxEnergy: 100,
+	miningSpeed: 1,
+	backpack: 50,
+	money: 0,
+	inventory: {},
+}
+
+player.width = 0.6
+player.height = 1.7
+
+let particles = []
+
+
+/* =======================
+   BUILDINGS
+======================= */
+const buildings = {
+	shop: { x: -5, y: -1, color: "#a55" },
+	inn: { x: 0, y: -1, color: "#5a5" },
+	workshop: { x: 5, y: -1, color: "#55a" },
+}
+
+/* =======================
+   SAVE / LOAD
+======================= */
+function saveGame() {
+	localStorage.setItem("miningGameSave", JSON.stringify({
+		seed: worldSeed,
+		// player,
+		changedTiles,
+	}))
+}
+function loadGame() {
+	const s = localStorage.getItem("miningGameSave")
+	if (!s) return
+	const data = JSON.parse(s)
+	worldSeed = data.seed
+	//   player = data.player;
+	changedTiles = data.changedTiles
+}
+loadGame()
+setInterval(saveGame, 5000)
+
+/* =======================
+   PHYSICS
+======================= */
+function spawnParticles(x, y, color, count = 8) {
+	for (let i = 0; i < count; i++) {
+		particles.push({
+			x: x + Math.random(),
+			y: y + Math.random(),
+			vx: (Math.random() - 0.5) * 2,
+			vy: (Math.random() - 1.5) * 2,
+			life: 30,
+			color,
+		})
+	}
+}
+
+function isSolid(x, y) {
+	return TILE_TYPES[getTile(x, y).type].solid
+}
+
+function onLadder(px, py) {
+	const cx = Math.floor(px + player.width / 2)
+	const cy = Math.floor(py + player.height / 2)
+	const tile = getTile(cx, cy)
+	return TILE_TYPES[tile.type].climbable
+}
+
+function collides(px, py) {
+	const left = Math.floor(px)
+	const right = Math.floor(px + player.width - 0.001)
+	const top = Math.floor(py)
+	const bottom = Math.floor(py + player.height - 0.001)
+
+	for (let x = left; x <= right; x++) {
+		for (let y = top; y <= bottom; y++) {
+			if (isSolid(x, y)) return true
+		}
+	}
+	return false
+}
+
+function updatePlayer() {
+	const speed = 3
+	const dt = 0.1
+
+	// --- INPUT ---
+	if (keys["a"] || keys["arrowleft"] || touchMoveLeft) player.vx = -speed
+	else if (keys["d"] || keys["arrowright"] || touchMoveRight) player.vx = speed
+	else player.vx = 0
+
+	if ((keys["w"] || keys["arrowup"] || keys[" "] || touchJump) && player.onGround) {
+		player.vy = -JUMP_FORCE
+		player.onGround = false
+	}
+
+	// --- GRAVITY ---
+	if (!player.onGround) {
+		player.vy += GRAVITY
+	}
+
+	/* =====================
+     HORIZONTAL MOVEMENT
+  ===================== */
+	let nx = player.x + player.vx * dt
+
+	// --- X axis ---
+	if (!collides(nx, player.y)) {
+		player.x = nx
+	} else {
+		// snap to tile edge
+		player.x = Math.floor(player.x + (player.vx > 0 ? 1 : 0)) - (player.vx > 0 ? player.width : 0)
+	}
+
+	/* =====================
+     VERTICAL MOVEMENT
+  ===================== */
+	let ny = player.y + player.vy * dt
+
+	if (!collides(player.x, ny)) {
+		player.y = ny
+		player.onGround = false
+	} else {
+		if (player.vy > 0) {
+			// Falling → snap to TOP of the tile we hit
+			const bottomTile = Math.floor(player.y + player.height + player.vy * dt)
+			player.y = bottomTile - player.height
+			player.onGround = true
+		} else if (player.vy < 0) {
+			// Hitting ceiling
+			const topTile = Math.floor(player.y + player.vy * dt)
+			player.y = topTile + 1
+		}
+		player.vy = 0
+	}
+
+	const climbing = onLadder(player.x, player.y)
+
+	if (climbing) {
+		player.vy = 0
+
+		if (keys["w"] || keys["arrowup"] || touchJump) {
+			player.y -= 0.15
+		}
+		if (keys["s"] || keys["arrowdown"]) {
+			player.y += 0.15
+		}
+
+		// Optional: snap to ladder center
+		player.x = Math.floor(player.x) + 0.5 - player.width / 2
+	}
+}
+
+/* =======================
+   MINING
+======================= */
+function mineAtPointer() {
+	if ((!pointerDown && !touchMining) || player.energy <= 0) return
+
+	const tx = Math.floor((pointerX - camX) / TILE_SIZE)
+	const ty = Math.floor((pointerY - camY) / TILE_SIZE)
+	const tile = getTile(tx, ty)
+	const data = TILE_TYPES[tile.type]
+	if (!data.solid) return
+
+	const key = `${tx}_${ty}`
+	miningProgress[key] = (miningProgress[key] || 0) + player.miningSpeed / (data.hp + ty * 2)
+	player.energy -= 0.1
+	spawnParticles(tx, ty, TILE_TYPES[tile.type].color, 12)
+
+	if (miningProgress[key] >= 1) {
+		changedTiles[key] = { type: "air" }
+		delete miningProgress[key]
+		if (data.res) {
+			player.inventory[data.res] = (player.inventory[data.res] || 0) + 1
+		}
+	}
+}
+
+/* =======================
+   CAMERA
+======================= */
+let camX = 0, camY = 0
+function updateCamera() {
+	camX = canvas.width / 2 - player.x * TILE_SIZE
+	camY = canvas.height / 2 - player.y * TILE_SIZE
+}
+
+/* =======================
+   DRAWING
+======================= */
+function drawTile(x, y, tile) {
+	const data = TILE_TYPES[tile.type]
+	const px = x * TILE_SIZE + camX
+	const py = y * TILE_SIZE + camY
+	if (tile.type === "air") return
+
+	if (tile.type === "ladder") {
+		ctx.fillStyle = "#c96"
+		ctx.fillRect(px + TILE_SIZE / 3, py, TILE_SIZE / 3, TILE_SIZE)
+		return
+	}
+	ctx.fillStyle = data.color
+	ctx.fillRect(
+		x * TILE_SIZE + camX,
+		y * TILE_SIZE + camY,
+		TILE_SIZE,
+		TILE_SIZE,
+	)
+
+	const p = miningProgress[`${x}_${y}`]
+	if (p) {
+		ctx.strokeStyle = `rgba(0,0,0,${p})`
+		ctx.strokeRect(
+			x * TILE_SIZE + camX + 4,
+			y * TILE_SIZE + camY + 4,
+			TILE_SIZE - 8,
+			TILE_SIZE - 8,
+		)
+	}
+}
+
+function draw() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+	ctx.globalAlpha = 0.3
+	ctx.fillStyle = "#fff"
+
+	// Left
+	ctx.fillRect(20, canvas.height - 80, 60, 60)
+	// Right
+	ctx.fillRect(100, canvas.height - 80, 60, 60)
+	// Jump
+	ctx.fillRect(canvas.width - 80, canvas.height - 80, 60, 60)
+
+	ctx.globalAlpha = 1
+
+	const startX = Math.floor((-camX) / TILE_SIZE) - 1
+	const endX = startX + Math.ceil(canvas.width / TILE_SIZE) + 2
+	const startY = Math.floor((-camY) / TILE_SIZE) - 1
+	const endY = startY + Math.ceil(canvas.height / TILE_SIZE) + 2
+
+	for (let x = startX; x < endX; x++)
+		for (let y = startY; y < endY; y++)
+			drawTile(x, y, getTile(x, y))
+
+	// Particles
+	for (let i = particles.length - 1; i >= 0; i--) {
+		const p = particles[i]
+		p.vy += 0.1
+		p.x += p.vx * 0.1
+		p.y += p.vy * 0.1
+		p.life--
+
+		ctx.fillStyle = p.color
+		ctx.fillRect(
+			p.x * TILE_SIZE + camX,
+			p.y * TILE_SIZE + camY,
+			4,
+			4,
+		)
+
+		if (p.life <= 0) particles.splice(i, 1)
+	}
+
+	// Buildings
+	for (let b in buildings) {
+		const o = buildings[b]
+		ctx.fillStyle = o.color
+		ctx.fillRect(
+			o.x * TILE_SIZE + camX,
+			o.y * TILE_SIZE + camY,
+			TILE_SIZE,
+			TILE_SIZE,
+		)
+	}
+
+	// Player
+	ctx.fillStyle = "#ff0"
+	ctx.fillRect(
+		player.x * TILE_SIZE + camX,
+		player.y * TILE_SIZE + camY,
+		player.width * TILE_SIZE,
+		player.height * TILE_SIZE,
+	)
+
+	// UI
+	ctx.fillStyle = "rgba(0,0,0,0.5)"
+	ctx.fillRect(10, 10, 240, 140)
+	ctx.fillStyle = "#fff"
+	ctx.fillText(`Energy: ${player.energy.toFixed(0)}`, 20, 30)
+	ctx.fillText(`Money: $${player.money}`, 20, 50)
+
+	let y = 70
+	for (let r in player.inventory) {
+		ctx.fillText(`${r}: ${player.inventory[r]}`, 20, y)
+		y += 15
+	}
+
+	ctx.globalAlpha = 0.15
+
+	// Movement zones
+	ctx.fillStyle = "#00f"
+	ctx.fillRect(0, canvas.height * TOUCH_AREA, canvas.width * 0.33, canvas.height * 0.3)
+
+	ctx.fillStyle = "#0f0"
+	ctx.fillRect(canvas.width * 0.33, canvas.height * TOUCH_AREA, canvas.width * 0.33, canvas.height * 0.3)
+
+	ctx.fillStyle = "#f00"
+	ctx.fillRect(canvas.width * 0.66, canvas.height * TOUCH_AREA, canvas.width * 0.34, canvas.height * 0.3)
+
+	ctx.globalAlpha = 1
+}
+
+/* =======================
+   GAME LOOP
+======================= */
+function loop() {
+	updatePlayer()
+	updateCamera()
+	mineAtPointer()
+	draw()
+	requestAnimationFrame(loop)
+}
+loop()
+</script>
+</body>
+</html>

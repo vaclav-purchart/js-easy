@@ -1,3 +1,4 @@
 node_modules
 local-files
 settings.local.json
+voxel-world/copy.js
