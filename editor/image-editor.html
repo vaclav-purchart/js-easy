@@ -556,7 +556,7 @@ button {
 					<input id="isoWidth" type="number" min="1" max="512" value="64">px (1:2)
 				</div>
 				<div class="row">
-					<button id="isoShowHide">Show/hide ISO grid</button>
+					<button id="isoShowHide">Show Isometric Grid</button>
 				</div>
 				<div class="row">
 					<button id="isoLoad1x1">ISO 1x1</button>
@@ -729,8 +729,11 @@ function applyEditorData(data) {
 	document.getElementById("width").value = width
 	document.getElementById("height").value = height
 	document.getElementById("zoomVal").textContent = pixelSize
-	document.getElementById("fillShapes").checked = data.fillShapes || true
+	document.getElementById("fillShapes").checked = data.fillShapes !== false
 	document.getElementById("isoWidth").value = data.isoWidth || 64
+	document.getElementById("isoShowHide").textContent = showIsometricGrid
+		? "Hide Isometric Grid"
+		: "Show Isometric Grid"
 
 	if (!Array.isArray(loadedLayers) || loadedLayers.length === 0) {
 		layers = []
@@ -738,11 +741,14 @@ function applyEditorData(data) {
 	} else {
 		layers = loadedLayers
 	}
+	if (activeLayer < 0 || activeLayer >= layers.length) activeLayer = 0
 
 	renderLayersUI()
 	resizeCanvases()
-	// saveToLocalStorage()
 	renderAll()
+	setPrimary(primaryColor)
+	setSecondary(secondaryColor)
+	updateToolUI()
 }
 
 function serializeEditorData() {
@@ -881,22 +887,35 @@ function addImageColorsToCustomPalette() {
 
 }
 
-function setPrimary(hex) {
-	if (hex.startsWith('rgb(')) {
-		// convert rgb() to hex
-		const rgb = hex.match(/\d+/g).map(Number)
-		hex = '#' + rgb.map((v) => v.toString(16).padStart(2, '0')).join('')
+function normalizeColor(hex) {
+	if (typeof hex !== "string" || hex === "transparent") return hex
+	if (hex.startsWith("#")) {
+		if (/^#[0-9a-fA-F]{3}$/.test(hex)) {
+			return ("#" + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3]).toLowerCase()
+		}
+		if (/^#[0-9a-fA-F]{6}/.test(hex)) return hex.slice(0, 7).toLowerCase()
+		return hex
 	}
+	if (hex.startsWith("rgb")) {
+		const rgb = hex.match(/\d+/g)
+		if (rgb && rgb.length >= 3) {
+			return "#" + rgb.slice(0, 3).map((v) => Number(v).toString(16).padStart(2, "0")).join("")
+		}
+	}
+	return hex
+}
+
+function setPrimary(hex) {
+	hex = normalizeColor(hex)
 	primaryColor = hex
 	document.getElementById("currentColor").textContent = hex
-	if (hex !== "transparent") document.getElementById("colorPicker").value = hex
 	document.getElementById("colorPicker").value = hex === "transparent" ? "#ffffff" : hex
 	saveToLocalStorage()
 }
 function setSecondary(hex) {
+	hex = normalizeColor(hex)
 	secondaryColor = hex
 	document.getElementById("currentColor2").textContent = hex
-	if (hex !== "transparent") document.getElementById("colorPicker2").value = hex
 	document.getElementById("colorPicker2").value = hex === "transparent" ? "#ffffff" : hex
 	saveToLocalStorage()
 }
@@ -1845,6 +1864,9 @@ function attachEvents() {
 	document
 		.getElementById("colorPicker2")
 		.addEventListener("input", (e) => setSecondary(e.target.value))
+	document.getElementById("fillShapes").addEventListener("change", () => {
+		saveToLocalStorage()
+	})
 
 	document.getElementById("clearBtn").addEventListener("click", () => {
 		layers.forEach((l) => l.pixels.fill(null))

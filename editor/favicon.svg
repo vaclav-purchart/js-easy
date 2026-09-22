@@ -1,23 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--  gamepad.svg – a realistic‑looking controller for favicons  -->
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  viewBox="0 0 64 64"
-  width="64"
-  height="64">
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 256 256"
+     width="256" height="256">
+  <!-- Transparent background; designed to remain legible at 16–32 px. -->
+  <path fill="#000" d="
+    M47 72
+    C52 52 67 39 88 39
+    H103
+    C113 39 119 44 124 52
+    C126 55 130 57 134 57
+    H154
+    C158 57 162 55 164 52
+    C169 44 175 39 185 39
+    H200
+    C221 39 236 52 241 72
+    L252 170
+    C255 194 242 216 222 218
+    C207 220 196 209 187 194
+    L170 166
+    C167 161 163 158 157 158
+    H99
+    C93 158 89 161 86 166
+    L69 194
+    C60 209 49 220 34 218
+    C14 216 1 194 4 170
+    Z"/>
 
-  <!-- controller body – rounded rectangle -->
-  <rect x="4" y="10" width="56" height="44" rx="8" ry="8" fill="#1E1E1E"/>
+  <!-- D-pad -->
+  <path fill="#fff" d="
+    M52 79 H66 V65 H80 V79 H94 V93 H80 V107 H66 V93 H52 Z"/>
 
-  <!-- left analog stick -->
-  <circle cx="20" cy="32" r="6" fill="#555"/>
-  <circle cx="20" cy="32" r="2" fill="#DDD"/>
+  <!-- Face buttons -->
+  <circle fill="#fff" cx="187" cy="69" r="9"/>
+  <circle fill="#fff" cx="207" cy="89" r="9"/>
+  <circle fill="#fff" cx="187" cy="109" r="9"/>
+  <circle fill="#fff" cx="167" cy="89" r="9"/>
 
-  <!-- right analog stick -->
-  <circle cx="44" cy="32" r="6" fill="#555"/>
-  <circle cx="44" cy="32" r="2" fill="#DDD"/>
-
-  <!-- start / select buttons -->
-  <rect x="24" y="48" width="8" height="2" fill="#AAA"/>
-  <rect x="36" y="48" width="8" height="2" fill="#AAA"/>
+  <!-- Analog sticks -->
+  <circle fill="#fff" cx="101" cy="121" r="16"/>
+  <circle fill="#fff" cx="155" cy="121" r="16"/>
 </svg>

@@ -69,13 +69,51 @@
 		.main-container {
 			display: flex;
 			height: calc(100vh - 50px);
+			min-width: 0;
+			overflow: hidden;
 		}
 
-		.editor-container {
-			flex: 1;
+		.editor-container,
+		.preview-container {
+			flex: 1 1 0;
+			min-width: 0;
+			overflow: hidden;
 			display: flex;
 			flex-direction: column;
-			border-right: 1px solid #e9ecef;
+		}
+
+		.preview-container {
+			background: #ffffff;
+		}
+
+		.splitter {
+			width: 6px;
+			flex-shrink: 0;
+			background: #e9ecef;
+			cursor: col-resize;
+			position: relative;
+			z-index: 5;
+			touch-action: none;
+		}
+
+		.splitter::before {
+			content: '';
+			position: absolute;
+			inset: 0 -4px;
+		}
+
+		.splitter:hover,
+		.splitter.dragging {
+			background: #0e639c;
+		}
+
+		body.is-resizing {
+			cursor: col-resize;
+			user-select: none;
+		}
+
+		body.is-resizing iframe {
+			pointer-events: none;
 		}
 
 		.editor-header {
@@ -84,18 +122,67 @@
 			border-bottom: 1px solid #e9ecef;
 			font-size: 14px;
 			color: #495057;
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			min-height: 49px;
+			flex-shrink: 0;
+			overflow-x: auto;
+		}
+
+		.editor-title {
+			display: flex;
+			align-items: center;
+			flex-shrink: 0;
+		}
+
+		.editor-edit-controls,
+		.editor-font-controls {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			flex-shrink: 0;
+		}
+
+		.editor-font-controls {
+			margin-left: auto;
+		}
+
+		.editor-header button {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 6px;
+			height: 28px;
+			padding: 0 10px;
+			border: 1px solid #dee2e6;
+			border-radius: 4px;
+			background: #ffffff;
+			color: #495057;
+			cursor: pointer;
+			font-size: 13px;
+			white-space: nowrap;
+		}
+
+		.editor-font-controls button {
+			width: 28px;
+			padding: 0;
+		}
+
+		.editor-header button:hover:not(:disabled) {
+			background: #e9ecef;
+			color: #0e639c;
+		}
+
+		.editor-header button:disabled {
+			opacity: 0.4;
+			cursor: not-allowed;
 		}
 
 		#monaco-editor {
 			flex: 1;
+			min-width: 0;
 			min-height: 0;
-		}
-
-		.preview-container {
-			flex: 1;
-			display: flex;
-			flex-direction: column;
-			background: #ffffff;
 		}
 
 		.preview-header {
@@ -107,6 +194,8 @@
 			display: flex;
 			align-items: center;
 			justify-content: space-between;
+			min-height: 49px;
+			flex-shrink: 0;
 		}
 
 		.preview-title {
@@ -428,10 +517,6 @@
 		<button id="new-btn">📋 New</button>
 		<button id="load-btn">📂 Load</button>
 		<button id="save-btn">💾 Save</button>
-		<button id="undo-btn">↩️ Undo</button>
-		<button id="redo-btn">↪️ Redo</button>
-		<button id="copy-btn">📋 Copy</button>
-		<button id="paste-btn">📥 Paste</button>
 		<button id="clear-storage-btn">🗑️ Clear</button>
 		<button id="image-upload-btn">🖼️ Upload Image</button>
 		<input type="file" id="file-input" class="file-input" accept=".html,.js,.txt">
@@ -455,11 +540,44 @@
 	<div class="main-container">
 		<div class="editor-container">
 			<div class="editor-header">
-				<span class="status-indicator status-success"></span>
-				Editor
+				<div class="editor-title">
+					<span class="status-indicator status-success"></span>
+					Editor
+				</div>
+				<div class="editor-edit-controls">
+					<button type="button" id="copy-btn">📋 Copy</button>
+					<button type="button" id="paste-btn">📥 Paste</button>
+					<button type="button" id="undo-btn">↩️ Undo</button>
+					<button type="button" id="redo-btn">↪️ Redo</button>
+				</div>
+				<div class="editor-font-controls">
+					<button type="button" id="font-decrease-btn" title="Decrease editor font size" aria-label="Decrease editor font size">
+						<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+							<circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+							<line x1="14.8" y1="14.8" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+							<line x1="7" y1="10" x2="13" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+						</svg>
+					</button>
+					<button type="button" id="font-increase-btn" title="Increase editor font size" aria-label="Increase editor font size">
+						<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+							<circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+							<line x1="14.8" y1="14.8" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+							<line x1="10" y1="7" x2="10" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+							<line x1="7" y1="10" x2="13" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+						</svg>
+					</button>
+					<button type="button" id="split-reset-btn" title="Reset divider to 50%" aria-label="Reset divider to 50%">
+						<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+							<rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect>
+							<line x1="12" y1="4.5" x2="12" y2="19.5" stroke="currentColor" stroke-width="2"></line>
+						</svg>
+					</button>
+				</div>
 			</div>
 			<div id="monaco-editor"></div>
 		</div>
+
+		<div id="splitter" class="splitter" title="Drag to resize panes"></div>
 
 		<div class="preview-container">
 			<div class="preview-header">
@@ -550,6 +668,12 @@
 				this.isUpdating = false
 				this.updateTimeout = null
 				this.storageKey = 'js-easy-editor-content'
+				this.splitRatioKey = 'js-easy-split-ratio'
+				this.fontSizeKey = 'js-easy-editor-font-size'
+				this.minFontSize = 10
+				this.maxFontSize = 32
+				this.fontSizeStep = 2
+				this.fontSize = this.loadFontSize()
 				this.eslint = null
 				this.preAICode = null // Store code before AI modification
 
@@ -582,7 +706,7 @@
 							automaticLayout: true,
 							minimap: { enabled: false },
 							scrollBeyondLastLine: false,
-							fontSize: 14,
+							fontSize: this.fontSize,
 							lineNumbers: 'on',
 							wordWrap: 'off',
 							folding: true,
@@ -921,6 +1045,100 @@
 						}
 					}
 				})
+
+				this.setupSplitter()
+				this.setupFontControls()
+			}
+
+			loadFontSize() {
+				const saved = parseInt(localStorage.getItem(this.fontSizeKey), 10)
+				if (!Number.isNaN(saved) && saved >= this.minFontSize && saved <= this.maxFontSize) {
+					return saved
+				}
+				return 14
+			}
+
+			setupFontControls() {
+				const decreaseBtn = document.getElementById('font-decrease-btn')
+				const increaseBtn = document.getElementById('font-increase-btn')
+
+				const updateButtons = () => {
+					decreaseBtn.disabled = this.fontSize <= this.minFontSize
+					increaseBtn.disabled = this.fontSize >= this.maxFontSize
+				}
+
+				const changeFontSize = (delta) => {
+					this.fontSize = Math.min(
+						this.maxFontSize,
+						Math.max(this.minFontSize, this.fontSize + delta),
+					)
+					this.editor.updateOptions({ fontSize: this.fontSize })
+					localStorage.setItem(this.fontSizeKey, String(this.fontSize))
+					updateButtons()
+				}
+
+				decreaseBtn.addEventListener('click', () => changeFontSize(-this.fontSizeStep))
+				increaseBtn.addEventListener('click', () => changeFontSize(this.fontSizeStep))
+				updateButtons()
+			}
+
+			resetSplitter() {
+				const editorContainer = document.querySelector('.editor-container')
+				editorContainer.style.flex = ''
+				localStorage.removeItem(this.splitRatioKey)
+			}
+
+			setupSplitter() {
+				const splitter = document.getElementById('splitter')
+				const editorContainer = document.querySelector('.editor-container')
+				const mainContainer = document.querySelector('.main-container')
+
+				const applyRatio = (ratio) => {
+					const clamped = Math.max(0.15, Math.min(0.85, ratio))
+					editorContainer.style.flex = `0 0 ${clamped * 100}%`
+				}
+
+				const saved = parseFloat(localStorage.getItem(this.splitRatioKey))
+				if (!Number.isNaN(saved)) {
+					applyRatio(saved)
+				}
+
+				let dragging = false
+
+				splitter.addEventListener('pointerdown', (e) => {
+					if (e.button !== 0) return
+					e.preventDefault()
+					dragging = true
+					splitter.classList.add('dragging')
+					document.body.classList.add('is-resizing')
+					splitter.setPointerCapture(e.pointerId)
+				})
+
+				splitter.addEventListener('pointermove', (e) => {
+					if (!dragging) return
+					const rect = mainContainer.getBoundingClientRect()
+					applyRatio((e.clientX - rect.left) / rect.width)
+				})
+
+				const stopDragging = (e) => {
+					if (!dragging) return
+					dragging = false
+					splitter.classList.remove('dragging')
+					document.body.classList.remove('is-resizing')
+					if (splitter.hasPointerCapture(e.pointerId)) {
+						splitter.releasePointerCapture(e.pointerId)
+					}
+					const rect = mainContainer.getBoundingClientRect()
+					localStorage.setItem(
+						this.splitRatioKey,
+						String(editorContainer.getBoundingClientRect().width / rect.width),
+					)
+				}
+
+				splitter.addEventListener('pointerup', stopDragging)
+				splitter.addEventListener('pointercancel', stopDragging)
+				splitter.addEventListener('dblclick', () => this.resetSplitter())
+				document.getElementById('split-reset-btn').addEventListener('click', () => this.resetSplitter())
 			}
 
 			loadDefaultCode() {
