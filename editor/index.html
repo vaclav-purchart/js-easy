@@ -512,8 +512,7 @@
 		<button id="list-btn">🔍 List</button>
 		<select id="github-example-select"></select>
 		<button id="image-btn">🖼️ Image</button>
-		<button id="chat-btn">💬 Chat</button>
-		<button id="ai-btn">🤖 AI</button>
+		<button id="ai-editor-btn" title="Open the new AI editor">🤖 AI editor</button>
 		<button id="new-btn">📋 New</button>
 		<button id="load-btn">📂 Load</button>
 		<button id="save-btn">💾 Save</button>
@@ -829,8 +828,7 @@
 				document.getElementById('send-btn').addEventListener('click', () => this.showSendDialog())
 				document.getElementById('fullscreen-btn').addEventListener('click', () => this.showFullscreen())
 				document.getElementById('list-btn').addEventListener('click', () => this.showList())
-				document.getElementById('chat-btn').addEventListener('click', () => this.showChat())
-				document.getElementById('ai-btn').addEventListener('click', () => this.showAIDialog())
+				document.getElementById('ai-editor-btn').addEventListener('click', () => this.showAIEditor())
 				document.getElementById('image-btn').addEventListener('click', () => this.showImageEditor())
 				document.getElementById('new-btn').addEventListener('click', () => this.newFile())
 				document.getElementById('load-btn').addEventListener('click', () => this.loadFile())
@@ -2143,6 +2141,10 @@ console.log("test")
 
 			showChat() {
 				window.open('https://purchart.eu/chat', '_blank')
+			}
+
+			showAIEditor() {
+				window.open('https://purchart.eu/ai-editor', '_blank')
 			}
 
 			showImageEditor() {
