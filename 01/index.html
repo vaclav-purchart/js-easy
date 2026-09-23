@@ -7,7 +7,7 @@
 </head>
 <body>
 
-<canvas id="canvas" width="800" height="800" style="border: 1px solid black;"></canvas>
+<canvas id="canvas" width="600" height="600" style="border: 1px solid black;"></canvas>
 <script>
 
 const canvas = document.getElementById('canvas')
@@ -18,32 +18,32 @@ ctx.fillStyle = 'black'
 ctx.lineWidth = 5
 
 // Draw house base (rectangle)
-ctx.strokeRect(100, 450, 200, 150)
+ctx.strokeRect(100, 250, 200, 150)
 
 // Draw roof (triangle)
 ctx.beginPath()
-ctx.moveTo(80, 450)
-ctx.lineTo(200, 380)
-ctx.lineTo(320, 450)
+ctx.moveTo(80, 250)
+ctx.lineTo(200, 180)
+ctx.lineTo(320, 250)
 ctx.closePath()
 ctx.stroke()
 
 // Draw door
-ctx.strokeRect(170, 520, 60, 80)
+ctx.strokeRect(170, 320, 60, 80)
 
 // Draw door handle
 ctx.beginPath()
-ctx.arc(220, 560, 3, 0, 2 * Math.PI)
+ctx.arc(220, 360, 3, 0, 2 * Math.PI)
 ctx.fill()
 
 // Draw left window
-ctx.strokeRect(120, 480, 40, 40)
+ctx.strokeRect(120, 280, 40, 40)
 
 // Draw right window
-ctx.strokeRect(240, 480, 40, 40)
+ctx.strokeRect(240, 280, 40, 40)
 
 // Draw chimney
-ctx.strokeRect(250, 400, 30, 50)
+ctx.strokeRect(250, 200, 30, 50)
 
 
 </script>
