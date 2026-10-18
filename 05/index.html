@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sbírej hvězdy</title>
+<style>
+body {
+  font-family: sans-serif;
+  margin: 20px;
+}
+canvas {
+  border: 2px solid #333;
+  border-radius: 10px;
+  margin: 20px 0;
+}
+</style>
+</head>
+<body>
+<p>Šipkami posouvej panáčka. Když se dotkne hvězdy, získá bod.</p>
+<canvas id="myCanvas" width="500" height="500"></canvas>
+<script>
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+// Pozice panáčka. X je vodorovně, Y je svisle (0 je nahoře).
+let hracX = 210
+let hracY = 320
+
+// Kolik bodů panáček nasbíral.
+let skore = 0
+
+// O kolik pixelů se panáček posune po jedné šipce.
+// Zkus změnit krok třeba na 40.
+let krok = 20
+
+// Hráč i hvězda jsou obrázky 64×64 pixelů.
+let velikost = 64
+
+// Kde leží hvězda, kterou chceme sebrat.
+let hvezdaX = 80
+let hvezdaY = 120
+
+// Slunce a strom stojí na místě.
+let slunceX = 400
+let slunceY = 16
+let stromX = 24
+let stromY = 300
+
+// Adresy obrázků (URL). Soubory jsou ve stejné složce jako tahle stránka.
+let urlHrac = "https://purchart.eu/images?file=2026-10-18--21-05-41---vasek---hrac.png"
+let urlHvezda = "https://purchart.eu/images?file=2026-10-18--21-06-28---vasek---hvezda.png"
+let urlSlunce = "https://purchart.eu/images?file=2026-10-18--21-06-42---vasek---slunce.png"
+let urlStrom = "https://purchart.eu/images?file=2026-10-18--21-07-05---vasek---strom.png"
+
+let hrac = new Image()
+hrac.src = urlHrac
+
+let hvezda = new Image()
+hvezda.src = urlHvezda
+
+let slunce = new Image()
+slunce.src = urlSlunce
+
+let strom = new Image()
+strom.src = urlStrom
+
+// Až se obrázek načte, překreslíme plátno.
+hrac.onload = kresli
+hvezda.onload = kresli
+slunce.onload = kresli
+strom.onload = kresli
+
+function kresli() {
+  // Nejdřív obloha a tráva, potom obrázky.
+  ctx.fillStyle = "skyblue"
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.fillStyle = "#3CB043"
+  ctx.fillRect(0, 390, canvas.width, 110)
+
+  // Co nakreslíme později, je navrchu.
+  ctx.drawImage(slunce, slunceX, slunceY)
+  ctx.drawImage(strom, stromX, stromY)
+  ctx.drawImage(hvezda, hvezdaX, hvezdaY)
+  ctx.drawImage(hrac, hracX, hracY)
+
+  // Bílý obdélník, ať je skóre čitelné i přes panáčka.
+  let napis = "Skóre: " + skore
+  ctx.font = "28px sans-serif"
+  let sirkaNapis = ctx.measureText(napis).width
+  ctx.fillStyle = "white"
+  ctx.fillRect(8, 8, sirkaNapis + 16, 40)
+  ctx.fillStyle = "black"
+  ctx.fillText(napis, 16, 38)
+}
+
+window.addEventListener("keydown", function (event) {
+  // Šipka doleva zmenší X, doprava ho zvětší.
+  if (event.key == "ArrowLeft") {
+    hracX = hracX - krok
+  }
+  if (event.key == "ArrowRight") {
+    hracX = hracX + krok
+  }
+  // Nahoru je menší Y, protože Y roste směrem dolů.
+  if (event.key == "ArrowUp") {
+    hracY = hracY - krok
+  }
+  if (event.key == "ArrowDown") {
+    hracY = hracY + krok
+  }
+
+  // Ať stránka při šipkách neodjede pryč.
+  if (
+    event.key == "ArrowLeft" ||
+    event.key == "ArrowRight" ||
+    event.key == "ArrowUp" ||
+    event.key == "ArrowDown"
+  ) {
+    event.preventDefault()
+  }
+
+  // Panáček zůstane uvnitř plátna.
+  if (hracX < 0) {
+    hracX = 0
+  }
+  if (hracY < 0) {
+    hracY = 0
+  }
+  if (hracX > canvas.width - velikost) {
+    hracX = canvas.width - velikost
+  }
+  if (hracY > canvas.height - velikost) {
+    hracY = canvas.height - velikost
+  }
+
+  // Math.abs je vzdálenost: vždycky kladné číslo.
+  let rozdilX = Math.abs(hracX - hvezdaX)
+  let rozdilY = Math.abs(hracY - hvezdaY)
+
+  // Když se obrázky překryjí, přičteme bod a hvězda skočí jinam.
+  if (rozdilX < velikost && rozdilY < velikost) {
+    skore = skore + 1
+
+    // Opakuj, dokud nové místo není zase na panáčkovi.
+    while (rozdilX < velikost && rozdilY < velikost) {
+      hvezdaX = Math.floor(Math.random() * (canvas.width - velikost))
+      hvezdaY = Math.floor(Math.random() * (canvas.height - velikost))
+      rozdilX = Math.abs(hracX - hvezdaX)
+      rozdilY = Math.abs(hracY - hvezdaY)
+    }
+  }
+
+  kresli()
+})
+
+kresli()
+</script>
+</body>
+</html>
