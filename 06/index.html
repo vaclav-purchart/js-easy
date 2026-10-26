@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Den a noc</title>
+<style>
+body {
+  font-family: sans-serif;
+  margin: 20px;
+}
+canvas {
+  border: 2px solid #333;
+  border-radius: 10px;
+  margin: 20px 0;
+}
+</style>
+</head>
+<body>
+<p>Šipkami posouvej panáčka. Sleduj, co se změní, když půjde doprava, dolů nebo ke stromu.</p>
+<canvas id="myCanvas" width="500" height="500"></canvas>
+<script>
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+// Pozice panáčka. X je vodorovně, Y je svisle (0 je nahoře).
+let hracX = 100
+let hracY = 200
+
+// O kolik pixelů se panáček posune po jedné šipce.
+let krok = 20
+
+// Všechny obrázky nakreslíme jako čtverec 64×64 pixelů,
+// i když je obrázek ve skutečnosti menší nebo větší.
+let velikost = 64
+
+// Slunce a strom stojí na místě.
+let slunceX = 400
+let slunceY = 16
+let stromX = 24
+let stromY = 330
+
+// Adresy obrázků (URL).
+let urlHrac = "https://purchart.eu/images?file=2026-10-18--21-05-41---vasek---hrac.png"
+let urlSlunce = "https://purchart.eu/images?file=2026-10-18--21-06-42---vasek---slunce.png"
+let urlStrom = "https://purchart.eu/images?file=2026-10-18--21-07-05---vasek---strom.png"
+
+let hrac = new Image()
+hrac.src = urlHrac
+
+let slunce = new Image()
+slunce.src = urlSlunce
+
+let strom = new Image()
+strom.src = urlStrom
+
+// Až se obrázek načte, překreslíme plátno.
+hrac.onload = kresli
+slunce.onload = kresli
+strom.onload = kresli
+
+function kresli() {
+  // PODMÍNKA 1: if / else
+  // Když je panáček v pravé půlce plátna, je noc. Jinak je den.
+  if (hracX > 250) {
+    ctx.fillStyle = "midnightblue"
+  } else {
+    ctx.fillStyle = "skyblue"
+  }
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.fillStyle = "#3CB043"
+  ctx.fillRect(0, 390, canvas.width, 110)
+
+  // Malé obrázky zvětšíme, ale ať zůstanou ostré (nerozmazané).
+  ctx.imageSmoothingEnabled = false
+
+  // PODMÍNKA 2: jen if (bez else)
+  // Slunce nakreslíme jen ve dne, tedy když je panáček vlevo.
+  if (hracX <= 250) {
+    ctx.drawImage(slunce, slunceX, slunceY, velikost, velikost)
+  }
+
+  ctx.drawImage(strom, stromX, stromY, velikost, velikost)
+  ctx.drawImage(hrac, hracX, hracY, velikost, velikost)
+
+  // PODMÍNKA 3: if / else if / else
+  // Podle výšky panáčka vybereme jeden ze tří nápisů.
+  let napis = ""
+  if (hracY < 100) {
+    napis = "Letím vysoko!"
+  } else if (hracY + velikost < 390) {
+    napis = "Jsem ve vzduchu."
+  } else {
+    napis = "Stojím na trávě."
+  }
+
+  // PODMÍNKA 4: dvě věci najednou (&& znamená „a zároveň“)
+  // Panáček je u stromu, když je blízko vodorovně A ZÁROVEŇ svisle.
+  let rozdilX = Math.abs(hracX - stromX)
+  let rozdilY = Math.abs(hracY - stromY)
+  if (rozdilX < velikost && rozdilY < velikost) {
+    napis = "Schovávám se u stromu."
+  }
+
+  // Bílý obdélník, ať je nápis čitelný.
+  ctx.font = "28px sans-serif"
+  let sirkaNapis = ctx.measureText(napis).width
+  ctx.fillStyle = "white"
+  ctx.fillRect(8, 8, sirkaNapis + 16, 40)
+  ctx.fillStyle = "black"
+  ctx.fillText(napis, 16, 38)
+}
+
+window.addEventListener("keydown", function (event) {
+  // Šipka doleva zmenší X, doprava ho zvětší.
+  if (event.key == "ArrowLeft") {
+    hracX = hracX - krok
+  }
+  if (event.key == "ArrowRight") {
+    hracX = hracX + krok
+  }
+  // Nahoru je menší Y, protože Y roste směrem dolů.
+  if (event.key == "ArrowUp") {
+    hracY = hracY - krok
+  }
+  if (event.key == "ArrowDown") {
+    hracY = hracY + krok
+  }
+
+  // Ať stránka při šipkách neodjede pryč.
+  if (
+    event.key == "ArrowLeft" ||
+    event.key == "ArrowRight" ||
+    event.key == "ArrowUp" ||
+    event.key == "ArrowDown"
+  ) {
+    event.preventDefault()
+  }
+
+  // Panáček zůstane uvnitř plátna.
+  if (hracX < 0) {
+    hracX = 0
+  }
+  if (hracY < 0) {
+    hracY = 0
+  }
+  if (hracX > canvas.width - velikost) {
+    hracX = canvas.width - velikost
+  }
+  if (hracY > canvas.height - velikost) {
+    hracY = canvas.height - velikost
+  }
+
+  kresli()
+})
+
+kresli()
+</script>
+</body>
+</html>

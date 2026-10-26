@@ -34,7 +34,8 @@ let skore = 0
 // Zkus změnit krok třeba na 40.
 let krok = 20
 
-// Hráč i hvězda jsou obrázky 64×64 pixelů.
+// Všechny obrázky nakreslíme jako čtverec 64×64 pixelů,
+// i když je obrázek ve skutečnosti menší nebo větší.
 let velikost = 64
 
 // Kde leží hvězda, kterou chceme sebrat.
@@ -45,7 +46,7 @@ let hvezdaY = 120
 let slunceX = 400
 let slunceY = 16
 let stromX = 24
-let stromY = 300
+let stromY = 330
 
 // Adresy obrázků (URL). Soubory jsou ve stejné složce jako tahle stránka.
 let urlHrac = "https://purchart.eu/images?file=2026-10-18--21-05-41---vasek---hrac.png"
@@ -79,11 +80,15 @@ function kresli() {
   ctx.fillStyle = "#3CB043"
   ctx.fillRect(0, 390, canvas.width, 110)
 
+  // Malé obrázky zvětšíme, ale ať zůstanou ostré (nerozmazané).
+  ctx.imageSmoothingEnabled = false
+
+  // Každý obrázek nakreslíme velký přesně velikost × velikost.
   // Co nakreslíme později, je navrchu.
-  ctx.drawImage(slunce, slunceX, slunceY)
-  ctx.drawImage(strom, stromX, stromY)
-  ctx.drawImage(hvezda, hvezdaX, hvezdaY)
-  ctx.drawImage(hrac, hracX, hracY)
+  ctx.drawImage(slunce, slunceX, slunceY, velikost, velikost)
+  ctx.drawImage(strom, stromX, stromY, velikost, velikost)
+  ctx.drawImage(hvezda, hvezdaX, hvezdaY, velikost, velikost)
+  ctx.drawImage(hrac, hracX, hracY, velikost, velikost)
 
   // Bílý obdélník, ať je skóre čitelné i přes panáčka.
   let napis = "Skóre: " + skore
