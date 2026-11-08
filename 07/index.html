@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas Demo</title>
+	<style>
+		canvas {
+			border: 2px solid #333;
+			border-radius: 10px;
+		}
+	</style>
+</head>
+<body>
+<canvas id="myCanvas" width="500" height="500"></canvas>
+<script>
+
+let canvas = document.getElementById("myCanvas")
+let ctx = canvas.getContext("2d")
+
+// jen něco dělá
+function kresli() {
+	ctx.fillStyle = "black"
+	ctx.font = "48px serif"
+	ctx.fillText("❤️ funkce 😍", 100, 100)
+}
+kresli() // zavoláme -> vykonáme
+
+
+// vrací hodnotu
+function secti(a, b) {
+	return a + b
+}
+// volání
+let soucet = secti(3, 5)
+console.log("soucet 3 + 5 =", soucet)
+
+
+// funkce jako parametr
+window.addEventListener('mousemove', function(event) {
+	console.log(event)
+	if (event.x < 250) ctx.fillStyle = "red"
+	else ctx.fillStyle = "blue"
+	ctx.fillRect(event.x, event.y, 10, 10)
+})
+
+
+</script>
+</body>
+</html>
